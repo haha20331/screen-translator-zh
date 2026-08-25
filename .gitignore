@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# 執行時輸出，不進版控
+output.txt
+
+# 本地下載的模型檔案（體積大，不進版控）
+models/
+*.onnx
+*.bin
+*.pt
