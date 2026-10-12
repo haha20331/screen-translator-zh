@@ -6,7 +6,7 @@ from app.config import AppConfig
 def test_defaults_loaded(tmp_path):
     config = AppConfig(tmp_path / "config.json")
     assert config.get("ocr.min_confidence") == 0.6
-    assert config.get("ocr.engine") == "windows"
+    assert config.get("ocr.engine") == "rapidocr"
     assert config.get("ocr.lang") == "auto"
     assert config.get("updates.auto_check") is None  # 自动更新已移除
     assert config.get("translation.service") == "google_free"
@@ -21,7 +21,7 @@ def test_merge_partial(tmp_path):
     path.write_text('{"ocr": {"min_confidence": 0.8}}', encoding="utf-8")
     config = AppConfig(path)
     assert config.get("ocr.min_confidence") == 0.8
-    assert config.get("ocr.engine") == "windows"
+    assert config.get("ocr.engine") == "rapidocr"
     assert config.get("ocr.lang") == "auto"
     assert config.get("appearance.density") == "balanced"
 

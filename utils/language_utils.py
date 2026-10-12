@@ -105,26 +105,6 @@ def display_name(code: str) -> str:
     return code
 
 
-def to_paddle_lang(code: str) -> str:
-    return {
-        "auto": "ch",
-        "zh": "ch",
-        "zh-hant": "chinese_cht",
-        "en": "en",
-        "ja": "japan",
-        "ko": "korean",
-        "fr": "french",
-        "de": "german",
-        "es": "spanish",
-        "ru": "russian",
-        "pt": "portuguese",
-        "it": "italian",
-        "vi": "vietnam",
-        "th": "thai",
-        "ar": "arabic",
-    }.get(code, "ch")
-
-
 def to_openai_lang(code: str) -> str:
     return {
         "auto": "auto",

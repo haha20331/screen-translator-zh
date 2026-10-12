@@ -51,12 +51,15 @@ class PipelineTask(QThread):
             self._emit_status("正在识别...")
             # 小图先放大再 OCR：游戏截图/弹窗内的小字识别率提升数倍。
             # 放大倍数越高识别率越好但 OCR 更慢，可在设置里调小换速度。
-            image, scale = resize_for_ocr(
-                self.capture.image,
-                min_side=int(self.config.get("ocr.ocr_min_side", 2200)),
-                max_side=int(self.config.get("ocr.ocr_max_side", 4096)),
-                max_upscale=float(self.config.get("ocr.max_upscale", 3.0)),
-            )
+            if getattr(self.ocr_engine, "benefits_from_upscale", True):
+                image, scale = resize_for_ocr(
+                    self.capture.image,
+                    min_side=int(self.config.get("ocr.ocr_min_side", 2200)),
+                    max_side=int(self.config.get("ocr.ocr_max_side", 4096)),
+                    max_upscale=float(self.config.get("ocr.max_upscale", 3.0)),
+                )
+            else:
+                image, scale = self.capture.image, 1.0
             lines = self.ocr_engine.recognize(
                 image, lang=str(self.config.get("ocr.lang", "auto"))
             )

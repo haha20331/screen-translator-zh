@@ -23,7 +23,6 @@
 ## 尚未處理（之後的步驟）
 
 - `README.md`、`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`、`installer/`、`scripts/build_lite.ps1`、`scripts/sign_release.ps1`、`build-lite.spec` 仍是上游內容，打包階段（M9）一併改寫。
-- `utils/language_utils.py` 的 `to_paddle_lang` 已無呼叫者，加入 RapidOCR 後端時改寫為對應的語言對照。
 
 ## 如何比對上游
 

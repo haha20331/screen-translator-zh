@@ -32,7 +32,7 @@ DEFAULTS: dict[str, Any] = {
         "select_border_color": "#2878E8",
     },
     "ocr": {
-        "engine": "windows",
+        "engine": "rapidocr",
         "lang": "auto",
         "language_mode_version": 2,
         # auto 模式最多串行尝试几个语言包（每个都是一次整图 OCR）
@@ -44,6 +44,12 @@ DEFAULTS: dict[str, Any] = {
         "min_confidence": 0.6,
         "merge_y_tolerance_ratio": 0.3,
         "merge_x_gap_ratio": 0.8,
+        "rapidocr": {
+            # 偵測階段的長邊上限（像素）；越大越能抓小字，但越慢
+            "limit_side_len": 960,
+            # ONNX Runtime 執行緒數；0 = 自動（最多 4）
+            "threads": 0,
+        },
     },
     "translation": {
         "service": "google_free",

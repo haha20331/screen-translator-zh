@@ -22,6 +22,9 @@ class OCRUnavailableError(RuntimeError):
 
 class OCREngine(ABC):
     name: str = "base"
+    # 小图放大后再识别是否有帮助。Windows OCR 这类对小字很弱的引擎需要，
+    # 自带缩放的检测模型（RapidOCR）则不需要，放大只会拖慢速度。
+    benefits_from_upscale: bool = True
 
     def __init__(self, ocr_config: dict, app_config: Any = None, logger: Any = None) -> None:
         self.config = ocr_config or {}

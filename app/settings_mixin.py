@@ -185,7 +185,7 @@ class SettingsMixin:
     def _create_configured_ocr_engine(self):
         """Resolve the requested backend without making a light build unbootable."""
         requested = str(self.config.get("ocr.engine", "windows") or "windows")
-        candidates = list(dict.fromkeys((requested, "windows", "none")))
+        candidates = list(dict.fromkeys((requested, "rapidocr", "windows", "none")))
         failures: list[str] = []
         for candidate in candidates:
             try:

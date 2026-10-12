@@ -18,6 +18,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMessageBox, QWidget
 
 import services.ocr.null_ocr  # noqa: F401
+import services.ocr.rapidocr_ocr  # noqa: F401
 
 # 确保各 OCR 引擎 / 翻译适配器已注册（顺序影响 UI 下拉框默认项）
 import services.ocr.windows_ocr  # noqa: F401

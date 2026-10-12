@@ -18,11 +18,15 @@
     "select_mask_opacity": 84
   },
   "ocr": {
-    "engine": "windows",
+    "engine": "rapidocr",
     "lang": "auto",
     "min_confidence": 0.6,
     "merge_y_tolerance_ratio": 0.3,
-    "merge_x_gap_ratio": 0.8
+    "merge_x_gap_ratio": 0.8,
+    "rapidocr": {
+      "limit_side_len": 960,
+      "threads": 0
+    }
   },
   "translation": {
     "service": "google_free",

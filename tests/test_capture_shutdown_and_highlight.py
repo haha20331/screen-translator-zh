@@ -57,7 +57,7 @@ def test_shutdown_waits_for_real_worker_finished_before_quitting(tmp_path, monke
     controller.floating_status.deleteLater()
 
 
-def test_default_ocr_fallback_uses_none_only_after_windows_fails(tmp_path, monkeypatch):
+def test_default_ocr_fallback_uses_none_only_after_rapidocr_and_windows_fail(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     monkeypatch.setenv("SCREEN_TRANSLATOR_CONFIG", str(tmp_path / "config.json"))
     controller = Application(app)
@@ -74,13 +74,18 @@ def test_default_ocr_fallback_uses_none_only_after_windows_fails(tmp_path, monke
     monkeypatch.setattr(application_module, "create_ocr_engine", create)
 
     assert controller._create_configured_ocr_engine() is sentinel
-    assert attempts == ["windows", "none"]
+    assert attempts == ["rapidocr", "windows", "none"]
     assert controller._active_ocr_engine_name == "none"
     controller.floating_status.deleteLater()
     app.processEvents()
 
 
-def test_requested_engine_falls_back_to_windows_when_unavailable(tmp_path, monkeypatch):
+def _controller_with_engine(tmp_path, monkeypatch, usable: str, requested_error=OCRUnavailableError):
+    """Application whose create_ocr_engine only succeeds for `usable`.
+
+    The configured engine ("missing_engine") fails with `requested_error`; every other engine
+    except `usable` raises OCRUnavailableError. Returns (controller, attempts, sentinel).
+    """
     app = QApplication.instance() or QApplication([])
     monkeypatch.setenv("SCREEN_TRANSLATOR_CONFIG", str(tmp_path / "config.json"))
     controller = Application(app)
@@ -91,45 +96,41 @@ def test_requested_engine_falls_back_to_windows_when_unavailable(tmp_path, monke
 
     def create(name, *_args):
         attempts.append(name)
-        if name == "missing_engine":
-            raise OCRUnavailableError("engine unavailable")
-        if name == "windows":
+        if name == usable:
             return sentinel
-        raise AssertionError("none must not be used while Windows OCR works")
+        if name == "none":
+            raise AssertionError("none must not be used while a real engine works")
+        if name == "missing_engine":
+            raise requested_error("bad engine configuration")
+        raise OCRUnavailableError(f"{name} unavailable")
 
     monkeypatch.setattr(application_module, "create_ocr_engine", create)
+    return controller, attempts, sentinel
+
+
+def test_requested_engine_falls_back_to_rapidocr_when_unavailable(tmp_path, monkeypatch):
+    controller, attempts, sentinel = _controller_with_engine(tmp_path, monkeypatch, usable="rapidocr")
 
     assert controller._create_configured_ocr_engine() is sentinel
-    assert attempts == ["missing_engine", "windows"]
-    assert controller._active_ocr_engine_name == "windows"
+    assert attempts == ["missing_engine", "rapidocr"]
+    assert controller._active_ocr_engine_name == "rapidocr"
+    assert controller.config.get("ocr.engine") == "rapidocr"
     controller.floating_status.deleteLater()
-    app.processEvents()
+    QApplication.instance().processEvents()
 
 
-def test_requested_engine_configuration_error_still_falls_back_to_windows(tmp_path, monkeypatch):
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setenv("SCREEN_TRANSLATOR_CONFIG", str(tmp_path / "config.json"))
-    controller = Application(app)
-    controller.config = AppConfig(tmp_path / "config.json")
-    controller.config.set("ocr.engine", "missing_engine")
-    attempts = []
-    sentinel = object()
-
-    def create(name, *_args):
-        attempts.append(name)
-        if name == "missing_engine":
-            raise ValueError("bad engine configuration")
-        if name == "windows":
-            return sentinel
-        raise AssertionError("none must not be used while Windows OCR works")
-
-    monkeypatch.setattr(application_module, "create_ocr_engine", create)
+def test_windows_ocr_is_the_fallback_when_rapidocr_is_unavailable(tmp_path, monkeypatch):
+    # A configuration error (ValueError) on the requested engine must not abort the fallback chain either.
+    controller, attempts, sentinel = _controller_with_engine(
+        tmp_path, monkeypatch, usable="windows", requested_error=ValueError
+    )
 
     assert controller._create_configured_ocr_engine() is sentinel
-    assert attempts == ["missing_engine", "windows"]
+    assert attempts == ["missing_engine", "rapidocr", "windows"]
+    assert controller._active_ocr_engine_name == "windows"
     assert controller.config.get("ocr.engine") == "windows"
     controller.floating_status.deleteLater()
-    app.processEvents()
+    QApplication.instance().processEvents()
 
 
 def test_window_movement_reconfirms_once_then_schedules_capture(tmp_path, monkeypatch):
