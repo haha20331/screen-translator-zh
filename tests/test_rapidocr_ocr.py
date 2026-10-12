@@ -13,7 +13,7 @@ import pytest
 from app.config import AppConfig
 from app.models import CaptureInfo
 from services.ocr.base import OCRLine, list_ocr_engines
-from services.ocr.rapidocr_ocr import RapidOCREngine, _output_to_lines
+from services.ocr.rapidocr_ocr import RapidOCREngine, _output_to_lines, upscale_factor
 from workers.translation_worker import PipelineTask
 
 
@@ -100,12 +100,60 @@ def test_recognize_drops_alpha_channel_before_inference(monkeypatch):
         seen["contiguous"] = image.flags["C_CONTIGUOUS"]
         return _output(None, None, None)
 
-    engine = RapidOCREngine({})
+    engine = RapidOCREngine({"rapidocr": {"upscale_below": 0}})
     monkeypatch.setattr(engine, "_get_engine", lambda: fake_engine)
 
     engine.recognize(np.zeros((20, 30, 4), dtype=np.uint8))
 
     assert seen == {"shape": (20, 30, 3), "contiguous": True}
+
+
+@pytest.mark.parametrize(
+    ("height", "width", "below", "max_scale", "expected"),
+    [
+        (99, 573, 240, 2.0, 2.0),  # 短邊很小：受 max_scale 限制
+        (170, 619, 240, 2.0, pytest.approx(240 / 170)),  # 放大到短邊約 240
+        (239, 800, 240, 2.0, 1.0),  # 倍率 < 1.05 不值得放大
+        (240, 800, 240, 2.0, 1.0),  # 剛好達標
+        (190, 664, 0, 2.0, 1.0),  # below=0 關閉
+        (99, 573, 240, 1.0, 1.0),  # max_scale<=1 關閉
+        (0, 100, 240, 2.0, 1.0),  # 退化尺寸
+    ],
+)
+def test_upscale_factor_rules(height, width, below, max_scale, expected):
+    assert upscale_factor(height, width, below, max_scale) == expected
+
+
+def test_recognize_upscales_small_images_and_maps_boxes_back(monkeypatch):
+    seen = {}
+    polygon = [[40.0, 20.0], [200.0, 20.0], [200.0, 60.0], [40.0, 60.0]]  # 放大後（2x）的座標
+
+    def fake_engine(image):
+        seen["shape"] = image.shape
+        return _output(("字幕",), (polygon,), (0.9,))
+
+    engine = RapidOCREngine({})
+    monkeypatch.setattr(engine, "_get_engine", lambda: fake_engine)
+
+    (line,) = engine.recognize(np.zeros((99, 300, 3), dtype=np.uint8))
+
+    assert seen["shape"] == (198, 600, 3)
+    assert line.box == (20, 10, 80, 20)  # 還原回原圖尺度
+
+
+def test_recognize_leaves_large_images_alone(monkeypatch):
+    seen = {}
+
+    def fake_engine(image):
+        seen["shape"] = image.shape
+        return _output(None, None, None)
+
+    engine = RapidOCREngine({})
+    monkeypatch.setattr(engine, "_get_engine", lambda: fake_engine)
+
+    engine.recognize(np.zeros((400, 800, 3), dtype=np.uint8))
+
+    assert seen["shape"] == (400, 800, 3)
 
 
 def test_availability_reason_reports_missing_dependency(monkeypatch):

@@ -25,7 +25,9 @@
     "merge_x_gap_ratio": 0.8,
     "rapidocr": {
       "limit_side_len": 960,
-      "threads": 0
+      "threads": 0,
+      "upscale_below": 240,
+      "max_upscale": 2.0
     }
   },
   "translation": {

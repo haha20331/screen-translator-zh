@@ -32,3 +32,6 @@ Env/
 *.log
 .DS_Store
 Thumbs.db
+
+# 使用者的驗證樣本（含受版權保護的截圖），不進版控
+val_data/

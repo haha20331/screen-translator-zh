@@ -49,6 +49,9 @@ DEFAULTS: dict[str, Any] = {
             "limit_side_len": 960,
             # ONNX Runtime 執行緒數；0 = 自動（最多 4）
             "threads": 0,
+            # 影像短邊小於此像素時先放大再辨識（0 = 關閉），最多放大 max_upscale 倍
+            "upscale_below": 240,
+            "max_upscale": 2.0,
         },
     },
     "translation": {

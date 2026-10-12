@@ -8,7 +8,8 @@
     python scripts/ocr_benchmark.py --font-dir /mnt/c/Windows/Fonts
     python scripts/ocr_benchmark.py --font-dir C:\\Windows\\Fonts --engine windows --save-dir out
 
-真實截圖：把圖片放進資料夾（可選：同名 .txt 放標準答案，每行一句），執行::
+真實截圖：把圖片放進資料夾（可選：<圖名>.src.txt 放「原文」標準答案，每行一句；
+注意不是譯文），執行::
 
     python scripts/ocr_benchmark.py --images my_samples
 """
@@ -161,7 +162,7 @@ def report(results: list[Result]) -> None:
 
 
 def run_images(engine, folder: Path) -> None:
-    """對真實截圖逐張辨識並印出結果；有同名 .txt 時另算 CER。"""
+    """對真實截圖逐張辨識並印出結果；有 <圖名>.src.txt（原文答案）時另算 CER。"""
     paths = sorted(p for p in folder.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".bmp", ".webp"})
     if not paths:
         raise SystemExit(f"{folder} 內沒有圖片")
@@ -175,7 +176,7 @@ def run_images(engine, folder: Path) -> None:
         for line in ordered:
             x, y, w, h = line.box
             print(f"  ({x},{y},{w},{h}) {line.confidence:.2f}  {line.text}")
-        truth = path.with_suffix(".txt")
+        truth = path.with_name(path.stem + ".src.txt")
         if truth.exists():
             want = _normalize(truth.read_text(encoding="utf-8"))
             got = _normalize("".join(line.text for line in ordered))
