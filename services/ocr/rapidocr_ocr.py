@@ -45,7 +45,7 @@ class RapidOCREngine(OCREngine):
     def availability_reason(cls) -> str | None:
         for module, hint in (("rapidocr", "rapidocr"), ("onnxruntime", "onnxruntime")):
             if importlib.util.find_spec(module) is None:
-                return f"RapidOCR 依赖不可用：请安装 {hint}（pip install rapidocr onnxruntime）"
+                return f"RapidOCR 依賴不可用：請安裝 {hint}（pip install rapidocr onnxruntime）"
         return None
 
     @classmethod
@@ -93,7 +93,7 @@ class RapidOCREngine(OCREngine):
     def recognize(self, image_bgr, lang: str | None = None) -> list[OCRLine]:
         # lang 被忽略：多语言模型一次辨识英文与日文。
         if not isinstance(image_bgr, np.ndarray) or image_bgr.ndim != 3 or image_bgr.shape[2] not in (3, 4):
-            raise TypeError("RapidOCR 需要 H×W×3 的 BGR numpy 图像")
+            raise TypeError("RapidOCR 需要 H×W×3 的 BGR numpy 影像")
         if image_bgr.size == 0:
             return []
         image = np.ascontiguousarray(image_bgr[:, :, :3])

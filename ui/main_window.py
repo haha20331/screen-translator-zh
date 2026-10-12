@@ -317,7 +317,7 @@ class CaptureActionCard(QPushButton):
             painter.drawLine(x, y + 8, x + 39, y + 8)
 
         title_font = QFont()
-        title_font.setFamilies(["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
+        title_font.setFamilies(["Microsoft JhengHei UI", "Microsoft JhengHei", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
         title_font.setPixelSize(17)
         title_font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(title_font)
@@ -353,7 +353,7 @@ class MainWindow(QWidget):
         super().__init__(parent)
         self.controller = controller
         self.setObjectName("Root")
-        self.setWindowTitle("屏幕翻译")
+        self.setWindowTitle("螢幕翻譯")
         self.setMinimumSize(900, 540)
         self.resize(980, 580)
         self._faded_in = False
@@ -401,16 +401,16 @@ class MainWindow(QWidget):
         header.setContentsMargins(0, 0, 0, 0)
         title_stack = QVBoxLayout()
         title_stack.setSpacing(7)
-        title = QLabel("屏幕翻译")
+        title = QLabel("螢幕翻譯")
         title.setObjectName("TitleLabel")
-        hint = QLabel("框选、全屏或窗口，一键翻译覆盖")
+        hint = QLabel("框選、全屏或視窗，一鍵翻譯覆蓋")
         hint.setObjectName("HintLabel")
         title_stack.addStretch(1)
         title_stack.addWidget(title)
         title_stack.addWidget(hint)
         title_stack.addStretch(1)
         header.addLayout(title_stack, 1)
-        self.btn_settings = QPushButton("设置")
+        self.btn_settings = QPushButton("設定")
         self.btn_settings.setObjectName("SettingsButton")
         self.btn_settings.setFixedSize(102, 42)
         self.btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -423,9 +423,9 @@ class MainWindow(QWidget):
         self._action_layout = action_row
         action_row.setContentsMargins(18, 16, 18, 16)
         action_row.setSpacing(16)
-        self.btn_region = CaptureActionCard("框选翻译", "拖拽选择屏幕区域", "region", active=False)
-        self.btn_fullscreen = CaptureActionCard("全屏翻译", "翻译整个屏幕", "screen")
-        self.btn_window = CaptureActionCard("当前窗口", "翻译当前活动窗口", "window")
+        self.btn_region = CaptureActionCard("框選翻譯", "拖拽選擇螢幕區域", "region", active=False)
+        self.btn_fullscreen = CaptureActionCard("全屏翻譯", "翻譯整個螢幕", "screen")
+        self.btn_window = CaptureActionCard("當前視窗", "翻譯當前活動視窗", "window")
         for card in (self.btn_region, self.btn_fullscreen, self.btn_window):
             action_row.addWidget(card, 1)
         layout.addWidget(action_panel)
@@ -437,7 +437,7 @@ class MainWindow(QWidget):
         option_grid.setContentsMargins(22, 18, 22, 20)
         option_grid.setHorizontalSpacing(18)
         option_grid.setVerticalSpacing(9)
-        labels = ("源语言", "目标语言", "OCR", "翻译服务")
+        labels = ("源語言", "目標語言", "OCR", "翻譯服務")
         for col, label in enumerate(labels):
             caption = QLabel(label)
             caption.setObjectName("SectionLabel")
@@ -461,9 +461,9 @@ class MainWindow(QWidget):
         ev.setContentsMargins(22, 16, 22, 16)
         ev.setSpacing(10)
         ev_head = QHBoxLayout()
-        ev_title = QLabel("译文长这样")
+        ev_title = QLabel("譯文長這樣")
         ev_title.setObjectName("SectionLabel")
-        ev_hint = QLabel("译文会直接覆盖在屏幕原文的位置")
+        ev_hint = QLabel("譯文會直接覆蓋在螢幕原文的位置")
         ev_hint.setObjectName("ExampleHint")
         ev_head.addWidget(ev_title)
         ev_head.addStretch(1)
@@ -471,7 +471,7 @@ class MainWindow(QWidget):
         ev.addLayout(ev_head)
         es = QLabel("Hello, world! This is a screenshot translation demo.")
         es.setObjectName("ExampleSource")
-        et = QLabel("你好，世界！这是一段截图翻译的示例。")
+        et = QLabel("你好，世界！這是一段截圖翻譯的示例。")
         et.setObjectName("ExampleTarget")
         ev.addWidget(es)
         ev.addWidget(et)
@@ -483,19 +483,19 @@ class MainWindow(QWidget):
         self._footer_layout = bottom_row
         bottom_row.setContentsMargins(22, 14, 18, 14)
         bottom_row.setSpacing(10)
-        self.status_label = QLabel("就绪，选择一种方式开始")
+        self.status_label = QLabel("就緒，選擇一種方式開始")
         self.status_label.setObjectName("StatusLabel")
         bottom_row.addWidget(self.status_label, 1)
         self.check_keep_original = QCheckBox("保留原文")
-        self.btn_toggle = QPushButton("隐藏译文")
+        self.btn_toggle = QPushButton("隱藏譯文")
         self.btn_toggle.setCheckable(True)
         self.btn_toggle.setObjectName("ToggleButton")
-        self.btn_edit = QPushButton("编辑模式")
+        self.btn_edit = QPushButton("編輯模式")
         self.btn_edit.setCheckable(True)
         self.btn_edit.setObjectName("ToggleButton")
-        self.btn_refresh = QPushButton("刷新")
+        self.btn_refresh = QPushButton("重新整理")
         self.btn_refresh.setObjectName("RefreshButton")
-        self.btn_monitor = QPushButton("实时监控")
+        self.btn_monitor = QPushButton("即時監控")
         self.btn_monitor.setObjectName("MonitorButton")
         self.btn_monitor.setCheckable(True)
         for button in (self.btn_toggle, self.btn_edit, self.btn_refresh, self.btn_monitor):
@@ -778,9 +778,9 @@ class MainWindow(QWidget):
             self._window_capture_available and not getattr(self.controller, "_busy", False)
         )
         self.btn_window.set_detail(
-            "翻译当前活动窗口"
+            "翻譯當前活動視窗"
             if self._window_capture_available
-            else (reason or "此平台暂不支持窗口捕获")
+            else (reason or "此平臺暫不支援視窗捕獲")
         )
 
     def play_capture_departure(self, mode: str, callback: Callable[[], None]) -> None:
@@ -881,13 +881,13 @@ class MainWindow(QWidget):
     def set_overlay_checked(self, visible: bool) -> None:
         self._block_signals = True
         self.btn_toggle.setChecked(not visible)
-        self.btn_toggle.setText("隐藏译文" if visible else "显示译文")
+        self.btn_toggle.setText("隱藏譯文" if visible else "顯示譯文")
         self._block_signals = False
 
     def set_monitor_checked(self, active: bool) -> None:
         self._block_signals = True
         self.btn_monitor.setChecked(active)
-        self.btn_monitor.setText("停止监控" if active else "实时监控")
+        self.btn_monitor.setText("停止監控" if active else "即時監控")
         self._block_signals = False
 
     def set_edit_mode_checked(self, enabled: bool) -> None:

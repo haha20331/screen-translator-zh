@@ -881,7 +881,7 @@ def test_hotkey_conflict_does_not_mutate_config(qapp, tmp_path, monkeypatch):
     assert accepted == []
     assert dialog.isVisible()
     assert dialog.btn_save.isEnabled()
-    assert dialog.btn_save.text() == "保存设置"
+    assert dialog.btn_save.text() == "儲存設定"
     dialog.close()
 
 

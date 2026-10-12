@@ -118,3 +118,17 @@ def test_corrupt_config_backed_up(tmp_path):
     config = AppConfig(path)
     assert config.get("ocr.min_confidence") == 0.6
     assert path.with_suffix(".json.bak").exists()
+
+
+def test_legacy_monitor_interval_is_migrated_to_the_faster_default(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"monitor": {"interval_ms": 1200}}', encoding="utf-8")
+
+    assert AppConfig(path).get("monitor.interval_ms") == 400
+
+
+def test_customised_monitor_interval_is_kept(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"monitor": {"interval_ms": 2500}}', encoding="utf-8")
+
+    assert AppConfig(path).get("monitor.interval_ms") == 2500

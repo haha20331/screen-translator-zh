@@ -39,7 +39,7 @@ class YoudaoTranslator(Translator):
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:
         if not self.app_key or not self.app_secret:
             raise TranslationError(
-                "缺少有道翻译 App Key / Secret：请在设置填写，或设置环境变量 YOUDAO_APP_KEY、YOUDAO_APP_SECRET"
+                "缺少有道翻譯 App Key / Secret：請在設定填寫，或設定環境變數 YOUDAO_APP_KEY、YOUDAO_APP_SECRET"
             )
         curtime = str(int(time.time()))
         salt = uuid.uuid4().hex
@@ -60,22 +60,22 @@ class YoudaoTranslator(Translator):
                 self.base_url, data=params, timeout=float(self.config.get("timeout_seconds", 30))
             )
         except requests.RequestException as exc:
-            raise TranslationError("有道翻译请求失败（网络连接异常）") from exc
+            raise TranslationError("有道翻譯請求失敗（網路連線異常）") from exc
         if resp.status_code != 200:
             raise_for_status(resp, "有道")
         try:
             data = resp.json()
         except ValueError as exc:
-            raise TranslationError("有道翻译响应格式异常") from exc
+            raise TranslationError("有道翻譯響應格式異常") from exc
         if str(data.get("errorCode", "0")) not in ("0", "200", ""):
             raise TranslationError(
-                f"有道翻译错误 {data.get('errorCode')}: {data.get('errorMsg', '')}"
+                f"有道翻譯錯誤 {data.get('errorCode')}: {data.get('errorMsg', '')}"
             )
         out = data.get("translation") or []
         if len(out) != len(texts):
             if len(texts) == 1 and len(out) == 1:
                 return out
-            raise TranslationError("有道翻译返回条数与请求不符")
+            raise TranslationError("有道翻譯返回條數與請求不符")
         return [html.unescape(t) for t in out]
 
 

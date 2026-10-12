@@ -5,21 +5,21 @@ from __future__ import annotations
 import re
 
 LANGUAGES = [
-    ("auto", "自动检测"),
-    ("zh", "简体中文"),
-    ("zh-hant", "繁体中文"),
-    ("en", "英语"),
-    ("ja", "日语"),
-    ("ko", "韩语"),
-    ("fr", "法语"),
-    ("de", "德语"),
-    ("es", "西班牙语"),
-    ("ru", "俄语"),
-    ("pt", "葡萄牙语"),
-    ("it", "意大利语"),
-    ("vi", "越南语"),
-    ("th", "泰语"),
-    ("ar", "阿拉伯语"),
+    ("auto", "自動檢測"),
+    ("zh", "簡體中文"),
+    ("zh-hant", "繁體中文"),
+    ("en", "英語"),
+    ("ja", "日語"),
+    ("ko", "韓語"),
+    ("fr", "法語"),
+    ("de", "德語"),
+    ("es", "西班牙語"),
+    ("ru", "俄語"),
+    ("pt", "葡萄牙語"),
+    ("it", "義大利語"),
+    ("vi", "越南語"),
+    ("th", "泰語"),
+    ("ar", "阿拉伯語"),
 ]
 
 LANGUAGE_CODES = [code for code, _ in LANGUAGES]
@@ -143,8 +143,8 @@ def display_name(code: str) -> str:
 def to_openai_lang(code: str) -> str:
     return {
         "auto": "auto",
-        "zh": "简体中文 (zh)",
-        "zh-hant": "繁体中文 (zh-Hant)",
+        "zh": "簡體中文 (zh)",
+        "zh-hant": "繁體中文 (zh-Hant)",
         "en": "English (en)",
         "ja": "日本語 (ja)",
         "ko": "한국어 (ko)",

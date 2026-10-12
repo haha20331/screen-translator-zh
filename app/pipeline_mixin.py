@@ -20,10 +20,10 @@ class PipelineMixin:
     def _start_pipeline(self, capture: CaptureInfo) -> None:
         if not self._cancel_worker():
             self._abort_capture(
-                "上一次翻译仍在结束，请稍后重试",
+                "上一次翻譯仍在結束，請稍後重試",
                 failed=True,
-                error_title="任务仍在运行",
-                error_message="旧任务尚未安全结束，没有启动新的翻译。",
+                error_title="任務仍在執行",
+                error_message="舊任務尚未安全結束，沒有啟動新的翻譯。",
             )
             return
         try:
@@ -41,11 +41,11 @@ class PipelineMixin:
             self.worker.finished.connect(self._on_worker_finished)
             self.worker.start()
         except Exception as exc:
-            log.exception("启动翻译任务失败")
+            log.exception("啟動翻譯任務失敗")
             self._abort_capture(
-                "无法启动翻译任务",
+                "無法啟動翻譯任務",
                 failed=True,
-                error_title="处理失败",
+                error_title="處理失敗",
                 error_message=str(exc),
             )
 
@@ -71,15 +71,15 @@ class PipelineMixin:
             return
         if self._monitor_active:
             # 画面里没有文字是常态（视频/空白），不算错误，照常继续轮询
-            if message.startswith("没有识别到文字"):
+            if message.startswith("沒有識別到文字"):
                 self._monitor_no_text = True
-                self.set_status("监控中：当前画面没有可翻译的文字")
+                self.set_status("監控中：當前畫面沒有可翻譯的文字")
             else:
                 self._pipeline_error = message
-                self.set_status(f"监控出错：{message}")
+                self.set_status(f"監控出錯：{message}")
             return
         self._pipeline_error = message
-        self.set_status(f"处理失败：{message}")
+        self.set_status(f"處理失敗：{message}")
 
     def _on_worker_finished(self) -> None:
         signal_sender = self.sender()
@@ -100,7 +100,7 @@ class PipelineMixin:
                 if self._monitor_errors >= int(
                     self.config.get("monitor.max_consecutive_errors", 3)
                 ):
-                    self.stop_monitor(reason="连续翻译失败，已停止实时监控")
+                    self.stop_monitor(reason="連續翻譯失敗，已停止即時監控")
                     return
             self._monitor_no_text = False
             self._monitor_schedule_next()
@@ -113,12 +113,12 @@ class PipelineMixin:
             self._set_busy(False)
             self.floating_status.hide_fade(delay_ms=STATUS_HOLD)
             return
-        message = self._pipeline_error or "处理已取消"
+        message = self._pipeline_error or "處理已取消"
         show_dialog = bool(self._pipeline_error)
         self._abort_capture(
             message,
             failed=show_dialog,
-            error_title="处理失败" if show_dialog else "",
+            error_title="處理失敗" if show_dialog else "",
             error_message=message if show_dialog else "",
         )
 
@@ -152,7 +152,7 @@ class PipelineMixin:
         if self.overlay_manager is None:
             return
         if not regions:
-            self._pipeline_error = "没有识别到可翻译的文字"
+            self._pipeline_error = "沒有識別到可翻譯的文字"
             return
         # 监控模式下，内容没变就保留当前覆盖层不重绘，避免整屏闪烁
         if self._monitor_active:
@@ -178,15 +178,15 @@ class PipelineMixin:
         self._pipeline_succeeded = True
         if failed_count:
             self.set_status(
-                f"识别 {recognized_count} 个文本块，已翻译 {translated_count} 个，"
-                f"{failed_count} 个保留原文"
+                f"識別 {recognized_count} 個文本塊，已翻譯 {translated_count} 個，"
+                f"{failed_count} 個保留原文"
             )
         else:
             self.set_status(
-                f"翻译完成：识别 {recognized_count} 个文本块，"
-                f"已翻译 {translated_count} 个"
+                f"翻譯完成：識別 {recognized_count} 個文本塊，"
+                f"已翻譯 {translated_count} 個"
             )
-        self.floating_status.set_text("翻译完成")
+        self.floating_status.set_text("翻譯完成")
         self._save_history(capture, regions)
         original = "\n".join(str(getattr(r, "text", "") or "") for r in regions)
         translated = "\n".join(str(getattr(r, "translated_text", "") or "") for r in regions)

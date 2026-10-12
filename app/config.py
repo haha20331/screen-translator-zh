@@ -150,7 +150,7 @@ DEFAULTS: dict[str, Any] = {
     "monitor": {
         "enabled": True,
         # 相邻两轮监控的间隔（毫秒）。页面静止时这基本就是“刷新延迟”
-        "interval_ms": 1200,
+        "interval_ms": 400,
         # 连续出错超过这个次数就自动停掉监控，避免一直空转
         "max_consecutive_errors": 3,
         # 把上一轮译文写回缓存：内容没变过的文本块直接命中缓存，几乎瞬时
@@ -232,6 +232,19 @@ def _normalize_translation(data: dict[str, Any]) -> None:
     translation.setdefault("google_free_fallback_to_mymemory", True)
 
 
+_LEGACY_MONITOR_INTERVAL_MS = 1200
+
+
+def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
+    """舊預設的輪詢間隔 1200 ms 太慢（每輪結束後固定多等 1.2 秒）；沒被使用者改過就換成新預設。
+
+    畫面沒變時會直接跳過 OCR 與翻譯，所以縮短間隔不會增加無謂的運算。
+    """
+    loaded_monitor = loaded.get("monitor") if isinstance(loaded.get("monitor"), dict) else {}
+    if loaded_monitor.get("interval_ms") == _LEGACY_MONITOR_INTERVAL_MS:
+        data.setdefault("monitor", {})["interval_ms"] = DEFAULTS["monitor"]["interval_ms"]
+
+
 def _normalize_ocr(data: dict[str, Any], loaded: dict[str, Any]) -> None:
     """Migrate the old Chinese-only OCR default to real automatic detection."""
 
@@ -283,6 +296,7 @@ class AppConfig:
                 _normalize_appearance(self.data)
                 _normalize_translation(self.data)
                 _normalize_ocr(self.data, loaded)
+                _normalize_monitor(self.data, loaded)
                 # This legacy field is retained for compatibility; capture
                 # feedback now reads appearance.accent.  Normalize the red
                 # debug value so old files no longer carry misleading state.
@@ -298,7 +312,7 @@ class AppConfig:
                 pass
             from app.logger import get_logger
 
-            get_logger("config").warning("配置文件损坏，已备份到 %s：%s", backup, exc)
+            get_logger("config").warning("配置檔案損壞，已備份到 %s：%s", backup, exc)
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

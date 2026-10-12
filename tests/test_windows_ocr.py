@@ -33,7 +33,7 @@ def test_available_rejects_non_windows_without_importing_optional_dependency(mon
     )
 
     assert not windows_ocr.WindowsOCREngine.available()
-    assert windows_ocr.WindowsOCREngine.availability_reason() == "Windows OCR 仅支持 Windows 10/11"
+    assert windows_ocr.WindowsOCREngine.availability_reason() == "Windows OCR 僅支援 Windows 10/11"
 
 
 def test_available_accepts_the_sync_winocr_api(monkeypatch):
@@ -165,7 +165,7 @@ def test_auto_mode_uses_installed_language_candidates_and_picks_cleaner_text(mon
     "image, message",
     [
         (np.zeros((2, 2), dtype=np.uint8), "H×W×3"),
-        (np.zeros((0, 2, 3), dtype=np.uint8), "空图像"),
+        (np.zeros((0, 2, 3), dtype=np.uint8), "空影像"),
         (np.zeros((2, 2, 3), dtype=np.float32), "uint8"),
     ],
 )

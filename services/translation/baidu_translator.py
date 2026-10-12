@@ -32,7 +32,7 @@ class BaiduTranslator(Translator):
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:
         if not self.appid or not self.secret:
             raise TranslationError(
-                "缺少百度翻译 APP ID / Key：请在设置填写，或设置环境变量 BAIDU_APP_ID、BAIDU_APP_KEY"
+                "缺少百度翻譯 APP ID / Key：請在設定填寫，或設定環境變數 BAIDU_APP_ID、BAIDU_APP_KEY"
             )
         q = "\n".join(texts)
         salt = "".join(random.choices(string.digits, k=10))
@@ -53,16 +53,16 @@ class BaiduTranslator(Translator):
                 self.base_url, data=params, timeout=float(self.config.get("timeout_seconds", 30))
             )
         except requests.RequestException as exc:
-            raise TranslationError("百度翻译请求失败（网络连接异常）") from exc
+            raise TranslationError("百度翻譯請求失敗（網路連線異常）") from exc
         if resp.status_code != 200:
             raise_for_status(resp, "百度")
         try:
             data = resp.json()
         except ValueError as exc:
-            raise TranslationError("百度翻译响应格式异常") from exc
+            raise TranslationError("百度翻譯響應格式異常") from exc
         if "error_code" in data:
             raise TranslationError(
-                f"百度翻译错误 {data.get('error_code')}: {data.get('error_msg', '')}"
+                f"百度翻譯錯誤 {data.get('error_code')}: {data.get('error_msg', '')}"
             )
         results = data.get("trans_result") or []
         out = [html.unescape(item.get("dst", "")) for item in results]
@@ -70,7 +70,7 @@ class BaiduTranslator(Translator):
             # 单行模式下百度可能把整段作为一条返回
             if len(texts) == 1 and len(out) == 1:
                 return out
-            raise TranslationError("百度翻译返回条数与请求不符")
+            raise TranslationError("百度翻譯返回條數與請求不符")
         return out
 
 

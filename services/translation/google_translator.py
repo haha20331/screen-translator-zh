@@ -24,7 +24,7 @@ class GoogleTranslator(Translator):
 
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:
         if not self.api_key:
-            raise TranslationError("缺少 Google API Key：请设置 GOOGLE_TRANSLATE_API_KEY 或在设置中填写")
+            raise TranslationError("缺少 Google API Key：請設定 GOOGLE_TRANSLATE_API_KEY 或在設定中填寫")
         target = to_google_lang(target_language)
         params = {
             "key": self.api_key,
@@ -41,7 +41,7 @@ class GoogleTranslator(Translator):
                 timeout=float(self.config.get("timeout_seconds", 30)),
             )
         except requests.RequestException as exc:
-            raise TranslationError("Google 翻译请求失败（网络连接异常）") from exc
+            raise TranslationError("Google 翻譯請求失敗（網路連線異常）") from exc
         response.encoding = "utf-8"
         if response.status_code != 200:
             raise_for_status(response, "Google")
@@ -49,7 +49,7 @@ class GoogleTranslator(Translator):
             items = response.json()["data"]["translations"]
             return [html.unescape(item["translatedText"]) for item in items]
         except (KeyError, ValueError) as exc:
-            raise TranslationError("Google 响应格式异常") from exc
+            raise TranslationError("Google 響應格式異常") from exc
 
 
 register_translator(GoogleTranslator)

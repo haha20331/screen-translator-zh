@@ -15,16 +15,16 @@ from utils.language_utils import to_openai_lang
 DEFAULT_GLOSSARY = """\
 health = 生命值
 mana = 法力
-attack = 攻击力
-defense = 防御力
-damage = 伤害
-experience = 经验
-level = 等级
-quest = 任务
+attack = 攻擊力
+defense = 防禦力
+damage = 傷害
+experience = 經驗
+level = 等級
+quest = 任務
 inventory = 背包
-settings = 设置
-save = 保存
-load = 读取
+settings = 設定
+save = 儲存
+load = 讀取
 """
 
 
@@ -63,11 +63,11 @@ class OpenAITranslator(Translator):
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:
         if not self.api_key:
             raise TranslationError(
-                "缺少 OpenAI API Key：请设置 OPENAI_API_KEY 环境变量或在设置中填写"
+                "缺少 OpenAI API Key：請設定 OPENAI_API_KEY 環境變數或在設定中填寫"
             )
 
         target_desc = to_openai_lang(target_language)
-        source_desc = to_openai_lang(source_language) if source_language and source_language != "auto" else "自动检测"
+        source_desc = to_openai_lang(source_language) if source_language and source_language != "auto" else "自動檢測"
         numbered = "\n".join(f"{i + 1}\t{text}" for i, text in enumerate(texts))
 
         payload: dict[str, Any] = {
@@ -77,17 +77,17 @@ class OpenAITranslator(Translator):
                 {
                     "role": "system",
                     "content": (
-                        "你是资深游戏本地化与字幕翻译专家。把用户按行号给出的文本翻译成 "
-                        f"{target_desc}（源语言：{source_desc}）。\n"
+                        "你是資深遊戲本地化與字幕翻譯專家。把使用者按行號給出的文本翻譯成 "
+                        f"{target_desc}（源語言：{source_desc}）。\n"
                         "要求：\n"
-                        "1. 译文口语自然、贴近母语表达，不要逐字直译，不要翻译腔；\n"
-                        "2. 长度尽量与原文接近，适合覆盖显示；\n"
-                        "3. 专有名词、人名、地名、产品名保持原文；\n"
-                        "4. 术语表（原文 = 译文）必须严格遵守：\n"
+                        "1. 譯文口語自然、貼近母語表達，不要逐字直譯，不要翻譯腔；\n"
+                        "2. 長度儘量與原文接近，適合覆蓋顯示；\n"
+                        "3. 專有名詞、人名、地名、產品名保持原文；\n"
+                        "4. 術語表（原文 = 譯文）必須嚴格遵守：\n"
                         f"{self.glossary}\n"
-                        "5. 只输出 JSON 数组，元素顺序和数量与输入行完全一致，每元素一行译文；\n"
-                        "6. 保留数字、网址、邮箱、占位符、变量名和特殊符号；\n"
-                        "7. 不要输出任何解释、引号包裹或代码块标记。"
+                        "5. 只輸出 JSON 陣列，元素順序和數量與輸入行完全一致，每元素一行譯文；\n"
+                        "6. 保留數字、網址、郵箱、佔位符、變數名和特殊符號；\n"
+                        "7. 不要輸出任何解釋、引號包裹或程式碼塊標記。"
                     ),
                 },
                 {"role": "user", "content": numbered},
@@ -102,7 +102,7 @@ class OpenAITranslator(Translator):
                 timeout=float(self.config.get("timeout_seconds", 30)),
             )
         except requests.RequestException as exc:
-            raise TranslationError("OpenAI 请求失败（超时或网络错误）") from exc
+            raise TranslationError("OpenAI 請求失敗（超時或網路錯誤）") from exc
 
         response.encoding = "utf-8"
         if response.status_code != 200:
@@ -111,14 +111,14 @@ class OpenAITranslator(Translator):
         try:
             content = response.json()["choices"][0]["message"]["content"]
         except (KeyError, IndexError, ValueError) as exc:
-            raise TranslationError("OpenAI 响应格式异常") from exc
+            raise TranslationError("OpenAI 響應格式異常") from exc
 
         parsed = _parse_json_array(content)
         if parsed is None:
-            raise TranslationError("OpenAI 返回内容不是可解析的 JSON 数组")
+            raise TranslationError("OpenAI 返回內容不是可解析的 JSON 陣列")
         if len(parsed) != len(texts):
             # 数量对不上说明模型漏行/错位，抛错让上层逐条重试，避免译文错位
-            raise TranslationError(f"OpenAI 返回 {len(parsed)} 条，期望 {len(texts)} 条，已逐条重试")
+            raise TranslationError(f"OpenAI 返回 {len(parsed)} 條，期望 {len(texts)} 條，已逐條重試")
         return parsed
 
 

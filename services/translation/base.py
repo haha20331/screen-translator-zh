@@ -137,7 +137,7 @@ class Translator(ABC):
                 # the captured OCR text (for example Google's ``q`` parameter).  Logs
                 # are included in diagnostic exports, so record structure only.
                 log.warning(
-                    "批量翻译第 %d 次失败（类型=%s，限流=%s）",
+                    "批次翻譯第 %d 次失敗（型別=%s，限流=%s）",
                     attempt + 1,
                     type(exc).__name__,
                     bool(getattr(exc, "rate_limited", False)),
@@ -150,9 +150,9 @@ class Translator(ABC):
             except Exception as exc:  # 网络等未包装异常
                 # Never promote an arbitrary exception string to a user-visible
                 # TranslationError: requests exceptions can contain the full URL.
-                last_error = TranslationError("翻译服务发生未预期错误")
+                last_error = TranslationError("翻譯服務發生未預期錯誤")
                 log.warning(
-                    "批量翻译第 %d 次异常（类型=%s）",
+                    "批次翻譯第 %d 次異常（型別=%s）",
                     attempt + 1,
                     type(exc).__name__,
                 )
@@ -165,12 +165,12 @@ class Translator(ABC):
         if (
             getattr(last_error, "rate_limited", False)
             or "429" in error_text
-            or "过于频繁" in error_text
+            or "過於頻繁" in error_text
             or "rate limit" in error_text.lower()
         ):
             self.last_failed_count = len(texts)
             self.last_failed_indices = set(range(len(texts)))
-            log.warning("翻译服务限流，跳过逐条重试并保留原文：%d 条", len(texts))
+            log.warning("翻譯服務限流，跳過逐條重試並保留原文：%d 條", len(texts))
             return list(texts)
 
         # 批量全挂：逐条重试，失败条目保留原文，避免整屏空白
@@ -186,17 +186,17 @@ class Translator(ABC):
                     break
                 except Exception:
                     if last_error is None:
-                        last_error = TranslationError("翻译服务发生未预期错误")
+                        last_error = TranslationError("翻譯服務發生未預期錯誤")
             if not ok:
                 self.last_failed_count += 1
                 failed_indices.add(index)
                 out.append(text)
                 # Never place captured screen text in logs: diagnostic bundles
                 # intentionally include logs and must not become translation history.
-                log.warning("单条翻译失败，已保留原文（长度=%d）", len(text))
+                log.warning("單條翻譯失敗，已保留原文（長度=%d）", len(text))
 
         if self.last_failed_count == len(texts):
-            raise TranslationError(str(last_error or "翻译失败"))
+            raise TranslationError(str(last_error or "翻譯失敗"))
         self.last_failed_indices = failed_indices
         return out
 

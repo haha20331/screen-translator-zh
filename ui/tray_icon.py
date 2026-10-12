@@ -47,36 +47,36 @@ class TrayIcon(QSystemTrayIcon):
         super().__init__(build_icon(), parent)
         self.controller = controller
         self._busy = False
-        self.setToolTip("屏幕截图翻译")
+        self.setToolTip("螢幕截圖翻譯")
 
         menu = QMenu()
-        self.act_region = QAction("框选翻译", menu)
-        self.act_fullscreen = QAction("全屏翻译", menu)
-        self.act_window = QAction("当前窗口翻译", menu)
+        self.act_region = QAction("框選翻譯", menu)
+        self.act_fullscreen = QAction("全屏翻譯", menu)
+        self.act_window = QAction("當前視窗翻譯", menu)
         self._window_capture_available = True
         menu.addAction(self.act_region)
         menu.addAction(self.act_fullscreen)
         menu.addAction(self.act_window)
         menu.addSeparator()
-        self.act_toggle = QAction("隐藏译文", menu)
+        self.act_toggle = QAction("隱藏譯文", menu)
         self.act_toggle.setCheckable(True)
         self.act_toggle.setChecked(True)
-        self.act_edit = QAction("编辑模式", menu)
+        self.act_edit = QAction("編輯模式", menu)
         self.act_edit.setCheckable(True)
         menu.addAction(self.act_toggle)
         menu.addAction(self.act_edit)
-        self.act_refresh = QAction("刷新翻译", menu)
+        self.act_refresh = QAction("重新整理翻譯", menu)
         menu.addAction(self.act_refresh)
-        self.act_monitor = QAction("实时监控", menu)
+        self.act_monitor = QAction("即時監控", menu)
         self.act_monitor.setCheckable(True)
         menu.addAction(self.act_monitor)
-        self.act_copy_src = QAction("复制原文", menu)
-        self.act_copy_tr = QAction("复制译文", menu)
+        self.act_copy_src = QAction("複製原文", menu)
+        self.act_copy_tr = QAction("複製譯文", menu)
         menu.addAction(self.act_copy_src)
         menu.addAction(self.act_copy_tr)
         menu.addSeparator()
-        self.act_settings = QAction("打开设置", menu)
-        self.act_about = QAction("关于", menu)
+        self.act_settings = QAction("開啟設定", menu)
+        self.act_about = QAction("關於", menu)
         self.act_quit = QAction("退出", menu)
         menu.addAction(self.act_settings)
         menu.addAction(self.act_about)
@@ -105,12 +105,12 @@ class TrayIcon(QSystemTrayIcon):
         except Exception:
             hk = {}
         self._hk = hk
-        self.act_region.setText(f"框选翻译\t{_hkfmt(hk.get('capture_region', ''))}")
-        self.act_fullscreen.setText(f"全屏翻译\t{_hkfmt(hk.get('capture_fullscreen', ''))}")
-        self.act_window.setText(f"当前窗口翻译\t{_hkfmt(hk.get('capture_window', ''))}")
-        self.act_refresh.setText(f"刷新翻译\t{_hkfmt(hk.get('refresh', ''))}")
-        self.act_toggle.setText(f"隐藏译文\t{_hkfmt(hk.get('toggle_overlay', ''))}")
-        self.act_monitor.setText(f"实时监控\t{_hkfmt(hk.get('monitor_toggle', ''))}")
+        self.act_region.setText(f"框選翻譯\t{_hkfmt(hk.get('capture_region', ''))}")
+        self.act_fullscreen.setText(f"全屏翻譯\t{_hkfmt(hk.get('capture_fullscreen', ''))}")
+        self.act_window.setText(f"當前視窗翻譯\t{_hkfmt(hk.get('capture_window', ''))}")
+        self.act_refresh.setText(f"重新整理翻譯\t{_hkfmt(hk.get('refresh', ''))}")
+        self.act_toggle.setText(f"隱藏譯文\t{_hkfmt(hk.get('toggle_overlay', ''))}")
+        self.act_monitor.setText(f"即時監控\t{_hkfmt(hk.get('monitor_toggle', ''))}")
 
     def refresh_appearance(self) -> None:
         self.setIcon(build_icon())
@@ -133,13 +133,13 @@ class TrayIcon(QSystemTrayIcon):
     def set_overlay_checked(self, visible: bool) -> None:
         self.act_toggle.setChecked(visible)
         self.act_toggle.setText(
-            f"{'隐藏译文' if visible else '显示译文'}\t{_hkfmt(self._hk.get('toggle_overlay', ''))}"
+            f"{'隱藏譯文' if visible else '顯示譯文'}\t{_hkfmt(self._hk.get('toggle_overlay', ''))}"
         )
 
     def set_monitor_checked(self, active: bool) -> None:
         self.act_monitor.setChecked(active)
         self.act_monitor.setText(
-            f"{'停止监控' if active else '实时监控'}\t{_hkfmt(self._hk.get('monitor_toggle', ''))}"
+            f"{'停止監控' if active else '即時監控'}\t{_hkfmt(self._hk.get('monitor_toggle', ''))}"
         )
 
     def set_edit_mode_checked(self, enabled: bool) -> None:
@@ -164,4 +164,4 @@ class TrayIcon(QSystemTrayIcon):
     def set_window_capture_available(self, available: bool, reason: str = "") -> None:
         self._window_capture_available = bool(available)
         self.act_window.setEnabled(self._window_capture_available)
-        self.act_window.setToolTip("" if available else (reason or "此平台暂不支持窗口捕获"))
+        self.act_window.setToolTip("" if available else (reason or "此平臺暫不支援視窗捕獲"))

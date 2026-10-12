@@ -40,7 +40,7 @@ class CaptureMixin:
         try:
             screen = self.qt_app.primaryScreen()
             if screen is None:
-                raise RuntimeError("没有检测到可用显示器")
+                raise RuntimeError("沒有檢測到可用顯示器")
             self._dispose_selection()
             self.selection = SelectionOverlay(
                 screen.virtualGeometry(),
@@ -54,11 +54,11 @@ class CaptureMixin:
             self.selection.activateWindow()
             self.selection.setFocus()
         except Exception as exc:
-            log.exception("显示框选层失败")
+            log.exception("顯示框選層失敗")
             self._abort_capture(
-                "无法开始框选",
+                "無法開始框選",
                 failed=True,
-                error_title="无法开始框选",
+                error_title="無法開始框選",
                 error_message=str(exc),
             )
 
@@ -66,33 +66,33 @@ class CaptureMixin:
         self._dispose_selection()
         if not isinstance(logical_bbox, tuple) or len(logical_bbox) != 4:
             self._abort_capture(
-                "框选坐标无效",
+                "框選座標無效",
                 failed=True,
-                error_title="框选失败",
-                error_message="收到的框选坐标格式无效，请重试。",
+                error_title="框選失敗",
+                error_message="收到的框選座標格式無效，請重試。",
             )
             return
         parts = dpi_utils.logical_rect_to_physical_parts(logical_bbox, self.monitor_map)
         if not parts:
-            self._abort_capture("框选区域太小，已取消")
+            self._abort_capture("框選區域太小，已取消")
             return
         if not dpi_utils.parts_form_rectangle(parts):
             self._abort_capture(
-                "框选跨越了不同缩放比例的屏幕",
+                "框選跨越了不同縮放比例的螢幕",
                 failed=True,
-                error_title="请在单个屏幕内框选",
-                error_message="跨不同缩放比例的显示器会产生非矩形像素区域，请在一个屏幕内完成框选。",
+                error_title="請在單個螢幕內框選",
+                error_message="跨不同縮放比例的顯示器會產生非矩形畫素區域，請在一個螢幕內完成框選。",
             )
             return
         physical = dpi_utils.union_rects(parts)
         if physical[2] - physical[0] < 4 or physical[3] - physical[1] < 4:
-            self._abort_capture("框选区域太小，已取消")
+            self._abort_capture("框選區域太小，已取消")
             return
         self._schedule_capture("region", bbox=physical, delay_ms=SELECTION_SETTLE)
 
     def _on_selection_cancelled(self) -> None:
         self._dispose_selection()
-        self._abort_capture("已取消框选")
+        self._abort_capture("已取消框選")
 
     def start_capture(self, mode: str) -> None:
         if self._busy or self.window is None or self.overlay_manager is None:
@@ -102,12 +102,12 @@ class CaptureMixin:
         if mode == "window":
             if not window_capture_available():
                 self.window.play_capture_failure("window")
-                self.set_status("当前平台暂不支持原生窗口捕获")
+                self.set_status("當前平臺暫不支援原生視窗捕獲")
                 return
             hwnd = self._resolve_window_target()
             if not hwnd:
                 self.window.play_capture_failure("window")
-                self.set_status("请先切换到要翻译的窗口，再使用当前窗口翻译")
+                self.set_status("請先切換到要翻譯的視窗，再使用當前視窗翻譯")
                 return
             self._begin_capture_session(
                 "window",
@@ -135,7 +135,7 @@ class CaptureMixin:
             # across different per-monitor coordinate spaces. Skip the outline,
             # keep the target frozen, and proceed after the compositor settles.
             if len(intersecting) != 1:
-                self.set_status("已锁定跨屏窗口，正在准备捕获…")
+                self.set_status("已鎖定跨屏視窗，正在準備捕獲…")
                 self._schedule_capture(
                     "window",
                     target_hwnd=session.target_hwnd,
@@ -156,11 +156,11 @@ class CaptureMixin:
             self.window_highlight.finished.connect(self._on_window_highlight_finished)
             self.window_highlight.show_and_confirm()
         except Exception as exc:
-            log.exception("确认目标窗口失败")
+            log.exception("確認目標視窗失敗")
             self._abort_capture(
-                "目标窗口已经不可用",
+                "目標視窗已經不可用",
                 failed=True,
-                error_title="窗口捕获失败",
+                error_title="視窗捕獲失敗",
                 error_message=str(exc),
             )
 
@@ -169,15 +169,15 @@ class CaptureMixin:
         hwnd = session.target_hwnd if session is not None else 0
         self._dispose_window_highlight()
         if not hwnd:
-            self._abort_capture("目标窗口已经不可用", failed=True)
+            self._abort_capture("目標視窗已經不可用", failed=True)
             return
         try:
             current_rect = _application.get_window_rect_physical(hwnd)
         except WindowCaptureError as exc:
             self._abort_capture(
-                "目标窗口已经不可用",
+                "目標視窗已經不可用",
                 failed=True,
-                error_title="窗口捕获失败",
+                error_title="視窗捕獲失敗",
                 error_message=str(exc),
             )
             return
@@ -208,8 +208,8 @@ class CaptureMixin:
         try:
             self.refresh_monitor_map()
         except Exception as exc:
-            log.exception("刷新显示器映射失败")
-            self.show_error("无法开始截图", str(exc))
+            log.exception("重新整理顯示器對映失敗")
+            self.show_error("無法開始截圖", str(exc))
             return False
         self._capture_session = _CaptureSession(
             mode=mode,
@@ -264,20 +264,20 @@ class CaptureMixin:
                 capture = self.screenshot_service.capture_fullscreen()
             elif mode == "window":
                 if not hwnd:
-                    raise WindowCaptureError("没有可用的目标窗口")
+                    raise WindowCaptureError("沒有可用的目標視窗")
                 capture = self.screenshot_service.capture_window(hwnd)
                 self._last_window_hwnd = hwnd
             elif mode == "region" and bbox is not None:
                 capture = self.screenshot_service.capture_bbox(bbox)
                 capture.mode = "region"
             else:
-                raise RuntimeError("截图请求缺少有效范围")
+                raise RuntimeError("截圖請求缺少有效範圍")
         except Exception as exc:
-            log.exception("截图失败")
+            log.exception("截圖失敗")
             self._abort_capture(
-                "截图失败",
+                "截圖失敗",
                 failed=True,
-                error_title="截图失败",
+                error_title="截圖失敗",
                 error_message=str(exc),
             )
             return
@@ -285,7 +285,7 @@ class CaptureMixin:
 
     def refresh(self) -> None:
         if self._last_capture is None:
-            self.set_status("还没有截图，先截一张再说")
+            self.set_status("還沒有截圖，先截一張再說")
             return
         if self._busy:
             return
@@ -295,7 +295,7 @@ class CaptureMixin:
             if not hwnd or not _application.is_window_capturable(hwnd):
                 if self.window is not None:
                     self.window.play_capture_failure("window")
-                self.set_status("上次翻译的窗口已经关闭或最小化")
+                self.set_status("上次翻譯的視窗已經關閉或最小化")
                 return
             self._begin_capture_session(
                 "window",
@@ -340,7 +340,7 @@ class CaptureMixin:
         if self._capture_session is None:
             return
         self._last_capture = capture
-        self.floating_status.show_fade("正在识别…", anchor=self._capture_anchor(capture.bbox))
+        self.floating_status.show_fade("正在識別…", anchor=self._capture_anchor(capture.bbox))
         self._start_pipeline(capture)
 
     def _capture_anchor(self, bbox: tuple[int, int, int, int]) -> QPoint | None:

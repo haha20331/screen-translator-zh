@@ -22,18 +22,18 @@ class MonitorMixin:
         if self._monitor_active:
             return
         if self._busy:
-            self.set_status("正在处理上一次任务，稍后再开监控")
+            self.set_status("正在處理上一次任務，稍後再開監控")
             return
         if self._last_capture is None:
-            self.set_status("先截一张图，再开启实时监控")
+            self.set_status("先截一張圖，再開啟即時監控")
             return
         if self._last_capture.mode == "window" and (
             not self._last_window_hwnd or not _application.is_window_capturable(self._last_window_hwnd)
         ):
-            self.set_status("上次窗口已关闭，请重新框选/窗口截图后再监控")
+            self.set_status("上次視窗已關閉，請重新框選/視窗截圖後再監控")
             return
         if not bool(self.config.get("monitor.enabled", True)):
-            self.set_status("实时监控已在设置中关闭")
+            self.set_status("即時監控已在設定中關閉")
             return
         self._monitor_request = {
             "mode": self._last_capture.mode,
@@ -49,7 +49,7 @@ class MonitorMixin:
         self._monitor_signature = ""
         self._monitor_frame_hash = ""
         self._set_busy(True)
-        self.set_status("实时监控已开启，页面一动就会自动重译")
+        self.set_status("即時監控已開啟，頁面一動就會自動重譯")
         if self.window is not None:
             self.window.set_monitor_checked(True)
         if self.tray is not None:
@@ -72,7 +72,7 @@ class MonitorMixin:
             self.window.set_monitor_checked(False)
         if self.tray is not None:
             self.tray.set_monitor_checked(False)
-        self.set_status(reason or "已停止实时监控")
+        self.set_status(reason or "已停止即時監控")
 
     def _monitor_cycle(self) -> None:
         from utils.image_utils import frame_signature
@@ -94,10 +94,10 @@ class MonitorMixin:
             else:
                 return
         except Exception as exc:
-            log.warning("监控截图失败：%s", exc)
+            log.warning("監控截圖失敗：%s", exc)
             self._monitor_errors += 1
             if self._monitor_errors >= int(self.config.get("monitor.max_consecutive_errors", 3)):
-                self.stop_monitor(reason="监控截图连续失败，已停止")
+                self.stop_monitor(reason="監控截圖連續失敗，已停止")
             else:
                 self._monitor_schedule_next()
             return

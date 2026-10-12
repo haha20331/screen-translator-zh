@@ -89,7 +89,7 @@ class TranslationCache:
                 self.path.rename(self.path.with_suffix(".json.bak"))
             except OSError:
                 pass
-            log.warning("翻译缓存损坏，已重置：%s", exc)
+            log.warning("翻譯快取損壞，已重置：%s", exc)
 
     def _save_locked(self) -> None:
         try:
@@ -99,4 +99,4 @@ class TranslationCache:
                 json.dump(self._data, fp, ensure_ascii=False)
             os.replace(tmp, self.path)
         except OSError as exc:
-            log.warning("翻译缓存保存失败：%s", exc)
+            log.warning("翻譯快取儲存失敗：%s", exc)

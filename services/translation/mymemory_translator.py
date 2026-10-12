@@ -107,7 +107,7 @@ class MyMemoryTranslator(Translator):
         source = to_mymemory_lang(source_language) if source_language and source_language != "auto" else "en"
         target = to_mymemory_lang(target_language)
         if not target or target == source:
-            raise TranslationError(f"MyMemory 不支持 {source_language or 'auto'} → {target_language} 方向")
+            raise TranslationError(f"MyMemory 不支援 {source_language or 'auto'} → {target_language} 方向")
         try:
             response = requests.get(
                 self.base_url,
@@ -115,23 +115,23 @@ class MyMemoryTranslator(Translator):
                 timeout=float(self.config.get("timeout_seconds", 30)),
             )
         except requests.RequestException as exc:
-            raise TranslationError("MyMemory 请求失败（网络连接异常）") from exc
+            raise TranslationError("MyMemory 請求失敗（網路連線異常）") from exc
         response.encoding = "utf-8"
         if response.status_code == 429:
             self._on_rate_limited()
-            raise TranslationError("MyMemory 请求过于频繁（429），已自动放慢节奏", rate_limited=True)
+            raise TranslationError("MyMemory 請求過於頻繁（429），已自動放慢節奏", rate_limited=True)
         if response.status_code != 200:
-            raise TranslationError(f"MyMemory 返回错误 {response.status_code}")
+            raise TranslationError(f"MyMemory 返回錯誤 {response.status_code}")
         try:
             data = response.json()
             response_status = int(data.get("responseStatus", 0))
             if response_status != 200:
-                raise TranslationError(f"MyMemory 返回错误 {response_status}")
+                raise TranslationError(f"MyMemory 返回錯誤 {response_status}")
             translated = data["responseData"]["translatedText"]
         except (KeyError, ValueError) as exc:
-            raise TranslationError("MyMemory 响应格式异常") from exc
+            raise TranslationError("MyMemory 響應格式異常") from exc
         if not translated or not translated.strip():
-            raise TranslationError("MyMemory 返回空译文")
+            raise TranslationError("MyMemory 返回空譯文")
         self._on_success()
         return translated
 
@@ -145,7 +145,7 @@ class MyMemoryTranslator(Translator):
     def _on_rate_limited(self) -> None:
         self._current_interval = min(self._current_interval * 2.0, self._max_interval)
         self._success_streak = 0
-        _get_logger().warning("MyMemory 429，本次请求间隔调整为 %.1fs", self._current_interval)
+        _get_logger().warning("MyMemory 429，本次請求間隔調整為 %.1fs", self._current_interval)
 
     def _on_success(self) -> None:
         self._success_streak += 1

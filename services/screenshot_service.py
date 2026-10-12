@@ -31,7 +31,7 @@ class ScreenshotService:
             try:
                 self._sct.close()
             except Exception as exc:
-                _log.debug("释放 mss 截图资源失败（可忽略）：%s", exc)
+                _log.debug("釋放 mss 截圖資源失敗（可忽略）：%s", exc)
             self._sct = None
 
     def monitors(self) -> list[dict]:
@@ -71,32 +71,32 @@ class ScreenshotService:
         )
 
         if not is_window_capturable(hwnd):
-            raise WindowCaptureError("目标窗口不可见、已最小化或已经关闭")
+            raise WindowCaptureError("目標視窗不可見、已最小化或已經關閉")
         rect = get_window_rect_physical(hwnd)
         virtual = self.virtual_screen_bbox()
         from utils.dpi_utils import intersect
 
         clamped = intersect(rect, virtual)
         if clamped is None:
-            raise WindowCaptureError("目标窗口不在当前桌面可见范围内")
+            raise WindowCaptureError("目標視窗不在當前桌面可見範圍內")
 
         try:
             image, native_rect = capture_window_bgr(hwnd)
             native_clamped = intersect(native_rect, virtual)
             if native_clamped is None:
-                raise WindowCaptureError("目标窗口不在当前桌面可见范围内")
+                raise WindowCaptureError("目標視窗不在當前桌面可見範圍內")
             left = native_clamped[0] - native_rect[0]
             top = native_clamped[1] - native_rect[1]
             right = left + native_clamped[2] - native_clamped[0]
             bottom = top + native_clamped[3] - native_clamped[1]
             image = image[top:bottom, left:right].copy()
             if image.size == 0:
-                raise WindowCaptureError("目标窗口没有可捕获的像素")
+                raise WindowCaptureError("目標視窗沒有可捕獲的畫素")
             # Some GPU/protected surfaces report PrintWindow success but return
             # a fully black buffer. Treat only the degenerate all-black case as
             # failure so the validated screen crop can recover visible content.
             if int(image.max()) <= 1:
-                raise WindowCaptureError("原生窗口捕获返回了空白画面")
+                raise WindowCaptureError("原生視窗捕獲返回了空白畫面")
             capture = CaptureInfo(
                 image=image,
                 bbox=native_clamped,
@@ -108,11 +108,11 @@ class ScreenshotService:
             # remains safe here because the target rectangle was fully validated;
             # it must never fall back to the whole virtual desktop.
             if not is_window_capturable(hwnd):
-                raise WindowCaptureError("目标窗口在捕获前已经关闭或隐藏")
+                raise WindowCaptureError("目標視窗在捕獲前已經關閉或隱藏")
             current_rect = get_window_rect_physical(hwnd)
             current_clamped = intersect(current_rect, virtual)
             if current_clamped is None:
-                raise WindowCaptureError("目标窗口已移出当前桌面可见范围")
+                raise WindowCaptureError("目標視窗已移出當前桌面可見範圍")
             capture = self.capture_bbox(current_clamped)
         capture.mode = "window"
         return capture

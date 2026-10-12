@@ -21,7 +21,7 @@ from PIL import Image
 from services.ocr.base import OCREngine, OCRLine, register_engine
 from utils.language_utils import to_windows_lang
 
-_WINOCR_INSTALL_HINT = "请安装可选依赖：pip install winocr"
+_WINOCR_INSTALL_HINT = "請安裝可選依賴：pip install winocr"
 
 
 def _field(value: Any, name: str, default: Any = None) -> Any:
@@ -47,18 +47,18 @@ class WindowsOCREngine(OCREngine):
         """Return an actionable reason instead of an import traceback."""
 
         if sys.platform != "win32":
-            return "Windows OCR 仅支持 Windows 10/11"
+            return "Windows OCR 僅支援 Windows 10/11"
         version = getattr(sys, "getwindowsversion", None)
         if version is not None and version().major < 10:
             return "Windows OCR 需要 Windows 10 或更高版本"
         try:
             module = importlib.import_module("winocr")
         except Exception as exc:
-            return f"Windows OCR 依赖不可用（{exc.__class__.__name__}）：{_WINOCR_INSTALL_HINT}"
+            return f"Windows OCR 依賴不可用（{exc.__class__.__name__}）：{_WINOCR_INSTALL_HINT}"
         if not callable(getattr(module, "recognize_pil", None)) and not callable(
             getattr(module, "recognize_pil_sync", None)
         ):
-            return f"winocr 安装不完整（缺少 recognize_pil）：{_WINOCR_INSTALL_HINT}"
+            return f"winocr 安裝不完整（缺少 recognize_pil）：{_WINOCR_INSTALL_HINT}"
         return None
 
     @classmethod
@@ -71,7 +71,7 @@ class WindowsOCREngine(OCREngine):
             return importlib.import_module("winocr")
         except Exception as exc:
             raise RuntimeError(
-                f"Windows OCR 依赖不可用：{_WINOCR_INSTALL_HINT}（{exc.__class__.__name__}）"
+                f"Windows OCR 依賴不可用：{_WINOCR_INSTALL_HINT}（{exc.__class__.__name__}）"
             ) from exc
 
     @staticmethod
@@ -79,13 +79,13 @@ class WindowsOCREngine(OCREngine):
         """Validate an OpenCV-style BGR ndarray and convert it without cv2."""
 
         if not isinstance(image_bgr, np.ndarray):
-            raise TypeError("Windows OCR 需要 numpy BGR 图像")
+            raise TypeError("Windows OCR 需要 numpy BGR 影像")
         if image_bgr.ndim != 3 or image_bgr.shape[2] not in (3, 4):
-            raise ValueError("Windows OCR 需要 H×W×3 或 H×W×4 的 BGR 图像")
+            raise ValueError("Windows OCR 需要 H×W×3 或 H×W×4 的 BGR 影像")
         if image_bgr.size == 0:
-            raise ValueError("Windows OCR 不能识别空图像")
+            raise ValueError("Windows OCR 不能識別空影像")
         if image_bgr.dtype != np.uint8:
-            raise ValueError("Windows OCR 需要 uint8 BGR 图像")
+            raise ValueError("Windows OCR 需要 uint8 BGR 影像")
 
         rgb = np.ascontiguousarray(image_bgr[:, :, :3][:, :, ::-1])
         return Image.fromarray(rgb, mode="RGB")
@@ -99,7 +99,7 @@ class WindowsOCREngine(OCREngine):
         except RuntimeError:
             pass
         else:
-            raise RuntimeError("Windows OCR 不能在运行中的 asyncio 事件循环内同步执行")
+            raise RuntimeError("Windows OCR 不能在執行中的 asyncio 事件迴圈內同步執行")
 
         async def wait() -> Any:
             return await result
@@ -113,7 +113,7 @@ class WindowsOCREngine(OCREngine):
             return sync_recognize(image, language)
         recognize = getattr(winocr, "recognize_pil", None)
         if not callable(recognize):
-            raise RuntimeError(f"winocr 安装不完整（缺少 recognize_pil）：{_WINOCR_INSTALL_HINT}")
+            raise RuntimeError(f"winocr 安裝不完整（缺少 recognize_pil）：{_WINOCR_INSTALL_HINT}")
         return cls._wait_for_result(recognize(image, language))
 
     @staticmethod
@@ -241,7 +241,7 @@ class WindowsOCREngine(OCREngine):
             return []
 
         raise RuntimeError(
-            "Windows OCR 识别失败。请在 Windows 设置中安装对应的 OCR 语言功能包"
+            "Windows OCR 識別失敗。請在 Windows 設定中安裝對應的 OCR 語言功能包"
             f"（{'; '.join(errors)}）"
         )
 

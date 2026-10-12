@@ -15,34 +15,34 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QGuiApplication
 
 PALETTE_PRESETS = (
-    ("warm_paper", "暖纸", "温和、自然的纸张底色"),
-    ("mist", "雾蓝", "更清透的冷静灰蓝"),
-    ("midnight", "墨夜", "低眩光的深色阅读环境"),
-    ("system", "跟随系统", "随系统深浅色自动切换"),
+    ("warm_paper", "暖紙", "溫和、自然的紙張底色"),
+    ("mist", "霧藍", "更清透的冷靜灰藍"),
+    ("midnight", "墨夜", "低眩光的深色閱讀環境"),
+    ("system", "跟隨系統", "隨系統深淺色自動切換"),
 )
 
 ACCENT_PRESETS = (
-    ("#2878E8", "曜蓝"),
+    ("#2878E8", "曜藍"),
     ("#168A82", "松石"),
     ("#B66A14", "琥珀"),
     ("#7258D6", "藤紫"),
 )
 
 MOTION_PRESETS = (
-    ("flow", "灵动", "短促回弹，反馈更鲜明"),
-    ("calm", "舒缓", "节奏从容，过渡更柔和"),
-    ("minimal", "精简", "只保留必要状态变化"),
+    ("flow", "靈動", "短促回彈，反饋更鮮明"),
+    ("calm", "舒緩", "節奏從容，過渡更柔和"),
+    ("minimal", "精簡", "只保留必要狀態變化"),
 )
 
 DENSITY_PRESETS = (
     ("spacious", "舒展", "更多呼吸感"),
-    ("balanced", "均衡", "默认布局"),
-    ("compact", "紧凑", "提高信息密度"),
+    ("balanced", "均衡", "預設佈局"),
+    ("compact", "緊湊", "提高資訊密度"),
 )
 
 SURFACE_PRESETS = (
-    ("clean", "纯净", "减少层级与边界"),
-    ("layered", "柔和层次", "用细边框区分区域"),
+    ("clean", "純淨", "減少層級與邊界"),
+    ("layered", "柔和層次", "用細邊框區分區域"),
 )
 
 

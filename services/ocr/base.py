@@ -62,5 +62,5 @@ def create_ocr_engine(name: str, ocr_config: dict, app_config: Any = None) -> OC
     if engine_class is None:
         raise OCRUnavailableError(f"未知 OCR 引擎：{name}")
     if not engine_class.available():
-        raise OCRUnavailableError(f"OCR 引擎 {name} 不可用（依赖未安装或初始化失败）")
+        raise OCRUnavailableError(f"OCR 引擎 {name} 不可用（依賴未安裝或初始化失敗）")
     return engine_class(ocr_config, app_config)

@@ -104,7 +104,7 @@ class PersonalizationChoice(QRadioButton):
         selected = bool(selected)
         self._selected = selected
         self.setChecked(selected)
-        state_hint = "当前已选择" if selected else "可选择"
+        state_hint = "當前已選擇" if selected else "可選擇"
         self.setAccessibleDescription(f"{self.detail}；{state_hint}")
         target = 1.0 if selected else 0.0
         self._selection_animation.stop()
@@ -229,7 +229,7 @@ class PersonalizationChoice(QRadioButton):
             painter.drawRoundedRect(rect.adjusted(2.5, 2.5, -2.5, -2.5), 9, 9)
 
         label_font = QFont()
-        label_font.setFamilies(["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
+        label_font.setFamilies(["Microsoft JhengHei UI", "Microsoft JhengHei", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
         label_font.setPixelSize(13)
         label_font.setWeight(QFont.Weight.DemiBold)
         detail_font = QFont(label_font)
@@ -330,7 +330,7 @@ class PersonalizationChoiceRow(QWidget):
         if not any(card.value == value for card in self.cards):
             if self._mode != "accent":
                 return
-            self._append_card(value, "自定义", value)
+            self._append_card(value, "自定義", value)
         changed = value != self._value
         self._value = value
         for card in self.cards:
@@ -445,7 +445,7 @@ class AppearancePreview(QWidget):
         painter.drawRoundedRect(outer, 14, 14)
 
         title_font = QFont()
-        title_font.setFamilies(["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
+        title_font.setFamilies(["Microsoft JhengHei UI", "Microsoft JhengHei", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
         title_font.setPixelSize(13)
         title_font.setWeight(QFont.Weight.DemiBold)
         small_font = QFont(title_font)
@@ -453,10 +453,10 @@ class AppearancePreview(QWidget):
         small_font.setWeight(QFont.Weight.Normal)
         painter.setFont(title_font)
         painter.setPen(self._color("ink"))
-        painter.drawText(18, 27, "实时体验")
+        painter.drawText(18, 27, "即時體驗")
         painter.setFont(small_font)
         painter.setPen(self._color("muted"))
-        painter.drawText(80, 27, "框选 → 识别 → 译文")
+        painter.drawText(80, 27, "框選 → 識別 → 譯文")
 
         density_pad = {"spacious": 17, "balanced": 13, "compact": 9}.get(
             self._to_tokens.density, 13
@@ -473,8 +473,8 @@ class AppearancePreview(QWidget):
         right = QRectF(divider_x + density_pad, body.top() + 11, body.right() - divider_x - density_pad * 2, body.height() - 22)
         painter.setFont(small_font)
         painter.setPen(self._color("muted"))
-        painter.drawText(QPointF(left.left(), left.top() + 12), "原文区域")
-        painter.drawText(QPointF(right.left(), right.top() + 12), "译文出现")
+        painter.drawText(QPointF(left.left(), left.top() + 12), "原文區域")
+        painter.drawText(QPointF(right.left(), right.top() + 12), "譯文出現")
 
         mini = QRectF(left.left(), left.top() + 23, left.width(), left.height() - 27)
         painter.setBrush(self._color("surface_alt"))
@@ -499,7 +499,7 @@ class AppearancePreview(QWidget):
         painter.drawLine(QLineF(right.left(), original_y, right.right() - 16, original_y))
         lines = (
             ("Translate what you see", 0.34, 0.65),
-            ("所见，即刻可读", 0.56, 0.88),
+            ("所見，即刻可讀", 0.56, 0.88),
         )
         for index, (text, start, end) in enumerate(lines):
             progress = self._stage(self._reveal_progress, start, end)
@@ -524,5 +524,5 @@ class AppearancePreview(QWidget):
         painter.drawText(
             badge.adjusted(19, 0, -6, 0),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-            "主题已响应",
+            "主題已響應",
         )

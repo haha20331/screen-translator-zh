@@ -61,7 +61,7 @@ class GoogleFreeTranslator(Translator):
         source = to_google_lang(source_language) if source_language and source_language != "auto" else "auto"
         target = to_google_lang(target_language)
         if not target:
-            raise TranslationError(f"Google 免费翻译不支持目标语言：{target_language}")
+            raise TranslationError(f"Google 免費翻譯不支援目標語言：{target_language}")
 
         results: list[str] = [""] * len(texts)
         failed_indices: set[int] = set()
@@ -112,7 +112,7 @@ class GoogleFreeTranslator(Translator):
         self.last_failed_count = len(failed_indices)
         if len(failed_indices) == len(texts):
             raise TranslationError(
-                str(last_error or "Google 免费翻译失败"), rate_limited=saw_rate_limit
+                str(last_error or "Google 免費翻譯失敗"), rate_limited=saw_rate_limit
             )
         return results
 
@@ -175,25 +175,25 @@ class GoogleFreeTranslator(Translator):
             except requests.RequestException as exc:
                 if attempt == 0:
                     continue
-                raise TranslationError("Google 免费翻译请求失败（网络连接异常）") from exc
+                raise TranslationError("Google 免費翻譯請求失敗（網路連線異常）") from exc
             if response.status_code == 429:
-                raise TranslationError("Google 免费翻译请求过于频繁（429），已保留原文", rate_limited=True)
+                raise TranslationError("Google 免費翻譯請求過於頻繁（429），已保留原文", rate_limited=True)
             if response.status_code >= 500 and attempt == 0:
                 time.sleep(0.3)
                 continue
             if response.status_code != 200:
-                raise TranslationError(f"Google 免费翻译返回错误 {response.status_code}")
+                raise TranslationError(f"Google 免費翻譯返回錯誤 {response.status_code}")
             try:
                 data = response.json()
                 translated = "".join(
                     segment[0] for segment in data[0] if segment and segment[0]
                 )
             except (IndexError, KeyError, TypeError, ValueError) as exc:
-                raise TranslationError("Google 免费翻译响应格式异常") from exc
+                raise TranslationError("Google 免費翻譯響應格式異常") from exc
             if not translated.strip():
-                raise TranslationError("Google 免费翻译返回空译文")
+                raise TranslationError("Google 免費翻譯返回空譯文")
             return html.unescape(translated)
-        raise TranslationError("Google 免费翻译请求失败")
+        raise TranslationError("Google 免費翻譯請求失敗")
 
     # ------------------------------------------------------------------ 节流
     def _pace(self) -> None:

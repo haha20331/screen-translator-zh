@@ -26,16 +26,16 @@ _ARCHIVE_CONFIG = "config.json"
 _ARCHIVE_SYSTEM = "system.json"
 _LOG_NAME_RE = re.compile(r"^app\.log(?:\.[1-3])?$")
 _LEGACY_TRANSLATION_TEXT_RE = re.compile(
-    r"(单条翻译失败，保留原文：)[^\r\n]*"
+    r"(單條翻譯失敗，保留原文：)[^\r\n]*"
 )
 _LEGACY_BATCH_TRANSLATION_ERROR_RE = re.compile(
-    r"(批量翻译第\s*\d+\s*次(?:失败|异常)[：:])[^\r\n]*"
+    r"(批次翻譯第\s*\d+\s*次(?:失敗|異常)[：:])[^\r\n]*"
 )
 _LEGACY_PIPELINE_ERROR_RE = re.compile(
-    r"((?:状态[：:]\s*)?处理失败[：:])[^\r\n]*"
+    r"((?:狀態[：:]\s*)?處理失敗[：:])[^\r\n]*"
 )
 _LEGACY_PROVIDER_ERROR_RE = re.compile(
-    r"(状态[：:][^\r\n]{0,96}?(?:请求失败|返回错误)[^：:\r\n]{0,24}[：:])[^\r\n]*"
+    r"(狀態[：:][^\r\n]{0,96}?(?:請求失敗|返回錯誤)[^：:\r\n]{0,24}[：:])[^\r\n]*"
 )
 _LEGACY_QUERY_VALUE_RE = re.compile(
     r"(?i)([?&](?:q|text|query|input|source)=)[^&\s'\"<>]*"
@@ -230,7 +230,7 @@ class DiagnosticsExporter:
         """
         target = Path(target_path)
         if not target.name or target.name in {".", ".."}:
-            raise DiagnosticsExportError("诊断包目标路径无效")
+            raise DiagnosticsExportError("診斷包目標路徑無效")
         if target.suffix.lower() != ".zip":
             target = target.with_suffix(".zip")
         temporary_name: str | None = None
@@ -246,7 +246,7 @@ class DiagnosticsExporter:
             temporary_name = None
             return target
         except Exception as exc:
-            raise DiagnosticsExportError(f"导出诊断包失败：{exc}") from exc
+            raise DiagnosticsExportError(f"匯出診斷包失敗：{exc}") from exc
         finally:
             if temporary_name:
                 try:

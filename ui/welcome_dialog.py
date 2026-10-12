@@ -36,7 +36,7 @@ class WelcomeDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self._on_finish = on_finish
-        self.setWindowTitle("欢迎使用 屏幕翻译")
+        self.setWindowTitle("歡迎使用 螢幕翻譯")
         self.setMinimumSize(600, 500)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
@@ -56,9 +56,9 @@ class WelcomeDialog(QDialog):
         hb = QVBoxLayout(header)
         hb.setContentsMargins(36, 28, 36, 18)
         hb.setSpacing(8)
-        title = QLabel("欢迎使用 屏幕翻译")
+        title = QLabel("歡迎使用 螢幕翻譯")
         title.setObjectName("WelcomeTitle")
-        sub = QLabel("三步上手，把屏幕上任何看不懂的文字，一键变成你能读懂的语言。")
+        sub = QLabel("三步上手，把螢幕上任何看不懂的文字，一鍵變成你能讀懂的語言。")
         sub.setObjectName("WelcomeSubtitle")
         hb.addWidget(title)
         hb.addWidget(sub)
@@ -132,26 +132,26 @@ class WelcomeDialog(QDialog):
         v = QVBoxLayout(page)
         v.setContentsMargins(36, 12, 36, 8)
         v.setSpacing(10)
-        intro = QLabel("先选一种截图方式，框好范围后即开始识别与翻译：")
+        intro = QLabel("先選一種截圖方式，框好範圍後即開始識別與翻譯：")
         intro.setObjectName("WelcomeBody")
         intro.setWordWrap(True)
         v.addWidget(intro)
         v.addWidget(
             self._mode_row(
-                "▦", "框选翻译", self._hotkeys.get("capture_region", ""),
-                "拖拽鼠标圈出任意屏幕区域，适合零散段落。",
+                "▦", "框選翻譯", self._hotkeys.get("capture_region", ""),
+                "拖拽滑鼠圈出任意螢幕區域，適合零散段落。",
             )
         )
         v.addWidget(
             self._mode_row(
-                "▣", "全屏翻译", self._hotkeys.get("capture_fullscreen", ""),
-                "一次翻译整个屏幕，适合网页或长文档。",
+                "▣", "全屏翻譯", self._hotkeys.get("capture_fullscreen", ""),
+                "一次翻譯整個螢幕，適合網頁或長文件。",
             )
         )
         v.addWidget(
             self._mode_row(
-                "▢", "当前窗口", self._hotkeys.get("capture_window", ""),
-                "自动锁定最前面的应用窗口，无需手动框选。",
+                "▢", "當前視窗", self._hotkeys.get("capture_window", ""),
+                "自動鎖定最前面的應用視窗，無需手動框選。",
             )
         )
         v.addStretch(1)
@@ -163,11 +163,11 @@ class WelcomeDialog(QDialog):
         v.setContentsMargins(36, 12, 36, 8)
         v.setSpacing(12)
         body = QLabel(
-            "在主界面顶部选好<strong>源语言</strong>与<strong>目标语言</strong>，"
-            "点任意截图方式即可翻译。\n\n"
-            "默认使用内置词典翻译，<strong>开箱即用、无需任何配置</strong>；"
-            "想要更地道的在线翻译，可在「设置 → 翻译」填入对应服务的 API Key，"
-            "程序会自动切换到该服务。"
+            "在主介面頂部選好<strong>源語言</strong>與<strong>目標語言</strong>，"
+            "點任意截圖方式即可翻譯。\n\n"
+            "預設使用內建詞典翻譯，<strong>開箱即用、無需任何配置</strong>；"
+            "想要更地道的線上翻譯，可在「設定 → 翻譯」填入對應服務的 API Key，"
+            "程式會自動切換到該服務。"
         )
         body.setObjectName("WelcomeBody")
         body.setWordWrap(True)
@@ -180,9 +180,9 @@ class WelcomeDialog(QDialog):
         v.setContentsMargins(36, 12, 36, 8)
         v.setSpacing(12)
         body = QLabel(
-            "翻译时主窗口会最小化到系统托盘，译文直接覆盖在屏幕上原文的位置。\n\n"
-            "关闭主窗口不会退出程序——单击托盘图标即可随时唤回；"
-            "按 <strong>F1</strong> 可随时查看本帮助与全部快捷键。"
+            "翻譯時主視窗會最小化到系統托盤，譯文直接覆蓋在螢幕上原文的位置。\n\n"
+            "關閉主視窗不會退出程式——單擊托盤圖示即可隨時喚回；"
+            "按 <strong>F1</strong> 可隨時檢視本幫助與全部快捷鍵。"
         )
         body.setObjectName("WelcomeBody")
         body.setWordWrap(True)
@@ -198,7 +198,7 @@ class WelcomeDialog(QDialog):
             dot.style().unpolish(dot)
             dot.style().polish(dot)
         self.btn_back.setEnabled(index > 0)
-        self.btn_next.setText("开始使用" if index == self._stack.count() - 1 else "下一步")
+        self.btn_next.setText("開始使用" if index == self._stack.count() - 1 else "下一步")
 
     def _back(self) -> None:
         if self._page > 0:

@@ -408,8 +408,8 @@ class TranslationOverlayWindow(QWidget):
         original = "\n".join(str(getattr(b, "text", "") or "") for b in self._blocks)
         translated = "\n".join(str(getattr(b, "translated_text", "") or "") for b in self._blocks)
         menu = QMenu(self)
-        act_src = menu.addAction("复制原文")
-        act_tr = menu.addAction("复制译文")
+        act_src = menu.addAction("複製原文")
+        act_tr = menu.addAction("複製譯文")
         chosen = menu.exec(event.globalPos())
         if chosen is act_src and original:
             QApplication.clipboard().setText(original)
@@ -623,6 +623,9 @@ class TranslationOverlayWindow(QWidget):
         custom = str(self._config.get("overlay.font_family", "")) or ""
         families = [custom] if custom else []
         families += [
+            "Microsoft JhengHei UI",
+            "Microsoft JhengHei",
+            "Noto Sans CJK TC",
             "Microsoft YaHei UI",
             "Microsoft YaHei",
             "Noto Sans CJK SC",

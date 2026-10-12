@@ -103,11 +103,11 @@ class WindowCaptureHighlight(QWidget):
         painter.drawLine(frame.left() + 16, frame.top(), frame.left() + 16 + length, frame.top())
 
         if draw_progress > 0.35:
-            label = "已锁定窗口"
+            label = "已鎖定視窗"
             if self._title:
                 label += f" · {self._title[:28]}"
             font = QFont()
-            font.setFamilies(["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
+            font.setFamilies(["Microsoft JhengHei UI", "Microsoft JhengHei", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
             font.setPixelSize(12)
             painter.setFont(font)
             metrics = painter.fontMetrics()

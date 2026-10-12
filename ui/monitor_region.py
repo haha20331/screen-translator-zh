@@ -203,9 +203,9 @@ class MonitorRegionSelector(QWidget):
         # 否則它會被截進畫面、被 OCR 當成原文讀進來。
         if not window_affinity.supported():
             return
-        text = "拖拽调整 · 双击停止"
+        text = "拖拽調整 · 雙擊停止"
         font = QFont()
-        font.setFamilies(["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
+        font.setFamilies(["Microsoft JhengHei UI", "Microsoft JhengHei", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
         font.setPixelSize(12)
         painter.setFont(font)
         metrics = painter.fontMetrics()

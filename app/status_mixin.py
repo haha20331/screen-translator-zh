@@ -13,7 +13,7 @@ class StatusMixin:
     """跨模块共用的状态栏 / 错误弹窗 / 覆盖层显隐中枢。"""
 
     def set_status(self, text: str) -> None:
-        log.info("状态：%s", text)
+        log.info("狀態：%s", text)
         if self.window is not None:
             self.window.set_status(text)
         if self.tray is not None:

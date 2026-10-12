@@ -41,7 +41,7 @@ class FloatingStatus(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
-        self._text = "正在翻译…"
+        self._text = "正在翻譯…"
         self._phase = 0
         self._timer = QTimer(self)
         self._timer.setInterval(motion_frame_interval())
@@ -209,7 +209,7 @@ class FloatingStatus(QWidget):
             )
 
         font = QFont()
-        font.setFamilies(["Microsoft YaHei UI", "Microsoft YaHei", "SimSun"])
+        font.setFamilies(["Microsoft JhengHei UI", "Microsoft JhengHei", "Microsoft YaHei UI", "Microsoft YaHei", "SimSun"])
         font.setPointSize(10)
         painter.setFont(font)
         painter.setPen(QColor(tokens.ink))

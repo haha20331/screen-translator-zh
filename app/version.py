@@ -20,7 +20,7 @@ def _runtime_version() -> str:
             encoding="ascii"
         ).strip()
     except (AttributeError, OSError) as exc:
-        _log.debug("读取冻结版本文件失败，回退源码版本：%s", exc)
+        _log.debug("讀取凍結版本檔案失敗，回退原始碼版本：%s", exc)
         return _SOURCE_VERSION
     if re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", value):
         return value

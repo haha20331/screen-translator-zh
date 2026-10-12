@@ -122,7 +122,7 @@ class SettingsMixin:
         if resolved_service != self.config.get("translation.service", "mock"):
             self.config.set("translation.service", resolved_service)
             self.config.save()
-            self.set_status(f"检测到 API Key，已自动切换到 {resolved_service} 翻译服务")
+            self.set_status(f"檢測到 API Key，已自動切換到 {resolved_service} 翻譯服務")
         self.translator = self._build_translator()
         self._warmup()
         if self.overlay_manager is not None:
@@ -130,11 +130,11 @@ class SettingsMixin:
         try:
             self._apply_hotkeys()
         except HotkeyError as exc:
-            self.show_error("快捷键", str(exc))
+            self.show_error("快捷鍵", str(exc))
         self._apply_autostart()
         if self.window is not None:
             self.window.reload_values()
-        self.set_status("设置已保存")
+        self.set_status("設定已儲存")
 
     def apply_runtime_selection(
         self,
@@ -170,8 +170,8 @@ class SettingsMixin:
         if self.window is not None:
             self.window.reload_values()
         self.set_status(
-            f"已切换：OCR={self._active_ocr_engine_name} 翻译={self.config.get('translation.service')} "
-            f"目标={self.config.get('translation.target_language')}"
+            f"已切換：OCR={self._active_ocr_engine_name} 翻譯={self.config.get('translation.service')} "
+            f"目標={self.config.get('translation.target_language')}"
         )
 
     def _build_translator(self):
@@ -221,9 +221,9 @@ class SettingsMixin:
                 try:
                     self.config.save()
                 except OSError as exc:
-                    log.warning("无法保存 OCR 回退选择：%s", exc)
+                    log.warning("無法儲存 OCR 回退選擇：%s", exc)
             return engine
-        raise OCRUnavailableError("没有可用的 OCR 引擎：" + "; ".join(failures))
+        raise OCRUnavailableError("沒有可用的 OCR 引擎：" + "; ".join(failures))
 
     def _resolve_translator_service(self) -> str:
         """启动时若当前是 mock 且检测到已配置的真实服务 Key，自动切换。"""
@@ -244,8 +244,8 @@ class SettingsMixin:
         try:
             self.hotkey_manager.apply(self.config.hotkeys())
         except HotkeyError as exc:
-            log.exception("快捷键注册失败")
-            self.set_status(f"快捷键注册失败：{exc}")
+            log.exception("快捷鍵註冊失敗")
+            self.set_status(f"快捷鍵註冊失敗：{exc}")
 
     def _apply_autostart(self) -> None:
         try:
@@ -269,4 +269,4 @@ class SettingsMixin:
                     pass
             winreg.CloseKey(key)
         except Exception as exc:
-            log.warning("开机启动设置失败：%s", exc)
+            log.warning("開機啟動設定失敗：%s", exc)

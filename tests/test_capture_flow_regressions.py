@@ -399,7 +399,7 @@ def test_application_rejects_nonrectangular_mixed_dpr_selection(qapp, monkeypatc
 
     assert aborted
     assert aborted[0][1]["failed"] is True
-    assert aborted[0][1]["error_title"] == "请在单个屏幕内框选"
+    assert aborted[0][1]["error_title"] == "請在單個螢幕內框選"
     controller.floating_status.close()
     controller.floating_status.deleteLater()
 
@@ -568,11 +568,11 @@ def test_error_dialog_runs_while_busy_and_before_old_overlay_is_restored(
     controller._abort_capture(
         "boom",
         failed=True,
-        error_title="截图失败",
+        error_title="截圖失敗",
         error_message="boom",
     )
 
-    assert observations == [("截图失败", "boom", True, False)]
+    assert observations == [("截圖失敗", "boom", True, False)]
     assert controller.overlay_manager.visible
     assert not controller._busy
     _dispose_capture_controller(controller, original_status, qapp)

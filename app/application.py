@@ -180,7 +180,7 @@ class Application(
             if resolved_service != self.config.get("translation.service", "mock"):
                 self.config.set("translation.service", resolved_service)
                 self.config.save()
-                self.set_status(f"检测到 API Key，已自动切换到 {resolved_service} 翻译服务")
+                self.set_status(f"檢測到 API Key，已自動切換到 {resolved_service} 翻譯服務")
             self.translator = create_translator(
                 self.config.get("translation.service", "mock"),
                 self.config.section("translation"),
@@ -193,7 +193,7 @@ class Application(
             self.window = MainWindow(self)
             self.tray = TrayIcon(self)
             capture_available = window_capture_available()
-            capture_reason = "当前平台暂不支持原生窗口捕获"
+            capture_reason = "當前平臺暫不支援原生視窗捕獲"
             self.window.set_window_capture_available(capture_available, capture_reason)
             self.tray.set_window_capture_available(capture_available, capture_reason)
             self.window.show()
@@ -207,8 +207,8 @@ class Application(
                     and os.environ.get("SCREEN_TRANSLATOR_SELFTEST") != "1"):
                 QTimer.singleShot(500, self._show_welcome)
         except Exception as exc:
-            log.exception("应用启动失败")
-            QMessageBox.critical(None, "启动失败", f"{exc}")
+            log.exception("應用啟動失敗")
+            QMessageBox.critical(None, "啟動失敗", f"{exc}")
 
     def shutdown(self) -> None:
         if self._shutting_down:
@@ -241,7 +241,7 @@ class Application(
                 self._maybe_finalize_shutdown, Qt.ConnectionType.UniqueConnection
             )
             self.worker.cancel()
-            self.set_status("正在安全结束当前任务…")
+            self.set_status("正在安全結束當前任務…")
         self._maybe_finalize_shutdown()
 
     def _maybe_finalize_shutdown(self) -> None:
@@ -273,13 +273,13 @@ class Application(
                 if self.ocr_engine is not None:
                     self.ocr_engine.warmup()
             except Exception as exc:
-                log.warning("OCR 模型预热失败：%s", exc)
+                log.warning("OCR 模型預熱失敗：%s", exc)
             try:
                 warmup = getattr(self.translator, "warmup", None)
                 if callable(warmup):
                     warmup()
             except Exception as exc:
-                log.warning("翻译模型预热失败：%s", exc)
+                log.warning("翻譯模型預熱失敗：%s", exc)
 
         import threading
 
@@ -292,7 +292,7 @@ class Application(
             if hwnd and not is_current_process_window(hwnd) and is_window_capturable(hwnd):
                 self._last_external_hwnd = hwnd
         except Exception as exc:
-            log.debug("读取前台窗口失败：%s", exc)
+            log.debug("讀取前臺視窗失敗：%s", exc)
 
     def _resolve_window_target(self) -> int:
         """Freeze the best live external window before the capture transition."""
@@ -319,7 +319,7 @@ class Application(
 
     # ------------------------------------------------------------------ actions
     def on_hotkey(self, action: str) -> None:
-        log.debug("快捷键触发：%s", action)
+        log.debug("快捷鍵觸發：%s", action)
         if action == "capture_region":
             self.start_region_capture()
         elif action == "capture_fullscreen":

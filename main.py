@@ -43,7 +43,7 @@ def main() -> int:
     from app.version import __version__
 
     setup_logging()
-    get_logger("main").info("ScreenTranslator %s 启动", __version__)
+    get_logger("main").info("ScreenTranslator %s 啟動", __version__)
 
     qt_app = QApplication(sys.argv)
     qt_app.setApplicationName("ScreenTranslator")
@@ -63,7 +63,7 @@ def main() -> int:
         instance_key += "_ReleaseVerification"
     single_instance = QSharedMemory(instance_key)
     if not single_instance.create(1):
-        QMessageBox.information(None, "屏幕截图翻译", "程序已在运行，请从系统托盘图标操作。")
+        QMessageBox.information(None, "螢幕截圖翻譯", "程式已在執行，請從系統托盤圖示操作。")
         return 0
 
     controller = Application(qt_app)

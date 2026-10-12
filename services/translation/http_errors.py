@@ -18,12 +18,12 @@ def raise_for_status(response, service: str) -> None:
     if 200 <= code < 300:
         return
     if code == 429:
-        raise TranslationError(f"{service} 翻译触发限流（429），请稍后重试", rate_limited=True)
+        raise TranslationError(f"{service} 翻譯觸發限流（429），請稍後重試", rate_limited=True)
     if code in (401, 403):
-        raise TranslationError(f"{service} 返回 {code}：API Key 无效或未授权")
+        raise TranslationError(f"{service} 返回 {code}：API Key 無效或未授權")
     if code >= 500:
-        raise TranslationError(f"{service} 服务端错误（{code}）")
-    raise TranslationError(f"{service} 返回错误 {code}")
+        raise TranslationError(f"{service} 服務端錯誤（{code}）")
+    raise TranslationError(f"{service} 返回錯誤 {code}")
 
 
 __all__ = ["raise_for_status"]

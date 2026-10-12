@@ -20,10 +20,10 @@ class DeepLTranslator(Translator):
 
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:
         if not self.api_key:
-            raise TranslationError("缺少 DeepL API Key：请设置 DEEPL_API_KEY 或在设置中填写")
+            raise TranslationError("缺少 DeepL API Key：請設定 DEEPL_API_KEY 或在設定中填寫")
         target = to_deepl_lang(target_language)
         if not target:
-            raise TranslationError("DeepL 不支持自动目标语言，请选择具体语言")
+            raise TranslationError("DeepL 不支援自動目標語言，請選擇具體語言")
         params = {
             "auth_key": self.api_key,
             "target_lang": target,
@@ -39,7 +39,7 @@ class DeepLTranslator(Translator):
                 timeout=float(self.config.get("timeout_seconds", 30)),
             )
         except requests.RequestException as exc:
-            raise TranslationError("DeepL 请求失败（网络连接异常）") from exc
+            raise TranslationError("DeepL 請求失敗（網路連線異常）") from exc
         response.encoding = "utf-8"
         if response.status_code != 200:
             raise_for_status(response, "DeepL")
@@ -47,7 +47,7 @@ class DeepLTranslator(Translator):
             translations = response.json()["translations"]
             return [item["text"] for item in translations]
         except (KeyError, ValueError) as exc:
-            raise TranslationError("DeepL 响应格式异常") from exc
+            raise TranslationError("DeepL 響應格式異常") from exc
 
 
 register_translator(DeepLTranslator)

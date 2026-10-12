@@ -71,12 +71,12 @@ class HotkeyManager(QObject):
             if not combo:
                 continue
             if combo in seen and seen[combo] != action:
-                conflicts.append(f"{combo}（{seen[combo]} 与 {action}）")
+                conflicts.append(f"{combo}（{seen[combo]} 與 {action}）")
             else:
                 seen[combo] = action
 
         if conflicts:
-            raise HotkeyError("快捷键冲突：" + "；".join(conflicts))
+            raise HotkeyError("快捷鍵衝突：" + "；".join(conflicts))
 
         mapping: dict[str, Callable[[], None]] = {}
         for action, shortcut in self._registry.items():
@@ -93,10 +93,10 @@ class HotkeyManager(QObject):
             self._listener = keyboard.GlobalHotKeys(mapping)
             self._listener.daemon = True
             self._listener.start()
-            log.info("已注册 %d 个全局快捷键", len(mapping))
+            log.info("已註冊 %d 個全域快捷鍵", len(mapping))
         except Exception as exc:  # pragma: no cover - 平台相关
             self._listener = None
-            raise HotkeyError(f"全局快捷键注册失败：{exc}") from exc
+            raise HotkeyError(f"全域快捷鍵註冊失敗：{exc}") from exc
 
     def stop(self) -> None:
         if self._listener is not None:

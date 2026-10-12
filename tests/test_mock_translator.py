@@ -9,7 +9,7 @@ def make_translator():
 
 def test_phrase_translation():
     translator = make_translator()
-    assert translator.translate(["Game Over"], "en", "zh") == ["游戏结束"]
+    assert translator.translate(["Game Over"], "en", "zh") == ["遊戲結束"]
 
 
 def test_word_translation_keeps_unknown_and_numbers():
@@ -18,7 +18,7 @@ def test_word_translation_keeps_unknown_and_numbers():
     assert "你好" in result
     assert "世界" in result
     assert "123" in result
-    assert "任务" in result
+    assert "任務" in result
 
 
 def test_non_chinese_target_falls_back_to_prefix():

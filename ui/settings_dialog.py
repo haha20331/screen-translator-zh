@@ -57,12 +57,12 @@ from utils.language_utils import LANGUAGES
 log = get_logger("settings")
 
 _HOTKEY_ACTIONS = [
-    ("capture_region", "框选翻译"),
-    ("capture_fullscreen", "全屏翻译"),
-    ("capture_window", "当前窗口翻译"),
-    ("toggle_overlay", "隐藏/显示译文"),
-    ("refresh", "重新识别翻译"),
-    ("monitor_toggle", "实时监控"),
+    ("capture_region", "框選翻譯"),
+    ("capture_fullscreen", "全屏翻譯"),
+    ("capture_window", "當前視窗翻譯"),
+    ("toggle_overlay", "隱藏/顯示譯文"),
+    ("refresh", "重新識別翻譯"),
+    ("monitor_toggle", "即時監控"),
 ]
 
 
@@ -84,7 +84,7 @@ class SettingsGlyph(QLabel):
                     Qt.TransformationMode.SmoothTransformation,
                 )
             )
-        self.setAccessibleName("屏幕翻译")
+        self.setAccessibleName("螢幕翻譯")
 
     def set_lifecycle_progress(self, _progress: float) -> None:
         """Keep the canonical mark still while the surrounding page moves."""
@@ -98,7 +98,7 @@ class SettingsDialog(QWidget):
         super().__init__(parent)
         self.config = config
         self.setObjectName("SettingsDialog")
-        self.setWindowTitle("设置")
+        self.setWindowTitle("設定")
         self.setMinimumSize(900, 610)
         self.resize(1020, 680)
         self._page_sweep_in: QPropertyAnimation | None = None
@@ -212,7 +212,7 @@ class SettingsDialog(QWidget):
         self.btn_save.setEnabled(True)
         self.btn_cancel.setText("取消")
         self.btn_save.setProperty("saved", False)
-        self.btn_save.setText("保存设置")
+        self.btn_save.setText("儲存設定")
         self.btn_save.style().unpolish(self.btn_save)
         self.btn_save.style().polish(self.btn_save)
         return True
@@ -246,9 +246,9 @@ class SettingsDialog(QWidget):
         header.addWidget(self._settings_glyph)
         heading = QVBoxLayout()
         heading.setSpacing(3)
-        title = QLabel("设置")
+        title = QLabel("設定")
         title.setObjectName("SettingsTitle")
-        subtitle = QLabel("按你的使用方式，安静地完成每一次翻译")
+        subtitle = QLabel("按你的使用方式，安靜地完成每一次翻譯")
         subtitle.setObjectName("SettingsSubtitle")
         heading.addStretch(1)
         heading.addWidget(title)
@@ -269,7 +269,7 @@ class SettingsDialog(QWidget):
         nav.setContentsMargins(0, 0, 0, 0)
         nav.setSpacing(6)
         self.nav_buttons: list[QPushButton] = []
-        for label in ("通用", "个性化", "OCR", "翻译", "译文显示", "快捷键"):
+        for label in ("通用", "個性化", "OCR", "翻譯", "譯文顯示", "快捷鍵"):
             button = QPushButton(label)
             button.setObjectName("SettingsNavButton")
             button.setCheckable(True)
@@ -335,7 +335,7 @@ class SettingsDialog(QWidget):
         footer.addStretch(1)
         self.btn_cancel = QPushButton("取消")
         self.btn_cancel.setObjectName("DialogCancelButton")
-        self.btn_save = QPushButton("保存设置")
+        self.btn_save = QPushButton("儲存設定")
         self.btn_save.setObjectName("DialogSaveButton")
         for button in (self.btn_cancel, self.btn_save):
             button.setMinimumSize(116, 42)
@@ -508,36 +508,36 @@ class SettingsDialog(QWidget):
 
     def _build_general_tab(self) -> QWidget:
         tab, layout = self._new_page()
-        self.chk_autostart = QCheckBox("开机自动启动")
-        self.chk_tray = QCheckBox("关闭主窗口时最小化到托盘")
-        self.chk_history = QCheckBox("保存截图与识别历史")
+        self.chk_autostart = QCheckBox("開機自動啟動")
+        self.chk_tray = QCheckBox("關閉主視窗時最小化到托盤")
+        self.chk_history = QCheckBox("儲存截圖與識別歷史")
         startup_form = self._new_form()
         startup_form.addRow(self.chk_autostart)
         startup_form.addRow(self.chk_tray)
-        layout.addWidget(self._card("启动与后台", "决定应用如何进入工作状态与停留在系统托盘。", startup_form))
+        layout.addWidget(self._card("啟動與後臺", "決定應用如何進入工作狀態與停留在系統托盤。", startup_form))
 
         self.history_dir = QLineEdit()
-        pick = QPushButton("选择目录")
+        pick = QPushButton("選擇目錄")
         pick.clicked.connect(self._pick_history_dir)
         row = QHBoxLayout()
         row.addWidget(self.history_dir, 1)
         row.addWidget(pick)
         history_form = self._new_form()
         history_form.addRow(self.chk_history)
-        history_form.addRow("历史目录", row)
-        layout.addWidget(self._card("本地记录", "历史记录只保存在你选择的本机目录。", history_form))
+        history_form.addRow("歷史目錄", row)
+        layout.addWidget(self._card("本地記錄", "歷史記錄只儲存在你選擇的本機目錄。", history_form))
 
-        self.btn_export_diagnostics = QPushButton("导出诊断日志")
+        self.btn_export_diagnostics = QPushButton("匯出診斷日誌")
         self.btn_export_diagnostics.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_export_diagnostics.clicked.connect(self._export_diagnostics)
         diagnostics_body = QHBoxLayout()
         diagnostics_body.setContentsMargins(0, 0, 0, 0)
-        diagnostics_body.addWidget(QLabel("仅包含脱敏配置、运行环境和最近日志。"), 1)
+        diagnostics_body.addWidget(QLabel("僅包含脫敏配置、執行環境和最近日誌。"), 1)
         diagnostics_body.addWidget(self.btn_export_diagnostics)
         layout.addWidget(
             self._card(
-                "诊断与支持",
-                "不会打包截图、翻译历史、模型文件或 API Key。",
+                "診斷與支援",
+                "不會打包截圖、翻譯歷史、模型檔案或 API Key。",
                 diagnostics_body,
             )
         )
@@ -547,16 +547,16 @@ class SettingsDialog(QWidget):
     def _export_diagnostics(self) -> None:
         suggested = app_data_dir() / f"ScreenTranslator-diagnostics-{time.strftime('%Y%m%d-%H%M%S')}.zip"
         target, _ = QFileDialog.getSaveFileName(
-            self, "导出诊断日志", str(suggested), "ZIP 压缩包 (*.zip)"
+            self, "匯出診斷日誌", str(suggested), "ZIP 壓縮包 (*.zip)"
         )
         if not target:
             return
         try:
             exported = export_diagnostics(target, self.config, app_version=__version__)
         except DiagnosticsExportError as exc:
-            QMessageBox.warning(self, "导出失败", str(exc))
+            QMessageBox.warning(self, "匯出失敗", str(exc))
             return
-        QMessageBox.information(self, "导出完成", f"诊断日志已保存到：\n{exported}")
+        QMessageBox.information(self, "匯出完成", f"診斷日誌已儲存到：\n{exported}")
 
     def _build_personalization_tab(self) -> QWidget:
         tab, layout = self._new_page()
@@ -569,8 +569,8 @@ class SettingsDialog(QWidget):
         palette_body.addWidget(self.palette_choices)
         layout.addWidget(
             self._card(
-                "主题氛围",
-                "每套配色都围绕暖白、深灰线稿与短下划线重新校准。",
+                "主題氛圍",
+                "每套配色都圍繞暖白、深灰線稿與短下劃線重新校準。",
                 palette_body,
             )
         )
@@ -582,14 +582,14 @@ class SettingsDialog(QWidget):
         accent_body.addWidget(self.accent_choices)
         layout.addWidget(
             self._card(
-                "界面强调色",
-                "同步改变按钮、状态、短线反馈与框选边界，保持整套视觉一致。",
+                "介面強調色",
+                "同步改變按鈕、狀態、短線反饋與框選邊界，保持整套視覺一致。",
                 accent_body,
             )
         )
 
         self.motion_choices = PersonalizationChoiceRow(list(MOTION_PRESETS))
-        self.chk_reduce_motion = QCheckBox("减少动态效果（关闭位移与连续动画）")
+        self.chk_reduce_motion = QCheckBox("減少動態效果（關閉位移與連續動畫）")
         motion_body = QVBoxLayout()
         motion_body.setContentsMargins(0, 0, 0, 0)
         motion_body.setSpacing(10)
@@ -597,8 +597,8 @@ class SettingsDialog(QWidget):
         motion_body.addWidget(self.chk_reduce_motion)
         layout.addWidget(
             self._card(
-                "动效节奏",
-                "所有动画都会停止在明确状态，不使用扫描线或无意义循环。",
+                "動效節奏",
+                "所有動畫都會停止在明確狀態，不使用掃描線或無意義迴圈。",
                 motion_body,
             )
         )
@@ -616,18 +616,18 @@ class SettingsDialog(QWidget):
         layout_body.addWidget(self.surface_choices)
         layout.addWidget(
             self._card(
-                "密度与表面",
-                "改变控件呼吸感与层级，不使用廉价玻璃拟态。",
+                "密度與表面",
+                "改變控制元件呼吸感與層級，不使用廉價玻璃擬態。",
                 layout_body,
             )
         )
 
         self.personalization_preview = AppearancePreview()
-        self.personalization_hint = QLabel("实时预览 · 保存后应用到主界面")
+        self.personalization_hint = QLabel("即時預覽 · 儲存後應用到主介面")
         self.personalization_hint.setObjectName("PersonalizationHint")
-        self.btn_replay_personalization = QPushButton("重播动效")
+        self.btn_replay_personalization = QPushButton("重播動效")
         self.btn_replay_personalization.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_reset_personalization = QPushButton("恢复默认")
+        self.btn_reset_personalization = QPushButton("恢復預設")
         self.btn_reset_personalization.setObjectName("PersonalizationResetButton")
         self.btn_reset_personalization.setCursor(Qt.CursorShape.PointingHandCursor)
         preview_actions = QHBoxLayout()
@@ -642,8 +642,8 @@ class SettingsDialog(QWidget):
         preview_body.addLayout(preview_actions)
         layout.addWidget(
             self._card(
-                "实时体验",
-                "每次选择都会重演一次“框选—识别—译文出现”，不会常驻循环。",
+                "即時體驗",
+                "每次選擇都會重演一次“框選—識別—譯文出現”，不會常駐迴圈。",
                 preview_body,
             )
         )
@@ -679,20 +679,20 @@ class SettingsDialog(QWidget):
         self.spin_x_gap = QDoubleSpinBox()
         self.spin_x_gap.setRange(0.0, 5.0)
         self.spin_x_gap.setSingleStep(0.1)
-        self.spin_confidence.setToolTip("低于该置信度的识别结果会被丢弃；0.6 左右较稳妥，越低越宽容但可能混入噪点。")
-        self.spin_y_tol.setToolTip("同一行文字在垂直方向的容差；数值越大，间距较远的文字块也越容易合并到同一行。")
-        self.spin_x_gap.setToolTip("同一行内相邻文字块的横向最大间隔；超过该间隔则视为不同行。")
+        self.spin_confidence.setToolTip("低於該置信度的識別結果會被丟棄；0.6 左右較穩妥，越低越寬容但可能混入噪點。")
+        self.spin_y_tol.setToolTip("同一行文字在垂直方向的容差；數值越大，間距較遠的文字塊也越容易合併到同一行。")
+        self.spin_x_gap.setToolTip("同一行內相鄰文字塊的橫向最大間隔；超過該間隔則視為不同行。")
 
         engine_form = self._new_form()
         engine_form.addRow("OCR 引擎", self.combo_engine)
-        engine_form.addRow("识别语言", self.combo_lang)
-        layout.addWidget(self._card("识别引擎", "选择文字识别方式与运行能力。", engine_form))
+        engine_form.addRow("識別語言", self.combo_lang)
+        layout.addWidget(self._card("識別引擎", "選擇文字識別方式與執行能力。", engine_form))
 
         merge_form = self._new_form()
         merge_form.addRow("最低置信度", self.spin_confidence)
-        merge_form.addRow("行合并容差", self.spin_y_tol)
-        merge_form.addRow("横向合并阈值", self.spin_x_gap)
-        layout.addWidget(self._card("文本组合", "控制零散文字块如何合并成自然语句。", merge_form))
+        merge_form.addRow("行合併容差", self.spin_y_tol)
+        merge_form.addRow("橫向合併閾值", self.spin_x_gap)
+        layout.addWidget(self._card("文本組合", "控制零散文字塊如何合併成自然語句。", merge_form))
         layout.addStretch(1)
         return tab
 
@@ -703,15 +703,15 @@ class SettingsDialog(QWidget):
         for service in list_translators():
             self.combo_service.addItem(service_display_name(service), service)
         self.combo_service.setToolTip(
-            "选择翻译服务商；默认 mymemory 为免费词典翻译，开箱即用，"
-            "填入对应 Key 可获得更准的在线翻译。"
+            "選擇翻譯服務商；預設 mymemory 為免費詞典翻譯，開箱即用，"
+            "填入對應 Key 可獲得更準的線上翻譯。"
         )
         self.combo_source = QComboBox()
         self.combo_target = QComboBox()
         for code, name in LANGUAGES:
             self.combo_source.addItem(name, code)
             self.combo_target.addItem(name, code)
-        self.chk_keep_original = QCheckBox("译文上方同时保留原文")
+        self.chk_keep_original = QCheckBox("譯文上方同時保留原文")
         self.spin_timeout = QSpinBox()
         self.spin_timeout.setRange(5, 300)
         self.spin_retries = QSpinBox()
@@ -720,14 +720,14 @@ class SettingsDialog(QWidget):
         self.spin_interval.setRange(0.0, 30.0)
         self.spin_interval.setSingleStep(0.1)
 
-        form.addRow("翻译服务", self.combo_service)
-        form.addRow("源语言", self.combo_source)
-        form.addRow("目标语言", self.combo_target)
+        form.addRow("翻譯服務", self.combo_service)
+        form.addRow("源語言", self.combo_source)
+        form.addRow("目標語言", self.combo_target)
         form.addRow(self.chk_keep_original)
-        form.addRow("超时（秒）", self.spin_timeout)
-        form.addRow("失败重试次数", self.spin_retries)
-        form.addRow("请求间隔（秒）", self.spin_interval)
-        layout.addWidget(self._card("翻译路径", "选择语言、服务与失败重试策略。", form))
+        form.addRow("超時（秒）", self.spin_timeout)
+        form.addRow("失敗重試次數", self.spin_retries)
+        form.addRow("請求間隔（秒）", self.spin_interval)
+        layout.addWidget(self._card("翻譯路徑", "選擇語言、服務與失敗重試策略。", form))
 
         key_form = self._new_form()
         self.edit_openai_key = QLineEdit()
@@ -757,30 +757,30 @@ class SettingsDialog(QWidget):
         key_form.addRow("百度 API Key", self.edit_baidu_key)
         key_form.addRow("有道 App Key", self.edit_youdao_key)
         key_form.addRow("有道 App Secret", self.edit_youdao_secret)
-        key_form.addRow("Azure 翻译 Key", self.edit_azure_key)
-        key_form.addRow("Azure 区域(Region)", self.edit_azure_region)
-        self.edit_openai_key.setToolTip("OpenAI 兼容服务的 API Key（如 gpt-4o-mini 翻译）。")
-        self.edit_openai_model.setToolTip("模型名，例如 gpt-4o-mini；留空使用程序默认值。")
-        self.edit_openai_url.setToolTip("自定义 Base URL，用于代理或第三方兼容端点；留空使用官方地址。")
+        key_form.addRow("Azure 翻譯 Key", self.edit_azure_key)
+        key_form.addRow("Azure 區域(Region)", self.edit_azure_region)
+        self.edit_openai_key.setToolTip("OpenAI 相容服務的 API Key（如 gpt-4o-mini 翻譯）。")
+        self.edit_openai_model.setToolTip("模型名，例如 gpt-4o-mini；留空使用程式預設值。")
+        self.edit_openai_url.setToolTip("自定義 Base URL，用於代理或第三方相容端點；留空使用官方地址。")
         self.edit_deepl_key.setToolTip("DeepL 的 API Key（Pro 或 Free 均可）。")
         self.edit_google_key.setToolTip("Google Cloud Translation 的 API Key。")
-        self.edit_baidu_appid.setToolTip("百度翻译开放平台的 APP ID。")
-        self.edit_baidu_key.setToolTip("百度翻译开放平台的密钥（Secret）。")
-        self.edit_youdao_key.setToolTip("有道智云的 App Key。")
-        self.edit_youdao_secret.setToolTip("有道智云的 App Secret。")
-        self.edit_azure_key.setToolTip("Azure AI 翻译服务的密钥。")
-        self.edit_azure_region.setToolTip("Azure 翻译资源所属区域，例如 eastasia。")
+        self.edit_baidu_appid.setToolTip("百度翻譯開放平臺的 APP ID。")
+        self.edit_baidu_key.setToolTip("百度翻譯開放平臺的金鑰（Secret）。")
+        self.edit_youdao_key.setToolTip("有道智雲的 App Key。")
+        self.edit_youdao_secret.setToolTip("有道智雲的 App Secret。")
+        self.edit_azure_key.setToolTip("Azure AI 翻譯服務的金鑰。")
+        self.edit_azure_region.setToolTip("Azure 翻譯資源所屬區域，例如 eastasia。")
         layout.addWidget(
             self._card(
-                "在线服务凭据",
-                "优先读取环境变量；此处仅用于当前设备的本地配置。",
+                "線上服務憑據",
+                "優先讀取環境變數；此處僅用於當前裝置的本地配置。",
                 key_form,
             )
         )
 
         privacy = QLabel(
-            "隐私提示：使用在线翻译服务时，截图识别出的文字会发送到第三方服务器。"
-            "本应用默认不保存截图、不上传图片，请自行确认服务商隐私政策。"
+            "隱私提示：使用線上翻譯服務時，截圖識別出的文字會發送到第三方伺服器。"
+            "本應用預設不儲存截圖、不上傳圖片，請自行確認服務商隱私政策。"
         )
         privacy.setObjectName("NoticeLabel")
         privacy.setWordWrap(True)
@@ -792,49 +792,49 @@ class SettingsDialog(QWidget):
         tab, layout = self._new_page()
 
         self.combo_display_mode = QComboBox()
-        self.combo_display_mode.addItem("仅显示译文", False)
-        self.combo_display_mode.addItem("原文 + 译文（两行对照）", True)
+        self.combo_display_mode.addItem("僅顯示譯文", False)
+        self.combo_display_mode.addItem("原文 + 譯文（兩行對照）", True)
         self.combo_font = QComboBox()
-        self.combo_font.addItem("默认字体（自动选择，推荐）", "")
+        self.combo_font.addItem("預設字型（自動選擇，推薦）", "")
         self.combo_font.addItems(QFontDatabase.families())
         self.spin_font_size = QSpinBox()
         self.spin_font_size.setRange(6, 72)
         self.spin_min_font = QSpinBox()
         self.spin_min_font.setRange(4, 36)
-        self.btn_text_color = QPushButton("选择颜色")
+        self.btn_text_color = QPushButton("選擇顏色")
         self.btn_text_color.setFixedWidth(120)
-        self.chk_auto_color = QCheckBox("自动识别文字颜色（推荐）")
-        self.btn_bg_color = QPushButton("选择颜色")
+        self.chk_auto_color = QCheckBox("自動識別文字顏色（推薦）")
+        self.btn_bg_color = QPushButton("選擇顏色")
         self.btn_bg_color.setFixedWidth(120)
-        self.chk_auto_bg = QCheckBox("背景颜色随文字自动适配（推荐）")
+        self.chk_auto_bg = QCheckBox("背景顏色隨文字自動適配（推薦）")
         self.slider_bg_alpha = QSlider(Qt.Orientation.Horizontal)
         self.slider_bg_alpha.setRange(0, 255)
         self.spin_padding = QSpinBox()
         self.spin_padding.setRange(0, 32)
         self.spin_radius = QSpinBox()
         self.spin_radius.setRange(0, 32)
-        self.chk_show_border = QCheckBox("显示文本框边框")
+        self.chk_show_border = QCheckBox("顯示文本框邊框")
 
         text_form = self._new_form()
-        text_form.addRow("字体", self.combo_font)
-        text_form.addRow("译文显示形式", self.combo_display_mode)
-        text_form.addRow("字号", self.spin_font_size)
-        text_form.addRow("最小字号", self.spin_min_font)
-        layout.addWidget(self._card("文字排版", "让译文保持清晰，并匹配原始文字层级。", text_form))
+        text_form.addRow("字型", self.combo_font)
+        text_form.addRow("譯文顯示形式", self.combo_display_mode)
+        text_form.addRow("字號", self.spin_font_size)
+        text_form.addRow("最小字號", self.spin_min_font)
+        layout.addWidget(self._card("文字排版", "讓譯文保持清晰，並匹配原始文字層級。", text_form))
 
         color_form = self._new_form()
-        color_form.addRow("文字颜色", self.btn_text_color)
+        color_form.addRow("文字顏色", self.btn_text_color)
         color_form.addRow(self.chk_auto_color)
-        color_form.addRow("背景颜色", self.btn_bg_color)
+        color_form.addRow("背景顏色", self.btn_bg_color)
         color_form.addRow(self.chk_auto_bg)
         color_form.addRow("背景透明度", self.slider_bg_alpha)
-        layout.addWidget(self._card("颜色与背景", "自动模式会按屏幕内容选择对比度。", color_form))
+        layout.addWidget(self._card("顏色與背景", "自動模式會按螢幕內容選擇對比度。", color_form))
 
         shape_form = self._new_form()
-        shape_form.addRow("内边距", self.spin_padding)
-        shape_form.addRow("圆角", self.spin_radius)
+        shape_form.addRow("內邊距", self.spin_padding)
+        shape_form.addRow("圓角", self.spin_radius)
         shape_form.addRow(self.chk_show_border)
-        layout.addWidget(self._card("边界与留白", "调整译文块的呼吸感与边界提示。", shape_form))
+        layout.addWidget(self._card("邊界與留白", "調整譯文塊的呼吸感與邊界提示。", shape_form))
         layout.addStretch(1)
         return tab
 
@@ -847,7 +847,7 @@ class SettingsDialog(QWidget):
             editor.setMaximumSequenceLength(1)
             self.hotkey_edits[action] = editor
             form.addRow(label, editor)
-        layout.addWidget(self._card("全局快捷键", "即使主窗口隐藏，也能直接启动常用动作。", form))
+        layout.addWidget(self._card("全域快捷鍵", "即使主視窗隱藏，也能直接啟動常用動作。", form))
         layout.addStretch(1)
         return tab
 
@@ -871,9 +871,9 @@ class SettingsDialog(QWidget):
         dirty = state != getattr(self, "_loaded_appearance", state)
         self.personalization_hint.setProperty("dirty", dirty)
         self.personalization_hint.setText(
-            "预览中 · 保存后应用到主界面"
+            "預覽中 · 儲存後應用到主介面"
             if dirty
-            else "实时预览 · 当前设置已保存"
+            else "即時預覽 · 當前設定已儲存"
         )
         self.personalization_hint.style().unpolish(self.personalization_hint)
         self.personalization_hint.style().polish(self.personalization_hint)
@@ -971,7 +971,7 @@ class SettingsDialog(QWidget):
         self.btn_save.setEnabled(False)
         self.btn_cancel.setEnabled(False)
         self.btn_save.setProperty("saved", False)
-        self.btn_save.setText("保存中…")
+        self.btn_save.setText("儲存中…")
         self.btn_save.style().unpolish(self.btn_save)
         self.btn_save.style().polish(self.btn_save)
         self._pending_hotkeys = hotkeys
@@ -995,7 +995,7 @@ class SettingsDialog(QWidget):
                 hotkeys[action] = value
                 normalized[action] = normalize_hotkey(value)
         except (HotkeyError, ValueError) as exc:
-            QMessageBox.warning(self, "快捷键无效", str(exc))
+            QMessageBox.warning(self, "快捷鍵無效", str(exc))
             return None
 
         seen: dict[str, str] = {}
@@ -1007,8 +1007,8 @@ class SettingsDialog(QWidget):
                 second = labels.get(action, action)
                 QMessageBox.warning(
                     self,
-                    "快捷键冲突",
-                    f"{combo} 被重复绑定：{first} / {second}",
+                    "快捷鍵衝突",
+                    f"{combo} 被重複繫結：{first} / {second}",
                 )
                 return None
             seen[combo] = action
@@ -1072,15 +1072,15 @@ class SettingsDialog(QWidget):
             cfg.data = original_data
             self.btn_save.setEnabled(True)
             self.btn_cancel.setEnabled(True)
-            self.btn_save.setText("保存设置")
-            QMessageBox.warning(self, "保存失败", f"配置没有被修改。\n{exc}")
+            self.btn_save.setText("儲存設定")
+            QMessageBox.warning(self, "儲存失敗", f"配置沒有被修改。\n{exc}")
             return
 
         self._loaded_appearance = self._personalization_state()
         self._refresh_personalization_preview(animate=False)
 
         self.btn_save.setProperty("saved", True)
-        self.btn_save.setText("✓ 已保存")
+        self.btn_save.setText("✓ 已儲存")
         self.btn_save.style().unpolish(self.btn_save)
         self.btn_save.style().polish(self.btn_save)
         self._close_intent = 1
@@ -1128,17 +1128,17 @@ class SettingsDialog(QWidget):
         return QKeySequence.fromString(portable, QKeySequence.SequenceFormat.PortableText)
 
     def _pick_history_dir(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self, "选择历史记录目录", self.history_dir.text())
+        directory = QFileDialog.getExistingDirectory(self, "選擇歷史記錄目錄", self.history_dir.text())
         if directory:
             self.history_dir.setText(directory)
 
     def _pick_color(self, target: str) -> None:
         if target == "text":
-            color = QColorDialog.getColor(self._text_color, self, "选择文字颜色")
+            color = QColorDialog.getColor(self._text_color, self, "選擇文字顏色")
             if color.isValid():
                 self._text_color = color
         else:
-            color = QColorDialog.getColor(self._bg_color, self, "选择背景颜色")
+            color = QColorDialog.getColor(self._bg_color, self, "選擇背景顏色")
             if color.isValid():
                 self._bg_color = color
         self._update_color_buttons()

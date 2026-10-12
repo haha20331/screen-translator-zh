@@ -27,11 +27,11 @@ class AzureTranslator(Translator):
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:
         if not self.key:
             raise TranslationError(
-                "缺少 Azure 翻译 Key：请在设置填写，或设置环境变量 AZURE_TRANSLATOR_KEY"
+                "缺少 Azure 翻譯 Key：請在設定填寫，或設定環境變數 AZURE_TRANSLATOR_KEY"
             )
         if not self.region:
             raise TranslationError(
-                "缺少 Azure 翻译区域（Region）：请在设置填写 region，或设置环境变量 AZURE_TRANSLATOR_REGION"
+                "缺少 Azure 翻譯區域（Region）：請在設定填寫 region，或設定環境變數 AZURE_TRANSLATOR_REGION"
             )
         source = to_azure_lang(source_language) if source_language and source_language != "auto" else None
         target = to_azure_lang(target_language)
@@ -53,13 +53,13 @@ class AzureTranslator(Translator):
                 timeout=float(self.config.get("timeout_seconds", 30)),
             )
         except requests.RequestException as exc:
-            raise TranslationError("Azure 翻译请求失败（网络连接异常）") from exc
+            raise TranslationError("Azure 翻譯請求失敗（網路連線異常）") from exc
         if resp.status_code != 200:
             raise_for_status(resp, "Azure")
         try:
             data = resp.json()
         except ValueError as exc:
-            raise TranslationError("Azure 翻译响应格式异常") from exc
+            raise TranslationError("Azure 翻譯響應格式異常") from exc
         out: list[str] = []
         for index, item in enumerate(data):
             translations = item.get("translations") or []

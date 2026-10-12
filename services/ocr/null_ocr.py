@@ -17,10 +17,10 @@ class NullOCREngine(OCREngine):
 
     def recognize(self, image_bgr, lang: str | None = None) -> list[OCRLine]:
         if not self._warned:
-            log.warning("当前没有可用的 OCR 引擎")
+            log.warning("當前沒有可用的 OCR 引擎")
             self._warned = True
         raise RuntimeError(
-            "没有可用的 OCR 引擎：请检查设置 → OCR 中选择的引擎及其依赖是否已安装。"
+            "沒有可用的 OCR 引擎：請檢查設定 → OCR 中選擇的引擎及其依賴是否已安裝。"
         )
 
 

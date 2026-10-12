@@ -24,14 +24,14 @@ from ui.welcome_dialog import _hkfmt
 
 def _shortcut_rows(hotkeys: dict) -> list[tuple[str, str]]:
     rows = [
-        ("框选翻译", hotkeys.get("capture_region", "")),
-        ("全屏翻译", hotkeys.get("capture_fullscreen", "")),
-        ("当前窗口翻译", hotkeys.get("capture_window", "")),
-        ("隐藏 / 显示译文", hotkeys.get("toggle_overlay", "")),
-        ("重新识别翻译", hotkeys.get("refresh", "")),
-        ("实时监控", hotkeys.get("monitor_toggle", "")),
-        ("查看帮助（本页）", "F1"),
-        ("取消当前选区", "Esc"),
+        ("框選翻譯", hotkeys.get("capture_region", "")),
+        ("全屏翻譯", hotkeys.get("capture_fullscreen", "")),
+        ("當前視窗翻譯", hotkeys.get("capture_window", "")),
+        ("隱藏 / 顯示譯文", hotkeys.get("toggle_overlay", "")),
+        ("重新識別翻譯", hotkeys.get("refresh", "")),
+        ("即時監控", hotkeys.get("monitor_toggle", "")),
+        ("檢視幫助（本頁）", "F1"),
+        ("取消當前選區", "Esc"),
     ]
     return [(label, _hkfmt(key)) for label, key in rows]
 
@@ -39,7 +39,7 @@ def _shortcut_rows(hotkeys: dict) -> list[tuple[str, str]]:
 class AboutDialog(QDialog):
     def __init__(self, parent: QWidget | None, config) -> None:
         super().__init__(parent)
-        self.setWindowTitle("关于 屏幕翻译")
+        self.setWindowTitle("關於 螢幕翻譯")
         self.setMinimumSize(560, 520)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
@@ -52,17 +52,17 @@ class AboutDialog(QDialog):
 
         header = QHBoxLayout()
         header.setSpacing(14)
-        mark = QLabel("译")
+        mark = QLabel("譯")
         mark.setObjectName("AboutMark")
         mark.setFixedSize(56, 56)
         mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info = QVBoxLayout()
         info.setSpacing(4)
-        name = QLabel("屏幕翻译")
+        name = QLabel("螢幕翻譯")
         name.setObjectName("AboutName")
         version = QLabel(f"版本 {__version__}")
         version.setObjectName("AboutVersion")
-        tagline = QLabel("把屏幕上任何文字，一键翻译成你能读懂的语言。")
+        tagline = QLabel("把螢幕上任何文字，一鍵翻譯成你能讀懂的語言。")
         tagline.setObjectName("AboutTagline")
         info.addWidget(name)
         info.addWidget(version)
@@ -71,7 +71,7 @@ class AboutDialog(QDialog):
         header.addLayout(info, 1)
         root.addLayout(header)
 
-        shortcuts = self._card("快捷键", "即使主窗口隐藏，全局热键也能直接启动动作。", self._shortcut_table(config.hotkeys()))
+        shortcuts = self._card("快捷鍵", "即使主視窗隱藏，全域熱鍵也能直接啟動動作。", self._shortcut_table(config.hotkeys()))
         root.addWidget(shortcuts, 1)
 
         footer = QHBoxLayout()

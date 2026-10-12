@@ -48,7 +48,7 @@ class PipelineTask(QThread):
 
     def run(self) -> None:
         try:
-            self._emit_status("正在识别...")
+            self._emit_status("正在識別...")
             # 小图先放大再 OCR：游戏截图/弹窗内的小字识别率提升数倍。
             # 放大倍数越高识别率越好但 OCR 更慢，可在设置里调小换速度。
             if getattr(self.ocr_engine, "benefits_from_upscale", True):
@@ -86,7 +86,7 @@ class PipelineTask(QThread):
                         int(round(h / scale)),
                     )
             if not lines:
-                self.error.emit("没有识别到文字（检查 OCR 引擎设置或置信度阈值）")
+                self.error.emit("沒有識別到文字（檢查 OCR 引擎設定或置信度閾值）")
                 return
 
             regions = ocr_lines_to_regions(
@@ -98,7 +98,7 @@ class PipelineTask(QThread):
                 x_gap_ratio=float(self.config.get("ocr.merge_x_gap_ratio", 0.8)),
             )
             if not regions:
-                self.error.emit("没有识别到文字（置信度过滤后为空）")
+                self.error.emit("沒有識別到文字（置信度過濾後為空）")
                 return
 
             target = str(self.config.get("translation.target_language", "zh-hant"))
@@ -134,7 +134,7 @@ class PipelineTask(QThread):
                 if auto_color:
                     region.text_color = ensure_text_contrast(region.text_color, region.background_color)
 
-            self._emit_status(f"正在翻译 {len(regions)} 个文本块...")
+            self._emit_status(f"正在翻譯 {len(regions)} 個文本塊...")
             source = str(self.config.get("translation.source_language", "auto"))
             texts = [region.text for region in regions]
             # 同批去重：重复文本只请求一次，减少免费服务限流压力
@@ -174,14 +174,14 @@ class PipelineTask(QThread):
                 region.translated_text = translated_text
 
             if failed:
-                self._emit_status(f"翻译完成：{failed} 个文本块失败，已保留原文")
+                self._emit_status(f"翻譯完成：{failed} 個文本塊失敗，已保留原文")
             if translatable and getattr(self.translator, "unsupported_direction", False):
                 self._emit_status(
-                    "Mock 演示翻译只支持输出中文，当前目标语言下仅保留原文；"
-                    "请在 设置 → 翻译 中填写 OpenAI/DeepL/Google API Key 使用真实翻译"
+                    "Mock 演示翻譯只支援輸出中文，當前目標語言下僅保留原文；"
+                    "請在 設定 → 翻譯 中填寫 OpenAI/DeepL/Google API Key 使用真實翻譯"
                 )
 
-            self._emit_status("正在生成覆盖层...")
+            self._emit_status("正在生成覆蓋層...")
             self.result.emit(
                 {
                     "capture": self.capture,
@@ -195,7 +195,7 @@ class PipelineTask(QThread):
         except TranslationError as exc:
             self.error.emit(str(exc))
         except Exception as exc:
-            log.exception("管线处理失败")
-            self.error.emit(f"处理失败：{exc}")
+            log.exception("管線處理失敗")
+            self.error.emit(f"處理失敗：{exc}")
     def _emit_status(self, text: str) -> None:
         self.status.emit(text)

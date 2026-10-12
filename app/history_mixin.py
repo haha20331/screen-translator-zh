@@ -32,4 +32,4 @@ class HistoryMixin:
                 json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
             )
         except Exception as exc:
-            log.warning("保存历史失败：%s", exc)
+            log.warning("儲存歷史失敗：%s", exc)

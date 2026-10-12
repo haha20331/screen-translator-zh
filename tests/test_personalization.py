@@ -45,9 +45,9 @@ def test_personalization_preview_is_live_but_does_not_mutate_config(qapp, tmp_pa
     transition = dialog.personalization_preview._transition_animation
     reveal = dialog.personalization_preview._reveal_animation
 
-    assert [button.text() for button in dialog.nav_buttons][1] == "个性化"
+    assert [button.text() for button in dialog.nav_buttons][1] == "個性化"
     assert all(card.accessibleName() for card in dialog.palette_choices.cards)
-    assert dialog.palette_choices.cards[0].accessibleDescription().endswith("当前已选择")
+    assert dialog.palette_choices.cards[0].accessibleDescription().endswith("當前已選擇")
     assert dialog.palette_choices.cards[0].isCheckable()
     assert QAccessible.queryAccessibleInterface(
         dialog.palette_choices.cards[0]
@@ -79,7 +79,7 @@ def test_custom_accent_is_preserved_when_saving_other_settings(qapp, tmp_path):
     dialog = SettingsDialog(config)
 
     assert dialog.accent_choices.value() == "#336699"
-    assert any(card.label == "自定义" for card in dialog.accent_choices.cards)
+    assert any(card.label == "自定義" for card in dialog.accent_choices.cards)
     dialog.chk_tray.setChecked(not dialog.chk_tray.isChecked())
     hotkeys = dialog._validated_hotkeys()
     assert hotkeys is not None

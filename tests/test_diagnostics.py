@@ -44,13 +44,13 @@ def test_export_redacts_config_and_logs(tmp_path):
                 'request api_key="sk-live-log-secret-123456" bearer abcdefghijk',
                 '{"api_key":"json-secret-123456", "access_token":"access-secret-123456"}',
                 'GET https://example.test/translate?q=hello&key=query-secret-123456',
-                "单条翻译失败，保留原文：'用户的私密屏幕原文'",
-                "批量翻译第 2 次失败：HTTPSConnectionPool(url='/translate?q=PRIVATE_OCR_TEXT_7f91&key=old-key')",
-                "批量翻译第 3 次异常：https://example.test/?query=PRIVATE_QUERY_TEXT_8a02",
-                "状态：处理失败：Google 请求失败 https://example.test/?q=PRIVATE_STATUS_TEXT_9b13",
+                "單條翻譯失敗，保留原文：'使用者的私密螢幕原文'",
+                "批次翻譯第 2 次失敗：HTTPSConnectionPool(url='/translate?q=PRIVATE_OCR_TEXT_7f91&key=old-key')",
+                "批次翻譯第 3 次異常：https://example.test/?query=PRIVATE_QUERY_TEXT_8a02",
+                "狀態：處理失敗：Google 請求失敗 https://example.test/?q=PRIVATE_STATUS_TEXT_9b13",
                 "TranslationError: https://example.test/?q=PRIVATE_TRACEBACK_TEXT_ac24&client=gtx",
                 "GET https://example.test/?input=PRIVATE_INPUT_TEXT_bd35&source=PRIVATE_SOURCE_TEXT_ce46",
-                "状态：Google 返回错误 500：PRIVATE_RESPONSE_BODY_df57",
+                "狀態：Google 返回錯誤 500：PRIVATE_RESPONSE_BODY_df57",
             )
         ),
         encoding="utf-8",
@@ -69,7 +69,7 @@ def test_export_redacts_config_and_logs(tmp_path):
     assert "json-secret-123456" not in joined
     assert "access-secret-123456" not in joined
     assert "query-secret-123456" not in joined
-    assert "用户的私密屏幕原文" not in joined
+    assert "使用者的私密螢幕原文" not in joined
     assert "PRIVATE_OCR_TEXT_7f91" not in joined
     assert "PRIVATE_QUERY_TEXT_8a02" not in joined
     assert "PRIVATE_STATUS_TEXT_9b13" not in joined

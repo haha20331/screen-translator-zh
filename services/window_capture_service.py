@@ -184,7 +184,7 @@ def is_window_minimized(hwnd: int) -> bool:
 def get_window_rect_physical(hwnd: int) -> tuple[int, int, int, int]:
     """Return a validated physical-pixel rectangle for a live window."""
     if not is_window(hwnd):
-        raise WindowCaptureError("目标窗口已经关闭")
+        raise WindowCaptureError("目標視窗已經關閉")
     rect = _RECT()
     result = -1
     try:
@@ -197,10 +197,10 @@ def get_window_rect_physical(hwnd: int) -> tuple[int, int, int, int]:
     except Exception:
         result = -1
     if result != 0 and not _user32.GetWindowRect(hwnd, ctypes.byref(rect)):
-        raise WindowCaptureError("无法读取目标窗口边界")
+        raise WindowCaptureError("無法讀取目標視窗邊界")
     value = (int(rect.left), int(rect.top), int(rect.right), int(rect.bottom))
     if value[2] <= value[0] or value[3] <= value[1]:
-        raise WindowCaptureError("目标窗口没有可捕获的区域")
+        raise WindowCaptureError("目標視窗沒有可捕獲的區域")
     return value
 
 
@@ -217,7 +217,7 @@ def is_window_capturable(hwnd: int) -> bool:
 def capture_window_bgr(hwnd: int) -> tuple[np.ndarray, tuple[int, int, int, int]]:
     """Capture a window through PrintWindow; callers may safely screen-crop on failure."""
     if not is_window_capturable(hwnd):
-        raise WindowCaptureError("目标窗口不可见、已最小化或已经关闭")
+        raise WindowCaptureError("目標視窗不可見、已最小化或已經關閉")
     rect = get_window_rect_physical(hwnd)
     width, height = rect[2] - rect[0], rect[3] - rect[1]
     screen_dc = _user32.GetDC(None)
@@ -225,20 +225,20 @@ def capture_window_bgr(hwnd: int) -> tuple[np.ndarray, tuple[int, int, int, int]
     bitmap_selected = False
     try:
         if not screen_dc:
-            raise WindowCaptureError("无法创建窗口捕获上下文")
+            raise WindowCaptureError("無法建立視窗捕獲上下文")
         memory_dc = _gdi32.CreateCompatibleDC(screen_dc)
         bitmap = _gdi32.CreateCompatibleBitmap(screen_dc, width, height)
         if not memory_dc or not bitmap:
-            raise WindowCaptureError("无法创建窗口捕获缓冲区")
+            raise WindowCaptureError("無法建立視窗捕獲緩衝區")
         previous = _gdi32.SelectObject(memory_dc, bitmap)
         if not _valid_gdi_handle(previous):
-            raise WindowCaptureError("无法选择窗口捕获缓冲区")
+            raise WindowCaptureError("無法選擇視窗捕獲緩衝區")
         bitmap_selected = True
         rendered = bool(_user32.PrintWindow(hwnd, memory_dc, _PW_RENDERFULLCONTENT))
         if not rendered:
             rendered = bool(_user32.PrintWindow(hwnd, memory_dc, 0))
         if not rendered:
-            raise WindowCaptureError("该窗口不支持原生内容捕获")
+            raise WindowCaptureError("該視窗不支援原生內容捕獲")
 
         info = _BITMAPINFO()
         info.bmiHeader.biSize = ctypes.sizeof(_BITMAPINFOHEADER)
@@ -252,7 +252,7 @@ def capture_window_bgr(hwnd: int) -> tuple[np.ndarray, tuple[int, int, int, int]
         # GetDIBits requires the bitmap not to be selected into any DC.
         restored = _gdi32.SelectObject(memory_dc, previous)
         if not _valid_gdi_handle(restored):
-            raise WindowCaptureError("无法读取窗口捕获缓冲区")
+            raise WindowCaptureError("無法讀取視窗捕獲緩衝區")
         bitmap_selected = False
         previous = 0
         rows = _gdi32.GetDIBits(
@@ -265,7 +265,7 @@ def capture_window_bgr(hwnd: int) -> tuple[np.ndarray, tuple[int, int, int, int]
             _DIB_RGB_COLORS,
         )
         if rows != height:
-            raise WindowCaptureError("读取窗口像素失败")
+            raise WindowCaptureError("讀取視窗畫素失敗")
         bgra = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
         return bgra[:, :, :3].copy(), rect
     finally:
