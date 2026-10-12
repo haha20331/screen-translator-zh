@@ -7,16 +7,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.translation import offline_translator as module
+from services.translation import ct2_common as module
 from services.translation.base import TranslationError, list_translators
 from services.translation.cache import TranslationCache
+from services.translation.ct2_common import find_model_dir, model_search_paths
 from services.translation.offline_translator import (
     DEFAULT_MODEL_NAME,
+    LARGE_MODEL_NAME,
     OfflineTranslator,
     build_prompt,
     clean_output,
-    find_model_dir,
-    model_search_paths,
     static_prompt,
     user_prompt,
 )
@@ -81,18 +81,18 @@ def test_configured_model_dir_has_priority(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
     _make_model(tmp_path / "app" / "models" / "translation" / DEFAULT_MODEL_NAME)
 
-    assert find_model_dir(str(configured)) == configured
+    assert find_model_dir(DEFAULT_MODEL_NAME, str(configured)) == configured
 
 
 def test_default_locations_are_searched_in_order(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "app_data_dir", lambda: tmp_path / "appdata")
     monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
 
-    assert find_model_dir() is None
+    assert find_model_dir(DEFAULT_MODEL_NAME) is None
     user_copy = _make_model(tmp_path / "appdata" / "models" / "translation" / DEFAULT_MODEL_NAME)
-    assert find_model_dir() == user_copy
+    assert find_model_dir(DEFAULT_MODEL_NAME) == user_copy
     app_copy = _make_model(tmp_path / "app" / "models" / "translation" / DEFAULT_MODEL_NAME)
-    assert find_model_dir() == app_copy  # 程式資料夾優先於使用者資料夾
+    assert find_model_dir(DEFAULT_MODEL_NAME) == app_copy  # 程式資料夾優先於使用者資料夾
 
 
 def test_relative_model_dir_is_resolved_against_app_root(tmp_path, monkeypatch):
@@ -100,8 +100,8 @@ def test_relative_model_dir_is_resolved_against_app_root(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
     model = _make_model(tmp_path / "app" / "custom" / "model")
 
-    assert find_model_dir("custom/model") == model
-    assert tmp_path / "app" / "custom" / "model" in model_search_paths("custom/model")
+    assert find_model_dir(DEFAULT_MODEL_NAME, "custom/model") == model
+    assert tmp_path / "app" / "custom" / "model" in model_search_paths(DEFAULT_MODEL_NAME, "custom/model")
 
 
 def test_incomplete_model_dir_is_ignored(tmp_path, monkeypatch):
@@ -111,7 +111,7 @@ def test_incomplete_model_dir_is_ignored(tmp_path, monkeypatch):
     broken.mkdir(parents=True)
     (broken / "model.bin").write_bytes(b"x")  # 少了 tokenizer.json
 
-    assert find_model_dir() is None
+    assert find_model_dir(DEFAULT_MODEL_NAME) is None
 
 
 def test_missing_model_error_lists_search_locations(tmp_path, monkeypatch):
@@ -119,7 +119,7 @@ def test_missing_model_error_lists_search_locations(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
 
     with pytest.raises(TranslationError) as excinfo:
-        _translator()._locate_model()
+        _translator().load_plans(_FakeCT2())
 
     message = str(excinfo.value)
     assert DEFAULT_MODEL_NAME in message and str(tmp_path / "app") in message
@@ -308,7 +308,7 @@ def test_generate_builds_prompts_and_decodes_results(monkeypatch):
 
 # ----------------------------------------------------------------------------- 真實模型（有模型才跑）
 @pytest.mark.skipif(
-    find_model_dir() is None or OfflineTranslator.availability_reason() is not None or not chinese.available(),
+    find_model_dir(DEFAULT_MODEL_NAME) is None or OfflineTranslator.availability_reason() is not None or not chinese.available(),
     reason="未安裝離線翻譯模型或相依套件",
 )
 def test_real_model_translates_to_traditional_chinese():
@@ -323,3 +323,88 @@ def test_real_model_translates_to_traditional_chinese():
         assert chinese.to_traditional(text) == text
         assert not any("぀" <= char <= "ヿ" for char in text)
     assert instance.last_failed_count == 0
+
+
+# ----------------------------------------------------------------------------- 依硬體自動選模型
+def _models(tmp_path, monkeypatch, *names):
+    monkeypatch.setattr(module, "app_data_dir", lambda: tmp_path / "appdata")
+    monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
+    for name in names:
+        _make_model(tmp_path / "app" / "models" / "translation" / name)
+
+
+def test_auto_uses_the_large_model_only_on_cuda(tmp_path, monkeypatch):
+    _models(tmp_path, monkeypatch, LARGE_MODEL_NAME, DEFAULT_MODEL_NAME)
+
+    cpu_plans = _translator().load_plans(_FakeCT2(count=0))
+    cuda_plans = _translator().load_plans(_FakeCT2(count=1))
+
+    assert [(plan.model_name, plan.device) for plan in cpu_plans] == [(DEFAULT_MODEL_NAME, "cpu")]
+    # GPU：7B 優先；載入失敗（顯示卡記憶體不足等）依序退到 GPU 上的 1.5B、最後 CPU 上的 1.5B
+    assert [(plan.model_name, plan.device) for plan in cuda_plans] == [
+        (LARGE_MODEL_NAME, "cuda"),
+        (DEFAULT_MODEL_NAME, "cuda"),
+        (DEFAULT_MODEL_NAME, "cpu"),
+    ]
+
+
+def test_auto_without_the_large_model_still_works_on_cuda(tmp_path, monkeypatch):
+    _models(tmp_path, monkeypatch, DEFAULT_MODEL_NAME)
+
+    plans = _translator().load_plans(_FakeCT2(count=1))
+
+    assert [(plan.model_name, plan.device) for plan in plans][0] == (DEFAULT_MODEL_NAME, "cuda")
+
+
+def test_explicit_model_name_disables_auto_selection(tmp_path, monkeypatch):
+    _models(tmp_path, monkeypatch, LARGE_MODEL_NAME, DEFAULT_MODEL_NAME)
+
+    plans = _translator(model_name=DEFAULT_MODEL_NAME).load_plans(_FakeCT2(count=1))
+
+    assert [(plan.model_name, plan.device) for plan in plans] == [(DEFAULT_MODEL_NAME, "cuda")]
+
+
+def test_loading_falls_back_to_the_next_plan_when_a_model_fails(tmp_path, monkeypatch):
+    _models(tmp_path, monkeypatch, LARGE_MODEL_NAME, DEFAULT_MODEL_NAME)
+    attempts = []
+
+    class FakeGenerator:
+        def __init__(self, path, device, compute_type, inter_threads, intra_threads):
+            attempts.append((Path(path).name, device, compute_type))
+            if Path(path).name == LARGE_MODEL_NAME:
+                raise RuntimeError("CUDA out of memory")
+
+    class FakeTokenizerClass:
+        @staticmethod
+        def from_file(path):
+            return object()
+
+    import sys
+
+    fake_ct2 = SimpleNamespace(Generator=FakeGenerator, get_cuda_device_count=lambda: 1)
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
+    monkeypatch.setitem(sys.modules, "tokenizers", SimpleNamespace(Tokenizer=FakeTokenizerClass))
+    monkeypatch.setattr(OfflineTranslator, "availability_reason", classmethod(lambda cls: None))
+    instance = _translator()
+
+    instance._load()
+
+    assert attempts == [(LARGE_MODEL_NAME, "cuda", "int8_float16"), (DEFAULT_MODEL_NAME, "cuda", "int8_float16")]
+    assert (instance.model_name, instance.device) == (DEFAULT_MODEL_NAME, "cuda")
+
+
+def test_loading_reports_every_failure_when_no_plan_works(tmp_path, monkeypatch):
+    _models(tmp_path, monkeypatch, DEFAULT_MODEL_NAME)
+
+    class BrokenGenerator:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("no luck")
+
+    import sys
+
+    monkeypatch.setitem(sys.modules, "ctranslate2", SimpleNamespace(Generator=BrokenGenerator, get_cuda_device_count=lambda: 0))
+    monkeypatch.setitem(sys.modules, "tokenizers", SimpleNamespace(Tokenizer=SimpleNamespace(from_file=lambda p: object())))
+    monkeypatch.setattr(OfflineTranslator, "availability_reason", classmethod(lambda cls: None))
+
+    with pytest.raises(TranslationError, match="no luck"):
+        _translator()._load()

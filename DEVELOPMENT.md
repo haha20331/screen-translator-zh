@@ -46,6 +46,7 @@ Windows 端目前沒有安裝 Python，請先安裝 Python 3.12（<https://www.p
 ```powershell
 cd D:\ocr
 python -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass 
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-core.txt
 python main.py
@@ -79,7 +80,15 @@ HF_HUB_DISABLE_XET=1 ~/.venvs/ocr-convert/bin/python scripts/fetch_translation_m
 ```
 
 腳本會下載指定版本的官方權重、轉換並寫入 `manifest.json`（來源、授權、SHA-256）。已有的 `D:\ocr\models` 也能直接給 Windows 端使用。
-可轉換的模型見 `--list`；換模型時在設定檔改 `translation.offline.model_name`（例如有 NVIDIA GPU 時的 7B 版）。
+可轉換的模型見 `--list`：
+
+| 模型 | 用途 | 指令 |
+|---|---|---|
+| `qwen2.5-1.5b-instruct-ct2-int8` | 離線翻譯・標準（預設，CPU/GPU 皆可） | 不帶 `--model` |
+| `nllb-200-distilled-600m-ct2-int8` | 離線翻譯・快速（近乎即時，品質較低；CC-BY-NC） | `--model nllb-200-distilled-600m-ct2-int8` |
+| `qwen2.5-7b-instruct-ct2-int8` | 有 NVIDIA GPU 時 auto 模式自動優先使用，準確度明顯較高（轉換需約 16 GB 記憶體） | `--model qwen2.5-7b-instruct-ct2-int8` |
+
+在設定的「翻譯服務」下拉選單選擇「離線翻譯・標準」或「離線翻譯・快速」。標準翻譯的 `model_name` 預設為 `auto`：沒有 GPU 用 1.5B，有 NVIDIA GPU 且已放入 7B 模型時自動改用 7B。
 
 ## 驗證
 

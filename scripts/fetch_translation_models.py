@@ -28,18 +28,29 @@ MODELS = {
         "repo": "Qwen/Qwen2.5-1.5B-Instruct",
         "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
         "license": "Apache-2.0",
-        "note": "預設。CPU 約 0.5 秒/句（6 執行緒、固定前綴快取）。",
+        "note": "離線翻譯・標準（預設）。CPU 約 0.5 秒/句（6 執行緒、固定前綴快取）。",
     },
     "qwen2.5-7b-instruct-ct2-int8": {
         "repo": "Qwen/Qwen2.5-7B-Instruct",
-        "revision": None,  # 使用前請先固定版本（HF 頁面的 commit sha）
+        "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
         "license": "Apache-2.0",
-        "note": "準確度較高，需要 NVIDIA GPU（device=cuda）或 16 GB 以上記憶體；CPU 約 2–3 秒/句。轉換時需約 16 GB 記憶體。",
+        "note": "離線翻譯・標準的大模型：有 NVIDIA GPU（約 8 GB 顯示卡記憶體）時 auto 模式會自動優先使用，準確度明顯較高；"
+                "CPU 約 2–3 秒/句。轉換時需約 16 GB 記憶體。尚未在實機驗證。",
+    },
+    "nllb-200-distilled-600m-ct2-int8": {
+        "repo": "facebook/nllb-200-distilled-600M",
+        "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d",
+        "license": "CC-BY-NC-4.0（僅限非商用）",
+        "note": "離線翻譯・快速。CPU 批次約 50 ms/句，品質較低。",
+        "weights": "*.bin",  # 這個 repo 只有 pytorch_model.bin，沒有 safetensors
     },
 }
-# 只下載轉換需要的檔案（避免同時抓 .bin 與 .safetensors）
-_ALLOW = ["*.json", "*.safetensors", "merges.txt", "vocab.json", "LICENSE*"]
 _COPY_FILES = ["tokenizer.json", "tokenizer_config.json"]
+
+
+def _allow_patterns(info: dict) -> list[str]:
+    """只下載轉換需要的檔案（避免同時抓 .bin 與 .safetensors）。"""
+    return ["*.json", info.get("weights", "*.safetensors"), "merges.txt", "vocab.json", "LICENSE*"]
 
 
 def _sha256(path: Path) -> str:
@@ -79,7 +90,7 @@ def main() -> None:
         raise SystemExit(f"缺少轉換環境的套件（{exc.name}）：請先執行 bash scripts/setup_convert_env.sh，並用該環境的 python 執行本腳本。")
 
     print(f"下載 {info['repo']} @ {info['revision'][:8]} …")
-    source = Path(snapshot_download(info["repo"], revision=info["revision"], allow_patterns=_ALLOW))
+    source = Path(snapshot_download(info["repo"], revision=info["revision"], allow_patterns=_allow_patterns(info)))
     print(f"轉換為 CTranslate2 int8 → {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
     TransformersConverter(str(source), copy_files=_COPY_FILES).convert(str(output), quantization="int8", force=True)

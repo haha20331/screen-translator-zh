@@ -6,7 +6,7 @@ from PySide6.QtCore import QPoint, QRect, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
-from utils import dpi_utils
+from utils import dpi_utils, window_affinity
 
 
 class MonitorRegionSelector(QWidget):
@@ -199,6 +199,10 @@ class MonitorRegionSelector(QWidget):
         ):
             painter.drawRoundedRect(cx - 3, cy - 3, 6, 6, 2, 2)
 
+        # 提示文字畫在被擷取的區域內：只有視窗能被排除在擷取之外時才畫，
+        # 否則它會被截進畫面、被 OCR 當成原文讀進來。
+        if not window_affinity.supported():
+            return
         text = "拖拽调整 · 双击停止"
         font = QFont()
         font.setFamilies(["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])

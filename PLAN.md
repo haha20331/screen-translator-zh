@@ -122,7 +122,9 @@
 - **多行合併**：字幕被 OCR 拆成兩行，單行翻譯會失去上下文（`顔を上げるしかないだろ` 單獨譯成「除非抬起頭，否則無法做到」）。因此放寬上游只合併窄標籤的限制（`ocr.merge_wrapped_max_width_ratio=1.0`），並把置中對齊、框略有重疊的相鄰行視為同一段（`ocr.merge_centered_lines`）。副作用：寬螢幕上垂直相鄰、左緣對齊的多個條目可能被併成一段，必要時調回 0.36 / false。
 - **繁體轉換（必要需求）**：模型輸出經 OpenCC `s2twp`（簡→台灣繁體並套用慣用詞彙，如 软件→軟體、网络→網路）；目標選簡體 `zh` 時改用 `tw2sp`。轉換在快取之後、顯示之前進行。預設目標語言 `zh-hant`。
 - **執行緒數**：Intel 混合核心 CPU（i7-13700H）上 6 執行緒最快（約 670 ms/句，批次），超過 8 反而慢 3 倍以上；預設上限 6，可由 `translation.offline.threads` 調整。
-- **GPU**：`translation.offline.device=auto`，偵測到 CUDA 就用 GPU（`int8_float16`），否則 CPU。**此路徑尚未實測**：開發機只有 Intel Iris Xe 內顯，沒有 NVIDIA/CUDA。
+- **依硬體自動選模型（`translation.offline.model_name = "auto"`，預設）**：沒有 NVIDIA GPU → CPU 上的 Qwen2.5-1.5B；有 GPU（CUDA）→ 優先載入 Qwen2.5-7B-Instruct（`int8_float16`，約 8 GB 顯示卡記憶體），載入失敗（顯示卡記憶體不足等）依序退到 GPU 上的 1.5B、最後 CPU 上的 1.5B。明確指定 `model_name` 則不自動切換。**GPU 與 7B 路徑尚未實測**：開發機只有 Intel Iris Xe 內顯，沒有 NVIDIA/CUDA；邏輯由單元測試（假的 CTranslate2）涵蓋。7B 模型以 `scripts/fetch_translation_models.py --model qwen2.5-7b-instruct-ct2-int8` 取得（轉換約需 16 GB 記憶體，建議在有足夠記憶體的機器上轉好再複製）。
+- **離線翻譯・快速（`translation.service = offline_fast`）**：NLLB-200-distilled-600M（CT2 int8、貪婪解碼，不需要額外套件）。批次約 70 ms/句、單句約 100–200 ms，是標準翻譯的 3–4 倍快；代價是品質較低（字幕、口語對白常誤譯，詞表缺字會漏字）。授權 CC-BY-NC-4.0（非商用）。使用者在設定的翻譯服務下拉選單切換；兩個離線翻譯器共用同一套判斷語言、失敗偵測與繁體轉換流程。
+- 另有上游留下的線上選項（Google 免費等），延遲低、品質佳，但螢幕文字會送到外部服務，不符合「離線」原則，預設不啟用。
 - **品質天花板**：1.5B 在藝術字體標題、成語式文案、人稱稱呼（`ご主人さま`）上仍會出錯。想明顯提升準確度要換 7B 級模型（Qwen2.5-7B-Instruct，Apache-2.0；需要 NVIDIA GPU 或 16 GB 以上記憶體，CPU 約 2–3 秒/句）。引擎已支援以 `translation.offline.model_name` 換模型；開發機的 WSL 只有 7 GB 記憶體，無法在此驗證 7B。
 - 翻譯僅在 OCR 有新結果時才觸發，同一輪的多個文字區塊以批次送入模型。
 

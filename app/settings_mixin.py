@@ -180,10 +180,10 @@ class SettingsMixin:
         section = self.config.section("translation")
         current = getattr(self, "translator", None)
         if (
-            service == "offline"
+            service in ("offline", "offline_fast")
             and current is not None
-            and getattr(current, "name", "") == "offline"
-            and current.config.get("offline") == section.get("offline")
+            and getattr(current, "name", "") == service
+            and current.config.get(service) == section.get(service)
         ):
             current.cache = self.cache
             return current

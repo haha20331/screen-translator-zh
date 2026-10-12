@@ -27,4 +27,7 @@
 | PP-OCRv6（偵測與辨識，隨 `rapidocr` 套件安裝） | 隨套件：Apache-2.0 | 模型源自 PaddleOCR（Apache-2.0）；PP-OCRv6 模型卡尚未逐一核對 |
 | Qwen2.5-1.5B-Instruct（轉成 CTranslate2 int8） | Apache-2.0 | `Qwen/Qwen2.5-1.5B-Instruct` @ `989aa7980e4cf806f80c7fef2b1adb7bc71aa306`；轉換紀錄見模型資料夾內 `manifest.json`，授權檔 `LICENSE` 隨附 |
 
-評估過但**未採用**的模型（不隨附）：NLLB-200（CC-BY-NC-4.0，非商用）、Helsinki-NLP opus-mt（Apache-2.0）、Qwen2.5-3B、Qwen3-1.7B。
+| NLLB-200-distilled-600M（轉成 CTranslate2 int8，「離線翻譯・快速」使用） | **CC-BY-NC-4.0（僅限非商用，需標示來源）** | `facebook/nllb-200-distilled-600M` @ `f8d333a098d19b4fd9a8b18f94170487ad3f821d`；轉換紀錄見模型資料夾內 `manifest.json` |
+| Qwen2.5-7B-Instruct（選用，有 NVIDIA GPU 時自動使用） | Apache-2.0 | `Qwen/Qwen2.5-7B-Instruct` @ `a09a35458c702b33eeacc393d103063234e8bc28`；尚未在實機驗證 |
+
+評估過但**未採用**的模型（不隨附）：NLLB-200 1.3B、Helsinki-NLP opus-mt（Apache-2.0）、Qwen2.5-3B、Qwen3-1.7B。

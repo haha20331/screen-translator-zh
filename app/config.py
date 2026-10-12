@@ -72,7 +72,8 @@ DEFAULTS: dict[str, Any] = {
         "request_interval_seconds": 0.0,
         # 離線翻譯（Qwen2.5-Instruct + CTranslate2）；model_dir 留空 = 自動尋找 models/translation/
         "offline": {
-            "model_name": "qwen2.5-1.5b-instruct-ct2-int8",
+            # auto：有 NVIDIA GPU 時優先用 7B 模型（載入失敗退回 1.5B），沒有 GPU 用 CPU 的 1.5B
+            "model_name": "auto",
             "model_dir": "",
             # auto：有 NVIDIA GPU（CUDA）就用 GPU，否則 CPU
             "device": "auto",
@@ -82,6 +83,16 @@ DEFAULTS: dict[str, Any] = {
             "beam_size": 1,
             "max_new_tokens": 160,
             # 只有漢字、沒有假名的文字視為：ja（日文）或 空字串（不翻譯）
+            "han_only_as": "ja",
+        },
+        # 離線快速翻譯（NLLB-200 600M，貪婪解碼）：近乎即時，品質較低
+        "offline_fast": {
+            "model_name": "nllb-200-distilled-600m-ct2-int8",
+            "model_dir": "",
+            "device": "auto",
+            "compute_type": "auto",
+            "threads": 0,
+            "beam_size": 1,
             "han_only_as": "ja",
         },
         "google_free_max_workers": 6,

@@ -136,7 +136,9 @@ class PipelineMixin:
         signal_sender = self.sender()
         if (
             self._shutting_down
-            or self._capture_session is None
+            # 即時監控是在單次擷取結束（session 已清空）之後才啟動的，沒有 session 是常態；
+            # 上游漏了這個例外，導致每一輪監控結果都被丟掉並被判為連續失敗。
+            or (self._capture_session is None and not self._monitor_active)
             or (signal_sender is not None and signal_sender is not self.worker)
         ):
             return

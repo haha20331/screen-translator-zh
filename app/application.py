@@ -23,6 +23,7 @@ import services.ocr.rapidocr_ocr  # noqa: F401
 # 确保各 OCR 引擎 / 翻译适配器已注册（顺序影响 UI 下拉框默认项）
 import services.ocr.windows_ocr  # noqa: F401
 import services.translation.deepl_translator  # noqa: F401
+import services.translation.fast_translator  # noqa: F401
 import services.translation.google_free_translator  # noqa: F401
 import services.translation.google_translator  # noqa: F401
 import services.translation.mock_translator  # noqa: F401
@@ -71,6 +72,7 @@ from ui.tray_icon import TrayIcon, build_icon
 from ui.window_capture_highlight import WindowCaptureHighlight
 from utils import dpi_utils
 from utils.language_utils import LANGUAGE_CODES, LANGUAGES
+from utils.window_affinity import CaptureExclusionFilter
 from workers.translation_worker import PipelineTask
 
 log = get_logger("application")
@@ -91,6 +93,9 @@ class Application(
     def __init__(self, qt_app: QGuiApplication) -> None:
         super().__init__()
         self.qt_app = qt_app
+        # 程式自己的視窗（監控框、譯文標籤、主視窗）不可被擷取，否則會被 OCR 讀回去
+        self._capture_exclusion = CaptureExclusionFilter(qt_app)
+        qt_app.installEventFilter(self._capture_exclusion)
         self.config = AppConfig()
         self.monitor_map: list[dpi_utils.MonitorInfo] = []
 
