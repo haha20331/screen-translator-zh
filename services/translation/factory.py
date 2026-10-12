@@ -7,6 +7,7 @@ from typing import Callable
 from services.translation.base import _REGISTRY, Translator, list_translators
 
 _SERVICE_DISPLAY = {
+    "offline": "离线翻译（Qwen2.5 · 不联网）",
     "mock": "Mock（本地词典演示）",
     "mymemory": "MyMemory（免费在线）",
     "google_free": "Google 免费（无 Key）",

@@ -32,6 +32,10 @@ def list_translators() -> list[str]:
 
 class Translator(ABC):
     name: str = "base"
+    # 線上服務限流時會把原文原樣回傳，因此「譯文 == 原文」預設視為失敗且不寫入快取。
+    # 本機翻譯器自己判斷失敗（見 last_failed_indices），設為 False 才不會把
+    # 「設定」「Ctrl+S」這類本來就不變的結果誤報成失敗。
+    identical_means_failure: bool = True
 
     def __init__(
         self,
@@ -74,7 +78,8 @@ class Translator(ABC):
             # 旧版本会把限流后原样返回的英文写进缓存，之后每次都把
             # “原文=译文”当成功结果。跨语言翻译遇到这种值必须重试。
             poisoned = (
-                cached is not None
+                self.identical_means_failure
+                and cached is not None
                 and cached.strip() == text.strip()
                 and (source_language or "auto") != target_language
             )
@@ -89,14 +94,15 @@ class Translator(ABC):
             failed_indices = set(self.last_failed_indices)
             # 有些免费服务会用 200 响应把原文原样塞回来。HTTP 成功不等于
             # 翻译成功：这类条目必须计为失败，更不能写进持久缓存。
-            failed_indices.update(
-                pending_idx
-                for pending_idx, (text, translated_text) in enumerate(
-                    zip(pending_texts, translated)
+            if self.identical_means_failure:
+                failed_indices.update(
+                    pending_idx
+                    for pending_idx, (text, translated_text) in enumerate(
+                        zip(pending_texts, translated)
+                    )
+                    if translated_text.strip() == text.strip()
+                    and (source_language or "auto") != target_language
                 )
-                if translated_text.strip() == text.strip()
-                and (source_language or "auto") != target_language
-            )
             self.last_failed_indices = failed_indices
             self.last_failed_count = len(failed_indices)
             for pending_idx, (idx, text, translated_text) in enumerate(
@@ -104,9 +110,9 @@ class Translator(ABC):
             ):
                 results[idx] = translated_text
                 # 失败回退结果和可疑同文结果绝不能污染缓存。
-                if (
-                    pending_idx not in failed_indices
-                    and translated_text.strip() != text.strip()
+                if pending_idx not in failed_indices and (
+                    not self.identical_means_failure
+                    or translated_text.strip() != text.strip()
                 ):
                     self._cache_set(
                         source_language, target_language, text, translated_text

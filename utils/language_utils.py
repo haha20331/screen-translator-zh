@@ -44,8 +44,39 @@ _BENCHMARK_NAME_RE = re.compile(
 )
 
 
-def needs_translation(text: str, target_language: str) -> bool:
-    """Reject UI glyphs, technical identifiers and text already in the target script."""
+def has_kana(text: str) -> bool:
+    """文字中是否含有日文假名（平假名、片假名，含半形片假名）。"""
+    return any("\u3040" <= char <= "\u30ff" or "\uff66" <= char <= "\uff9f" for char in text)
+
+
+def has_han(text: str) -> bool:
+    return any("\u3400" <= char <= "\u9fff" for char in text)
+
+
+def detect_source_language(text: str, han_only_as: str | None = "ja") -> str | None:
+    """判斷一段 OCR 文字的來源語言：``"ja"``、``"en"``，無法判斷（純數字、符號等）回傳 ``None``。
+
+    - 含假名 → 日文（即使混有英文與漢字）。
+    - 只有漢字、沒有假名 → 日文漢字與中文無法區分，依 ``han_only_as`` 決定
+      （預設視為日文；傳入 ``None`` 表示不處理）。
+    - 其餘有兩個以上連續拉丁字母 → 英文。
+    """
+    value = text or ""
+    if has_kana(value):
+        return "ja"
+    if has_han(value):
+        return han_only_as
+    if re.search(r"[A-Za-z]{2,}", value):
+        return "en"
+    return None
+
+
+def needs_translation(text: str, target_language: str, han_is_source: bool = False) -> bool:
+    """Reject UI glyphs, technical identifiers and text already in the target script.
+
+    ``han_is_source``: 翻譯器會把純漢字文字當成日文來源（日文漢字與中文無法區分）時為 True，
+    此時漢字不再被視為「已經是中文」。含假名的文字不論此參數一律需要翻譯成中文。
+    """
 
     value = (text or "").strip()
     if not value:
@@ -68,7 +99,11 @@ def needs_translation(text: str, target_language: str) -> bool:
         return False
 
     target = (target_language or "").lower()
-    if target == "zh" and any("\u3400" <= char <= "\u9fff" for char in value):
+    if target.startswith("zh") and has_kana(value):
+        return True
+    if target.startswith("zh") and han_is_source and has_han(value):
+        return True
+    if target.startswith("zh") and has_han(value):
         # 刷新残缺覆盖层时可能拿到“少量中文 + 一整段残留英文”。旧逻辑
         # 只要看见一个汉字就整块跳过，导致半中半英永远修不回来。
         remaining_latin_words = re.findall(r"[A-Za-z]{2,}", value)

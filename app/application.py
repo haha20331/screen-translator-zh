@@ -27,6 +27,7 @@ import services.translation.google_free_translator  # noqa: F401
 import services.translation.google_translator  # noqa: F401
 import services.translation.mock_translator  # noqa: F401
 import services.translation.mymemory_translator  # noqa: F401
+import services.translation.offline_translator  # noqa: F401
 import services.translation.openai_translator  # noqa: F401
 
 # 各职责拆分为 Mixin，Application 只保留生命周期/更新并继承它们。
@@ -256,7 +257,7 @@ class Application(
         self.qt_app.quit()
 
     def _warmup(self) -> None:
-        """后台线程预热 OCR 模型，避免第一次截图时卡很久。"""
+        """后台线程预热 OCR 与离线翻译模型，避免第一次截图时卡很久。"""
         if os.environ.get("SCREEN_TRANSLATOR_NO_WARMUP") == "1" or os.environ.get(
             "SCREEN_TRANSLATOR_SELFTEST"
         ) == "1":
@@ -268,6 +269,12 @@ class Application(
                     self.ocr_engine.warmup()
             except Exception as exc:
                 log.warning("OCR 模型预热失败：%s", exc)
+            try:
+                warmup = getattr(self.translator, "warmup", None)
+                if callable(warmup):
+                    warmup()
+            except Exception as exc:
+                log.warning("翻译模型预热失败：%s", exc)
 
         import threading
 

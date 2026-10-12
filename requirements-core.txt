@@ -8,3 +8,7 @@ requests>=2.31
 winocr==0.0.15
 rapidocr>=3.10,<4
 onnxruntime>=1.20,<2
+# 離線翻譯（Qwen2.5-Instruct int8）與繁體轉換
+ctranslate2>=4.5,<5
+tokenizers>=0.20
+opencc>=1.1

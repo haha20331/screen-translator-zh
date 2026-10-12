@@ -123,12 +123,8 @@ class SettingsMixin:
             self.config.set("translation.service", resolved_service)
             self.config.save()
             self.set_status(f"检测到 API Key，已自动切换到 {resolved_service} 翻译服务")
-        self.translator = create_translator(
-            self.config.get("translation.service", "mock"),
-            self.config.section("translation"),
-            cache=self.cache,
-            api_key_resolver=self.config.api_key,
-        )
+        self.translator = self._build_translator()
+        self._warmup()
         if self.overlay_manager is not None:
             self.overlay_manager.apply_style()
         try:
@@ -169,17 +165,33 @@ class SettingsMixin:
             self.config.set("translation.target_language", target)
         self.config.save()
         self.ocr_engine = self._create_configured_ocr_engine()
-        self.translator = create_translator(
-            self.config.get("translation.service", "mock"),
-            self.config.section("translation"),
-            cache=self.cache,
-            api_key_resolver=self.config.api_key,
-        )
+        self.translator = self._build_translator()
+        self._warmup()
         if self.window is not None:
             self.window.reload_values()
         self.set_status(
             f"已切换：OCR={self._active_ocr_engine_name} 翻译={self.config.get('translation.service')} "
             f"目标={self.config.get('translation.target_language')}"
+        )
+
+    def _build_translator(self):
+        """建立翻譯器；離線翻譯的設定沒變時重用現有實例，避免重複載入數 GB 的模型。"""
+        service = str(self.config.get("translation.service", "mock"))
+        section = self.config.section("translation")
+        current = getattr(self, "translator", None)
+        if (
+            service == "offline"
+            and current is not None
+            and getattr(current, "name", "") == "offline"
+            and current.config.get("offline") == section.get("offline")
+        ):
+            current.cache = self.cache
+            return current
+        return create_translator(
+            service,
+            section,
+            cache=self.cache,
+            api_key_resolver=self.config.api_key,
         )
 
     def _create_configured_ocr_engine(self):

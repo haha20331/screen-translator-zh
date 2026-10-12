@@ -77,7 +77,7 @@ def test_pipeline_only_sends_meaningful_foreign_text(tmp_path):
 
     task.run()
 
-    assert translator.calls == [(["Settings"], "auto", "zh")]
+    assert translator.calls == [(["Settings"], "auto", "zh-hant")]
     regions = results[0]["regions"]
     assert results[0]["recognized_count"] == 3
     assert results[0]["translation_candidate_count"] == 1

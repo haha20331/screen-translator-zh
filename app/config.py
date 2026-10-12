@@ -44,6 +44,10 @@ DEFAULTS: dict[str, Any] = {
         "min_confidence": 0.6,
         "merge_y_tolerance_ratio": 0.3,
         "merge_x_gap_ratio": 0.8,
+        # 相鄰行合併成同一段翻譯（字幕、對白需要完整上下文）。上游只合併寬度 < 擷取寬度 36% 的窄標籤；
+        # 這裡放寬到整個擷取範圍，並把置中對齊的相鄰行也視為同一段。
+        "merge_wrapped_max_width_ratio": 1.0,
+        "merge_centered_lines": True,
         "rapidocr": {
             # 偵測階段的長邊上限（像素）；越大越能抓小字，但越慢
             "limit_side_len": 960,
@@ -55,17 +59,31 @@ DEFAULTS: dict[str, Any] = {
         },
     },
     "translation": {
-        "service": "google_free",
+        "service": "offline",
         "auto_select_service": True,
         "mock_mode": "dictionary",
         "glossary": "",
         "source_language": "auto",
-        "target_language": "zh",
+        "target_language": "zh-hant",
         "keep_original": False,
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_delay_seconds": 1.0,
         "request_interval_seconds": 0.0,
+        # 離線翻譯（Qwen2.5-Instruct + CTranslate2）；model_dir 留空 = 自動尋找 models/translation/
+        "offline": {
+            "model_name": "qwen2.5-1.5b-instruct-ct2-int8",
+            "model_dir": "",
+            # auto：有 NVIDIA GPU（CUDA）就用 GPU，否則 CPU
+            "device": "auto",
+            "compute_type": "auto",
+            # 0 = 自動（最多 6；Intel 混合核心 CPU 上超過 8 會明顯變慢）
+            "threads": 0,
+            "beam_size": 1,
+            "max_new_tokens": 160,
+            # 只有漢字、沒有假名的文字視為：ja（日文）或 空字串（不翻譯）
+            "han_only_as": "ja",
+        },
         "google_free_max_workers": 6,
         "google_free_interval": 0.02,
         "google_free_partial_retries": 0,

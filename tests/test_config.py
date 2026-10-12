@@ -9,7 +9,8 @@ def test_defaults_loaded(tmp_path):
     assert config.get("ocr.engine") == "rapidocr"
     assert config.get("ocr.lang") == "auto"
     assert config.get("updates.auto_check") is None  # 自动更新已移除
-    assert config.get("translation.service") == "google_free"
+    assert config.get("translation.service") == "offline"
+    assert config.get("translation.target_language") == "zh-hant"  # 一定要繁體
     assert config.hotkeys()["capture_region"] == "ctrl+shift+a"
     assert config.get("appearance.palette") == "warm_paper"
     assert config.get("appearance.accent") == "#2878E8"

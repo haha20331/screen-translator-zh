@@ -61,9 +61,33 @@ python main.py
 | `Ctrl+Shift+R` | 對上次的區域重新辨識翻譯 |
 | `Ctrl+Shift+F` / `Ctrl+Shift+W` | 全螢幕 / 視窗擷取 |
 
-目前狀態：OCR 已是 RapidOCR（離線）。翻譯仍是上游的線上服務（預設 Google 免費），**離線翻譯、繁體轉換與 txt 輸出尚未完成**（見 `PLAN.md` 里程碑）。
+目前狀態：OCR 是 RapidOCR（離線），翻譯是離線的 Qwen2.5-1.5B（輸出繁體中文）。**txt 輸出、常駐框、譯文標籤位置等尚未完成**（見 `PLAN.md` 里程碑）。
+
+首次啟動會載入約 1.5 GB 的翻譯模型（背景進行，數秒）；模型放在 `D:\ocr\models\translation\`（見下一節）。
 
 若 PowerShell 擋掉啟用腳本，先執行 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`。
+
+## 取得翻譯模型
+
+模型檔很大，不進版控（`models/` 已被 `.gitignore` 忽略）。預設模型是 Qwen2.5-1.5B-Instruct（Apache-2.0）轉成 CTranslate2 int8，放在 `models/translation/qwen2.5-1.5b-instruct-ct2-int8/`。
+在 WSL 取得：
+
+```bash
+bash scripts/setup_convert_env.sh                     # 建立轉換環境 ~/.venvs/ocr-convert（PyTorch CPU 版，只需一次）
+export HTTPS_PROXY=http://<公司代理>:<port>            # 公司網路攔截 huggingface.co 的憑證時需要
+HF_HUB_DISABLE_XET=1 ~/.venvs/ocr-convert/bin/python scripts/fetch_translation_models.py
+```
+
+腳本會下載指定版本的官方權重、轉換並寫入 `manifest.json`（來源、授權、SHA-256）。已有的 `D:\ocr\models` 也能直接給 Windows 端使用。
+可轉換的模型見 `--list`；換模型時在設定檔改 `translation.offline.model_name`（例如有 NVIDIA GPU 時的 7B 版）。
+
+## 驗證
+
+```bash
+source ~/.venvs/ocr-dev/bin/activate
+# OCR → 行合併 → 離線翻譯 → 繁體，並與參考譯文（<圖名>.txt）比對
+python scripts/translate_benchmark.py --images val_data
+```
 
 ## 環境變數（除錯用）
 

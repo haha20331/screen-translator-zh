@@ -116,18 +116,27 @@ def ocr_lines_to_regions(
 
 
 def merge_wrapped_labels(
-    regions: list[TextRegion], target_language: str, capture_width: int
+    regions: list[TextRegion],
+    target_language: str,
+    capture_width: int,
+    max_width_ratio: float = 0.36,
+    merge_centered: bool = False,
+    han_is_source: bool = False,
 ) -> list[TextRegion]:
     """合并被 OCR 拆开的标签和段落，同时保留原始单行字号参考。
 
     只处理单列宽度内且左边缘对齐的相邻行，避免把表格不同列乱并。
     基准名称、文件名等不翻译内容也不会被吸进译文框。
+
+    ``max_width_ratio``：單行寬度上限佔擷取寬度的比例（上游預設 0.36，只適合窄標籤；
+    字幕與對白通常很寬，可調到 1.0）。``merge_centered``：置中對齊（中心點接近）的相鄰行
+    也視為同一段，用於置中字幕。``han_is_source``：翻譯器把純漢字當來源語言。
     """
     if len(regions) < 2:
         return regions
 
     remaining = sorted(regions, key=lambda item: (item.y, item.x))
-    max_label_width = max(180, int(round(max(1, capture_width) * 0.36)))
+    max_label_width = max(180, int(round(max(1, capture_width) * max(0.05, max_width_ratio))))
     merged: list[TextRegion] = []
     while remaining:
         current = remaining.pop(0)
@@ -143,16 +152,22 @@ def merge_wrapped_labels(
                 gap = candidate.y - current.bottom
                 if gap > gap_tolerance:
                     break
+                # 大字體、藝術字的 OCR 框常彼此重疊；輕微重疊仍視為相鄰行
+                overlap_tolerance = int(round(max(source_height, candidate_height) * 0.5))
                 x_tolerance = max(
                     5, int(round(max(source_height, candidate_height) * 0.35))
+                )
+                left_aligned = abs(candidate.x - current.x) <= x_tolerance
+                centered = merge_centered and (
+                    abs(candidate.center[0] - current.center[0]) <= x_tolerance
                 )
                 if (
                     current.width <= max_label_width
                     and candidate.width <= max_label_width
-                    and abs(candidate.x - current.x) <= x_tolerance
-                    and 0 <= gap
-                    and needs_translation(current.text, target_language)
-                    and needs_translation(candidate.text, target_language)
+                    and (left_aligned or centered)
+                    and gap >= -overlap_tolerance
+                    and needs_translation(current.text, target_language, han_is_source)
+                    and needs_translation(candidate.text, target_language, han_is_source)
                 ):
                     match_index = candidate_index
                     break

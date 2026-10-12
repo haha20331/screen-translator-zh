@@ -101,11 +101,15 @@ class PipelineTask(QThread):
                 self.error.emit("没有识别到文字（置信度过滤后为空）")
                 return
 
-            target = str(self.config.get("translation.target_language", "zh"))
+            target = str(self.config.get("translation.target_language", "zh-hant"))
+            han_is_source = bool(getattr(self.translator, "han_is_source", False))
             regions = merge_wrapped_labels(
                 regions,
                 target_language=target,
                 capture_width=self.capture.bbox[2] - self.capture.bbox[0],
+                max_width_ratio=float(self.config.get("ocr.merge_wrapped_max_width_ratio", 0.36)),
+                merge_centered=bool(self.config.get("ocr.merge_centered_lines", False)),
+                han_is_source=han_is_source,
             )
 
             # 背景亮度 -> 自动文字颜色
@@ -136,7 +140,9 @@ class PipelineTask(QThread):
             # 同批去重：重复文本只请求一次，减少免费服务限流压力
             unique_texts = list(dict.fromkeys(texts))
             translatable = [
-                text for text in unique_texts if needs_translation(text, target)
+                text
+                for text in unique_texts
+                if needs_translation(text, target, han_is_source=han_is_source)
             ]
             # 图标、文件名以及已经是目标语言的文字保持原样。旧逻辑把中文
             # 中文再翻一遍、把文件夹图标“O/0”翻成方块，是整页发脏的主因。
