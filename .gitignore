@@ -14,3 +14,21 @@ models/
 *.onnx
 *.bin
 *.pt
+
+# --- 來自上游 screen-translator 的忽略規則 ---
+.pytest_cache/
+dist_*/
+*.spec.bak
+config.json
+history/
+logs/
+work/
+HANDOVER.md
+env/
+Env/
+.Python
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
