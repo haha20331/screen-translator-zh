@@ -20,7 +20,6 @@ from PySide6.QtWidgets import QMessageBox, QWidget
 import services.ocr.null_ocr  # noqa: F401
 
 # 确保各 OCR 引擎 / 翻译适配器已注册（顺序影响 UI 下拉框默认项）
-import services.ocr.paddle_ocr  # noqa: F401
 import services.ocr.windows_ocr  # noqa: F401
 import services.translation.deepl_translator  # noqa: F401
 import services.translation.google_free_translator  # noqa: F401
@@ -44,17 +43,11 @@ from app.runtime import main_script, sys_executable
 from app.settings_mixin import SettingsMixin
 from app.status_mixin import StatusMixin
 from app.version import __version__
-from services.authenticode import (
-    AuthenticodeVerificationError,
-    runtime_signature_reference,
-    verify_authenticode,
-)
 from services.ocr.base import OCRUnavailableError, create_ocr_engine, list_ocr_engines
 from services.screenshot_service import ScreenshotService
 from services.translation.base import Translator
 from services.translation.cache import TranslationCache
 from services.translation.factory import create_translator, list_translators
-from services.update_service import sha256_file
 from services.window_capture_service import (
     WindowCaptureError,
     get_foreground_window,
@@ -68,13 +61,11 @@ from ui.appearance import resolve_tokens
 from ui.floating_status import FloatingStatus
 from ui.main_window import MainWindow
 from ui.motion import CAPTURE_SETTLE, SELECTION_SETTLE, STATUS_HOLD
-from ui.ocr_component_tasks import PaddleComponentInstallTask
 from ui.overlay_manager import OverlayManager
 from ui.selection_overlay import SelectionOverlay
 from ui.settings_dialog import SettingsDialog
 from ui.style import apply_style
 from ui.tray_icon import TrayIcon, build_icon
-from ui.update_tasks import UpdateCheckTask, UpdateDownloadTask
 from ui.window_capture_highlight import WindowCaptureHighlight
 from utils import dpi_utils
 from utils.language_utils import LANGUAGE_CODES, LANGUAGES
@@ -133,8 +124,6 @@ class Application(
         self._pipeline_error = ""
         self._shutting_down = False
         self._shutdown_finalized = False
-        self._shutdown_aux_tasks: list[QObject] = []
-        self._update_check_task: UpdateCheckTask | None = None
 
         self._capture_timer = QTimer(self)
         self._capture_timer.setSingleShot(True)
@@ -210,8 +199,6 @@ class Application(
             if (not self.config.get("general.first_run_done", False)
                     and os.environ.get("SCREEN_TRANSLATOR_SELFTEST") != "1"):
                 QTimer.singleShot(500, self._show_welcome)
-            if self.config.get("updates.auto_check", True):
-                QTimer.singleShot(6000, self._check_for_updates)
         except Exception as exc:
             log.exception("应用启动失败")
             QMessageBox.critical(None, "启动失败", f"{exc}")
@@ -230,9 +217,6 @@ class Application(
         self._monitor_timer.stop()
         self._monitor_active = False
         self._dispose_monitor_region()
-        if self._settings_page is not None:
-            self._settings_page.cancel_background_tasks()
-        self._cancel_auxiliary_tasks_for_shutdown()
         self._dispose_selection()
         self._dispose_window_highlight()
         self.floating_status.hide_immediate()
@@ -253,46 +237,8 @@ class Application(
             self.set_status("正在安全结束当前任务…")
         self._maybe_finalize_shutdown()
 
-    def _cancel_auxiliary_tasks_for_shutdown(self) -> None:
-        """Cancel Qt background jobs and keep the event loop alive for teardown."""
-        task_types = (UpdateCheckTask, UpdateDownloadTask, PaddleComponentInstallTask)
-        tasks: list[QObject] = []
-        for task_type in task_types:
-            tasks.extend(self.qt_app.findChildren(task_type))
-        if self._update_check_task is not None and all(
-            task is not self._update_check_task for task in tasks
-        ):
-            tasks.append(self._update_check_task)
-
-        self._shutdown_aux_tasks = []
-        for task in tasks:
-            try:
-                if not task.isRunning():
-                    continue
-                self._shutdown_aux_tasks.append(task)
-                task.finished.connect(
-                    lambda current=task: self._auxiliary_shutdown_task_finished(current)
-                )
-                task.cancel()
-                if not task.isRunning():
-                    self._auxiliary_shutdown_task_finished(task)
-            except RuntimeError:
-                # The QObject may already have completed and entered deferred
-                # deletion between discovery and cancellation.
-                continue
-        if self._shutdown_aux_tasks:
-            self.set_status("正在安全结束下载与更新任务…")
-
-    def _auxiliary_shutdown_task_finished(self, task: QObject) -> None:
-        self._shutdown_aux_tasks = [
-            current for current in self._shutdown_aux_tasks if current is not task
-        ]
-        QTimer.singleShot(0, self._maybe_finalize_shutdown)
-
     def _maybe_finalize_shutdown(self) -> None:
         if not self._shutting_down or self._shutdown_finalized:
-            return
-        if self._shutdown_aux_tasks:
             return
         if self.worker is not None and self.worker.isRunning():
             return
@@ -313,11 +259,6 @@ class Application(
         if os.environ.get("SCREEN_TRANSLATOR_NO_WARMUP") == "1" or os.environ.get(
             "SCREEN_TRANSLATOR_SELFTEST"
         ) == "1":
-            return
-        # The optional Paddle worker is a separate process. Starting it from an
-        # untracked daemon thread could leave that process behind during a quick
-        # app shutdown; its first real OCR request performs the warmup instead.
-        if bool(getattr(self.ocr_engine, "uses_external_component", False)):
             return
 
         def job() -> None:
@@ -398,74 +339,3 @@ class Application(
 
         AboutDialog(self.window, self.config).exec()
 
-    # ------------------------------------------------------------------ update
-    def _check_for_updates(self) -> None:
-        if self._shutting_down or (
-            self._update_check_task is not None and self._update_check_task.isRunning()
-        ):
-            return
-        task = UpdateCheckTask(
-            __version__,
-            str(self.config.get("updates.repository", "nimbus-translate/screen-translator")),
-            include_prereleases=bool(self.config.get("updates.include_prereleases", False)),
-            parent=self.qt_app,
-        )
-        self._update_check_task = task
-        task.updateFound.connect(self._update_available)
-        task.failed.connect(lambda message: log.info("自动更新检查失败：%s", message))
-        task.finished.connect(lambda current=task: self._update_check_finished(current))
-        task.finished.connect(task.deleteLater)
-        task.start()
-
-    def _update_available(self, info) -> None:
-        message = f"发现新版本 {info.latest_version}，可在设置中下载"
-        self.set_status(message)
-        if self.tray is not None:
-            self.tray.showMessage("ScreenTranslator 更新", message)
-
-    def _update_check_finished(self, task: UpdateCheckTask) -> None:
-        if self._update_check_task is task:
-            self._update_check_task = None
-
-    def install_update(self, path: str, expected_sha256: str) -> None:
-        """Launch only a verified package produced by UpdateDownloadTask."""
-        candidate = Path(path).resolve()
-        update_root = (app_data_dir() / "updates").resolve()
-        if candidate.parent != update_root or candidate.suffix.lower() not in {".exe", ".msi"}:
-            self.show_error("更新失败", "更新包路径无效")
-            return
-        if not candidate.is_file():
-            self.show_error("更新失败", "更新包不存在")
-            return
-        if len(expected_sha256) != 64 or any(
-            char not in "0123456789abcdefABCDEF" for char in expected_sha256
-        ):
-            self.show_error("更新失败", "更新包校验信息无效")
-            return
-        try:
-            current_sha256 = sha256_file(candidate)
-        except OSError as exc:
-            self.show_error("更新失败", f"无法读取更新包：{exc}")
-            return
-        if current_sha256.casefold() != expected_sha256.casefold():
-            self.show_error("更新失败", "更新包在下载后发生变化，已拒绝执行")
-            return
-        try:
-            verify_authenticode(
-                candidate,
-                reference_path=runtime_signature_reference(),
-            )
-        except AuthenticodeVerificationError as exc:
-            self.show_error("更新失败", f"更新包数字签名验证失败：{exc}")
-            return
-        try:
-            arguments = [str(candidate)]
-            if candidate.suffix.lower() == ".exe":
-                arguments += ["/SP-", "/SILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"]
-            else:
-                arguments = ["msiexec.exe", "/i", str(candidate), "/passive"]
-            subprocess.Popen(arguments, close_fds=True)
-        except OSError as exc:
-            self.show_error("更新失败", f"无法启动安装程序：{exc}")
-            return
-        self.shutdown()

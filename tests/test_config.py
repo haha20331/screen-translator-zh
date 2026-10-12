@@ -8,7 +8,7 @@ def test_defaults_loaded(tmp_path):
     assert config.get("ocr.min_confidence") == 0.6
     assert config.get("ocr.engine") == "windows"
     assert config.get("ocr.lang") == "auto"
-    assert config.get("updates.auto_check") is True
+    assert config.get("updates.auto_check") is None  # 自动更新已移除
     assert config.get("translation.service") == "google_free"
     assert config.hotkeys()["capture_region"] == "ctrl+shift+a"
     assert config.get("appearance.palette") == "warm_paper"

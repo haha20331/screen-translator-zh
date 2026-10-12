@@ -1,7 +1,7 @@
 name: CI
 
 # 闭环「测试只在打 tag 触发」的缺口：在 PR 与 push 到 main 时也跑测试，
-# 让合并前的回归能尽早被发现（release-windows.yml 仍只在打 tag 时构建/发布）。
+# 让合并前的回归能尽早被发现。
 on:
   push:
     branches: [main]

@@ -20,7 +20,7 @@ class NullOCREngine(OCREngine):
             log.warning("当前没有可用的 OCR 引擎")
             self._warned = True
         raise RuntimeError(
-            "没有可用的 OCR 引擎：请先使用 Windows OCR，或在设置 → OCR 中下载 PaddleOCR 可选组件。"
+            "没有可用的 OCR 引擎：请检查设置 → OCR 中选择的引擎及其依赖是否已安装。"
         )
 
 

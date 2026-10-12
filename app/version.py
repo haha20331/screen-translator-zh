@@ -28,5 +28,4 @@ def _runtime_version() -> str:
 
 
 __version__ = _runtime_version()
-RELEASE_REPOSITORY = "xuange-hu/screen-translator"
 RELEASE_CHANNEL = "beta"

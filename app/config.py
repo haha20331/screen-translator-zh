@@ -18,11 +18,6 @@ DEFAULTS: dict[str, Any] = {
         "save_history": False,
         "history_dir": "",
     },
-    "updates": {
-        "auto_check": True,
-        "include_prereleases": False,
-        "repository": "nimbus-translate/screen-translator",
-    },
     "appearance": {
         "schema_version": 1,
         "palette": "warm_paper",
@@ -49,13 +44,6 @@ DEFAULTS: dict[str, Any] = {
         "min_confidence": 0.6,
         "merge_y_tolerance_ratio": 0.3,
         "merge_x_gap_ratio": 0.8,
-        "paddle": {
-            "use_gpu": False,
-            "text_detection_model_name": "PP-OCRv5_mobile_det",
-            "text_recognition_model_name": "PP-OCRv5_mobile_rec",
-            "use_textline_orientation": False,
-            "component_manifest_url": "https://github.com/nimbus-translate/screen-translator/releases/latest/download/paddle-component-manifest.json",
-        },
     },
     "translation": {
         "service": "google_free",

@@ -76,7 +76,6 @@ class SettingsMixin:
         dialog.finished.connect(
             lambda result, page=dialog: self._close_settings_page(page, result)
         )
-        dialog.install_update_requested.connect(self.install_update)
         self.window.show_settings_page(dialog)
 
     def _begin_settings_exit(self, page: SettingsDialog, result: int) -> None:
@@ -186,7 +185,7 @@ class SettingsMixin:
     def _create_configured_ocr_engine(self):
         """Resolve the requested backend without making a light build unbootable."""
         requested = str(self.config.get("ocr.engine", "windows") or "windows")
-        candidates = list(dict.fromkeys((requested, "windows", "paddle", "none")))
+        candidates = list(dict.fromkeys((requested, "windows", "none")))
         failures: list[str] = []
         for candidate in candidates:
             try:
@@ -205,8 +204,7 @@ class SettingsMixin:
                     "; ".join(failures),
                 )
                 # Keep the visible selectors and the engine actually executing
-                # in agreement. This also migrates v0.1 users whose saved
-                # Paddle choice is not present in the lightweight package.
+                # in agreement.
                 self.config.set("ocr.engine", candidate)
                 try:
                     self.config.save()

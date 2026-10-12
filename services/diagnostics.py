@@ -125,7 +125,6 @@ def _default_ocr_backends() -> list[dict[str, Any]]:
         # Registration is normally performed by Application.  The diagnostic
         # service also works before the controller is constructed.
         import services.ocr.null_ocr  # noqa: F401
-        import services.ocr.paddle_ocr  # noqa: F401
         import services.ocr.windows_ocr  # noqa: F401
         from services.ocr import base
 

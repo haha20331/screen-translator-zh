@@ -71,20 +71,6 @@ class AboutDialog(QDialog):
         header.addLayout(info, 1)
         root.addLayout(header)
 
-        repo_layout = QHBoxLayout()
-        repo_layout.setSpacing(10)
-        repo_raw = config.get("updates.repository", "xuange-hu/screen-translator")
-        repo_url = f"https://github.com/{repo_raw}"
-        repo_label = QLabel(f"开源仓库：{repo_raw}")
-        repo_label.setObjectName("AboutRepo")
-        repo_btn = QPushButton("在 GitHub 查看")
-        repo_btn.setObjectName("PrimaryButton")
-        repo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        repo_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(repo_url)))
-        repo_layout.addWidget(repo_label, 1)
-        repo_layout.addWidget(repo_btn)
-        root.addLayout(repo_layout)
-
         shortcuts = self._card("快捷键", "即使主窗口隐藏，全局热键也能直接启动动作。", self._shortcut_table(config.hotkeys()))
         root.addWidget(shortcuts, 1)
 
