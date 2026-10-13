@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 LANGUAGES = [
     ("auto", "自動檢測"),
@@ -53,6 +54,73 @@ def has_han(text: str) -> bool:
     return any("\u3400" <= char <= "\u9fff" for char in text)
 
 
+def script_class(text: str) -> str:
+    """文字的書寫系統：``ja``（含假名）、``han``（只有漢字，沒有假名）、``latin``、``other``（數字、符號）。"""
+    value = text or ""
+    if has_kana(value):
+        return "ja"
+    if has_han(value):
+        return "han"
+    if re.search(r"[A-Za-z]", value):
+        return "latin"
+    return "other"
+
+
+def same_script_class(first: str, second: str) -> bool:
+    """兩行文字是否屬於同一種書寫系統（數字、符號可以接在任何一種後面）。
+
+    雙語、三語字幕常把日文、羅馬拼音、中文譯文疊成幾行；把它們併成一段交給翻譯，
+    模型會把羅馬拼音音譯成一串怪字，還可能整段胡亂重複。
+    日文被換行時，下一行可能沒有假名（「20年連続」）：含假名的行與純漢字行仍可合併，
+    除非純漢字那行看得出是中文（那是附帶的中文譯文）。
+    """
+    first_class, second_class = script_class(first), script_class(second)
+    if first_class == second_class or "other" in (first_class, second_class):
+        return True
+    if {first_class, second_class} == {"ja", "han"}:
+        from utils import chinese
+
+        return not chinese.looks_chinese(first if first_class == "han" else second)
+    return False
+
+
+# 羅馬拼音（Hepburn / 訓令式）的音節：（子音）+ 母音，或單獨的 n。促音的雙子音與 tch 先壓成單子音再比對。
+_ROMAJI_SYLLABLE = r"(?:(?:ch|sh|ts|ky|gy|ny|hy|by|py|my|ry|j|[kgsztdnhbpmryw])?[aiueo]|n(?![aiueoy]))"
+_ROMAJI_WORD_RE = re.compile(rf"(?:{_ROMAJI_SYLLABLE})+")
+# 羅馬拼音的特徵：日文獨有的拼法（sh/ch/ts/拗音），或常見助詞；英文單字很少同時整句都符合音節規則又帶有這些特徵
+_ROMAJI_CUE_RE = re.compile(r"sh|ch|ts|ky|gy|ny|hy|my|ry|by|py|(?<![a-z])(?:wa|ga|wo|ni|ka)(?![a-z])")
+
+
+def is_romanized_japanese(text: str) -> bool:
+    """這行拉丁字母是不是日文的羅馬拼音（歌詞字幕常附在日文下方）。
+
+    羅馬拼音只是日文的讀音，翻成中文只會得到一串音譯的怪字，應該略過。
+    條件偏保守，避免把英文句子（例如 ``Take me home``）誤判：
+    至少兩個單字、幾乎每個單字都能拆成羅馬拼音音節，而且帶有日文獨有的拼法或助詞。
+    """
+    decomposed = unicodedata.normalize("NFD", text or "")
+    # ō / ū 等長音符號：去掉組合用的長音符號，視為有特徵
+    macron = "\u0304" in decomposed
+    folded = "".join(char for char in decomposed if not unicodedata.combining(char)).lower()
+    folded = folded.replace("'", "").replace("\u2019", "")
+    if re.search(r"[^a-z\s,.!?~\-]", folded):
+        return False
+    words = re.findall(r"[a-z]+", folded)
+    if len(words) < 2:
+        return False
+
+    def parses(word: str) -> bool:
+        word = re.sub(r"tch", "ch", word)
+        word = re.sub(r"([kgsztdbpjhmrfw])\1", r"\1", word)  # 促音：kk、tt、ss…
+        return _ROMAJI_WORD_RE.fullmatch(word) is not None
+
+    parsed = sum(parses(word) for word in words)
+    # OCR 偶爾認錯一個字母（hakanai → hakanal）：單字夠多時容許一個壞字
+    if parsed < len(words) - (1 if len(words) >= 4 else 0):
+        return False
+    return macron or _ROMAJI_CUE_RE.search(" ".join(words)) is not None
+
+
 def detect_source_language(text: str, han_only_as: str | None = "ja") -> str | None:
     """判斷一段 OCR 文字的來源語言：``"ja"``、``"en"``，無法判斷（純數字、符號等）回傳 ``None``。
 
@@ -91,6 +159,8 @@ def needs_translation(text: str, target_language: str, han_is_source: bool = Fal
     if _BRAND_LOGO_RE.fullmatch(value):
         return False
     if value.casefold() == "xhigh":
+        return False
+    if is_romanized_japanese(value):
         return False
     # 表格里的基准/产品标识不是自然语言。翻它们既浪费请求，又容易把
     # SWE-Bench、GDPval-AA 之类弄成一坨假中文。

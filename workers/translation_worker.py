@@ -17,7 +17,12 @@ from utils.image_utils import (
     sanitize_background,
 )
 from utils.language_utils import needs_translation
-from utils.layout_utils import merge_wrapped_labels, ocr_lines_to_regions, uses_translation_panel
+from utils.layout_utils import (
+    companion_translation_texts,
+    merge_wrapped_labels,
+    ocr_lines_to_regions,
+    uses_translation_panel,
+)
 from utils.text_utils import clean_text, normalize_ocr_text, protect_texts, restore_texts
 
 log = get_logger("worker")
@@ -139,10 +144,17 @@ class PipelineTask(QThread):
             texts = [region.text for region in regions]
             # 同批去重：重复文本只请求一次，减少免费服务限流压力
             unique_texts = list(dict.fromkeys(texts))
+            # 雙語字幕裡疊在日文旁的那行中文譯文：本來就看得懂，不要再當日文翻一遍
+            skipped = (
+                companion_translation_texts(regions)
+                if han_is_source and target.lower().startswith("zh")
+                and bool(self.config.get("ocr.skip_companion_translation", True))
+                else set()
+            )
             translatable = [
                 text
                 for text in unique_texts
-                if needs_translation(text, target, han_is_source=han_is_source)
+                if text not in skipped and needs_translation(text, target, han_is_source=han_is_source)
             ]
             # 图标、文件名以及已经是目标语言的文字保持原样。旧逻辑把中文
             # 中文再翻一遍、把文件夹图标“O/0”翻成方块，是整页发脏的主因。

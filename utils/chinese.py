@@ -37,6 +37,27 @@ def _convert(config: str, text: str) -> str:
         return converter.convert(text)
 
 
+# 日文漢字文字幾乎不會出現、但中文很常見的字（繁體與簡體）
+_CHINESE_MARKER_CHARS = frozenset("你妳她們们這这個个嗎吗吧呢沒没還还麼么裡里")
+
+
+def looks_chinese(text: str) -> bool:
+    """純漢字（沒有假名）的一行，是不是看得出是中文而不是日文。
+
+    日文漢字與中文本來無法區分，這裡只找「正面證據」，沒有證據就回傳 False（當日文處理）：
+    全形逗號、中文特有的字，以及 OpenCC 能分辨的字形：只有繁體中文會用的字（日文用新字體，
+    ``t2jp`` 轉了會變）與只有簡體中文會用的字（``s2t`` 會變、而日文新字體 ``jp2t`` 不會）。
+    """
+    value = text or ""
+    if "，" in value or any(char in _CHINESE_MARKER_CHARS for char in value):
+        return True
+    if not available():
+        return False
+    if _convert("t2jp", value) != value:
+        return True
+    return _convert("s2t", value) != value and _convert("jp2t", value) == value
+
+
 def to_traditional(text: str) -> str:
     """簡體轉台灣繁體。已經是繁體的字元不受影響。"""
     return _convert(_TO_TRADITIONAL, text)
@@ -61,4 +82,24 @@ def normalize_punctuation(text: str) -> str:
     if not text:
         return text
     text = text.replace("\u2047", "").replace("\u2047 ", "")
-    return _PUNCT_AFTER_CJK.sub(lambda match: _ASCII_TO_FULLWIDTH[match.group(1)], text).strip()
+    text = _PUNCT_AFTER_CJK.sub(lambda match: _ASCII_TO_FULLWIDTH[match.group(1)], text).strip()
+    # 小模型有時以孤零零的逗號起頭（「，我知道…」）；譯文不會以逗號、句號開始
+    return text.lstrip(_LEADING_PUNCTUATION).strip()
+
+
+_LEADING_PUNCTUATION = " ,.;:，、。；：\u3000"
+_REPEATED_PHRASE_RE = re.compile(r"(.{6,}).*?\1")
+_REPEATED_RUN_RE = re.compile(r"(.{3,}?)\1{2,}")
+_REPEATED_SOURCE_RE = re.compile(r"(.{3,}).*?\1")
+
+
+def has_runaway_repetition(output: str, source: str = "") -> bool:
+    """譯文是不是陷入「同一段話重複」的迴圈（小型翻譯模型遇到雜訊輸入時的典型失敗）。
+
+    同一段 6 字以上的話出現兩次，或 3 字以上的片段連續出現三次。原文本身就在重複
+    （歌詞副歌、「哈哈哈」）時，譯文跟著重複是正常的，不算。
+    """
+    compact = re.sub(r"\s+", "", output or "")
+    if not (_REPEATED_PHRASE_RE.search(compact) or _REPEATED_RUN_RE.search(compact)):
+        return False
+    return _REPEATED_SOURCE_RE.search(re.sub(r"\s+", "", source or "")) is None

@@ -6,7 +6,7 @@ from typing import Iterable
 
 from app.models import TextRegion
 from services.ocr.base import OCRLine
-from utils.language_utils import needs_translation
+from utils.language_utils import is_romanized_japanese, needs_translation, same_script_class, script_class
 
 
 def filter_by_confidence(lines: list[OCRLine], min_confidence: float) -> list[OCRLine]:
@@ -161,13 +161,18 @@ def merge_wrapped_labels(
                 centered = merge_centered and (
                     abs(candidate.center[0] - current.center[0]) <= x_tolerance
                 )
+                adjacent = (left_aligned or centered) and gap >= -overlap_tolerance
+                # 日文／羅馬拼音／中文譯文疊成幾行的字幕不能併成一段，也不能跳過夾在中間的那一行去併下面的
+                same_script = same_script_class(current.text, candidate.text)
+                if adjacent and not same_script:
+                    break
                 if (
                     current.width <= max_label_width
                     and candidate.width <= max_label_width
-                    and (left_aligned or centered)
-                    and gap >= -overlap_tolerance
+                    and adjacent
                     and needs_translation(current.text, target_language, han_is_source)
                     and needs_translation(candidate.text, target_language, han_is_source)
+                    and same_script
                 ):
                     match_index = candidate_index
                     break
@@ -189,6 +194,53 @@ def merge_wrapped_labels(
         merged.append(current)
 
     return sorted(merged, key=lambda item: (item.y, item.x))
+
+
+def _stacked(first: TextRegion, second: TextRegion, max_gap_lines: float) -> bool:
+    """兩個文字塊是不是上下疊放：垂直距離不超過 ``max_gap_lines`` 行，且置中或靠左對齊。"""
+    line = max(first.source_line_height or first.height, second.source_line_height or second.height, 1.0)
+    gap = max(second.y - first.bottom, first.y - second.bottom)  # 負值 = 垂直方向重疊（同一列，不是疊起來）
+    if not -0.3 * line <= gap <= max_gap_lines * line:
+        return False
+    centered = abs(first.center[0] - second.center[0]) <= 0.2 * max(first.width, second.width)
+    left_aligned = abs(first.x - second.x) <= max(8.0, 0.5 * line)
+    return centered or left_aligned
+
+
+def companion_translation_texts(regions: list[TextRegion], max_gap_lines: float = 3.0) -> set[str]:
+    """字幕檔自己附的中文譯文：疊在日文字幕上下、純漢字的那幾行。
+
+    日文漢字與中文無法區分，所以純漢字文字預設當日文來源翻譯；但雙語字幕常在日文下方
+    （或上方）疊一行中文，把它再當日文翻一遍只會得到亂改過的句子。符合下列條件的純漢字行
+    視為附帶的中文譯文，呼叫端略過不翻（它本來就看得懂）：
+
+    - 疊在含假名的字幕旁（``max_gap_lines`` 行以內，中間可能夾著羅馬拼音），置中或靠左對齊；並且
+    - 看得出是中文（``chinese.looks_chinese``），或同一組字幕裡有一行羅馬拼音（日文／羅馬拼音／
+      中文三行是歌詞字幕的典型排法）。
+
+    只有日文漢字的標語（「20年連続」）沒有這些證據，仍然照日文翻。
+    """
+    from utils import chinese
+
+    kana_regions = [region for region in regions if script_class(region.text) == "ja"]
+    if not kana_regions:
+        return set()
+    romaji_regions = [region for region in regions if is_romanized_japanese(region.text)]
+    companions: set[str] = set()
+    for region in regions:
+        if script_class(region.text) != "han":
+            continue
+        for kana in kana_regions:
+            if not _stacked(region, kana, max_gap_lines):
+                continue
+            trilingual = any(
+                _stacked(romaji, kana, max_gap_lines) or _stacked(romaji, region, max_gap_lines)
+                for romaji in romaji_regions
+            )
+            if trilingual or chinese.looks_chinese(region.text):
+                companions.add(region.text)
+                break
+    return companions
 
 
 def clamp_region(region: TextRegion, bounds: tuple[int, int, int, int]) -> TextRegion:

@@ -29,10 +29,22 @@ def region_signature(capture, regions: Iterable[TextRegion]) -> str:
     return digest
 
 
+def _without_kept_original(text: str, translated: str) -> str:
+    """「保留原文」會把譯文顯示成「原文\n譯文」；寫回快取的只能是譯文，否則下一輪又會多疊一份原文。"""
+    prefix = text.strip() + "\n"
+    translated = translated.strip()
+    while text.strip() and translated.startswith(prefix):
+        translated = translated[len(prefix):].lstrip()
+    return translated
+
+
 def known_translations(regions: Iterable[TextRegion]) -> dict[str, str]:
     """把本轮的 (原文 -> 译文) 收成字典，供下一轮预热翻译缓存。"""
-    return {
-        region.text: region.translated_text
-        for region in regions
-        if region.text and region.translated_text and region.translated_text.strip()
-    }
+    known = {}
+    for region in regions:
+        if not region.text or not region.translated_text or not region.translated_text.strip():
+            continue
+        translated = _without_kept_original(region.text, region.translated_text)
+        if translated:
+            known[region.text] = translated
+    return known

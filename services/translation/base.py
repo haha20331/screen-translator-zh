@@ -83,6 +83,10 @@ class Translator(ABC):
                 and cached.strip() == text.strip()
                 and (source_language or "auto") != target_language
             )
+            # 「保留原文」曾讓監控把「原文\n譯文」寫回快取，之後每輪再多疊一份原文；這種項目一律作廢重翻。
+            poisoned = poisoned or (
+                cached is not None and bool(text.strip()) and cached.lstrip().startswith(text.strip() + "\n")
+            )
             if cached is not None and not poisoned:
                 results[idx] = cached
             else:
@@ -211,12 +215,20 @@ class Translator(ABC):
             self._last_request_time = time.monotonic()
 
     # ------------------------------------------------------------- 缓存
+    def cache_namespace(self, source: str | None) -> str | None:
+        """快取用的「來源語言」鍵。翻譯方式會改變譯文時（例如歌詞模式），子類別在這裡加上標記，
+        讓不同方式的譯文不會互相蓋過；外部直接寫入快取（即時監控的預熱）也要走這個方法。"""
+        return source
+
+    def reset_context(self) -> None:
+        """開始一段新的內容（新的擷取、監控開始／停止）時呼叫；有記住上下文的翻譯器在這裡清掉。"""
+
     def _cache_get(self, source, target, text) -> str | None:
         if self.cache is None:
             return None
-        return self.cache.get(source, target, text)
+        return self.cache.get(self.cache_namespace(source), target, text)
 
     def _cache_set(self, source, target, text, translated) -> None:
         if self.cache is None:
             return
-        self.cache.set(source, target, text, translated)
+        self.cache.set(self.cache_namespace(source), target, text, translated)

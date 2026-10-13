@@ -48,6 +48,8 @@ DEFAULTS: dict[str, Any] = {
         # 這裡放寬到整個擷取範圍，並把置中對齊的相鄰行也視為同一段。
         "merge_wrapped_max_width_ratio": 1.0,
         "merge_centered_lines": True,
+        # 雙語字幕：疊在日文字幕旁、純漢字的那行（字幕檔附的中文譯文）不再當日文翻譯
+        "skip_companion_translation": True,
         "rapidocr": {
             # 偵測階段的長邊上限（像素）；越大越能抓小字，但越慢
             "limit_side_len": 960,
@@ -66,6 +68,13 @@ DEFAULTS: dict[str, Any] = {
         "source_language": "auto",
         "target_language": "zh-hant",
         "keep_original": False,
+        # 離線翻譯・標準（LLM）的輔助功能，即時生效：
+        # 上下文：記住最近 context_size 句已翻好的句子，當成前文協助翻譯這一句（超過 context_ttl_seconds 的不用）
+        "use_context": False,
+        "context_size": 2,
+        "context_ttl_seconds": 120,
+        # 歌詞模式：提示模型這是歌詞，用較自然、有詩意的方式意譯
+        "lyrics_mode": False,
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_delay_seconds": 1.0,

@@ -487,6 +487,10 @@ class MainWindow(QWidget):
         self.status_label.setObjectName("StatusLabel")
         bottom_row.addWidget(self.status_label, 1)
         self.check_keep_original = QCheckBox("保留原文")
+        self.check_context = QCheckBox("上下文")
+        self.check_context.setToolTip("記住前面的句子，協助翻譯這一句（句數在 設定 → 翻譯）。只對「離線翻譯・標準」有效。")
+        self.check_lyrics = QCheckBox("歌詞")
+        self.check_lyrics.setToolTip("告訴模型這是歌詞，譯得較通順有詩意。只對「離線翻譯・標準」有效。")
         self.btn_toggle = QPushButton("隱藏譯文")
         self.btn_toggle.setCheckable(True)
         self.btn_toggle.setObjectName("ToggleButton")
@@ -501,6 +505,8 @@ class MainWindow(QWidget):
         for button in (self.btn_toggle, self.btn_edit, self.btn_refresh, self.btn_monitor):
             button.setMinimumHeight(42)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
+        bottom_row.addWidget(self.check_context)
+        bottom_row.addWidget(self.check_lyrics)
         bottom_row.addWidget(self.check_keep_original)
         bottom_row.addWidget(self.btn_toggle)
         bottom_row.addWidget(self.btn_edit)
@@ -517,6 +523,8 @@ class MainWindow(QWidget):
         self.btn_refresh.clicked.connect(self.controller.refresh)
         self.btn_monitor.clicked.connect(self.controller.toggle_monitor)
         self.check_keep_original.toggled.connect(self._on_keep_original)
+        self.check_context.toggled.connect(lambda checked: self._on_translation_flag("translation.use_context", checked))
+        self.check_lyrics.toggled.connect(lambda checked: self._on_translation_flag("translation.lyrics_mode", checked))
         self.combo_source.currentIndexChanged.connect(self._on_combo_changed)
         self.combo_target.currentIndexChanged.connect(self._on_combo_changed)
         self.combo_ocr.currentIndexChanged.connect(self._on_combo_changed)
@@ -544,6 +552,8 @@ class MainWindow(QWidget):
         self.combo_ocr.setCurrentIndex(self._index_of(self.combo_ocr, self.controller.config.get("ocr.engine", "windows")))
         self.combo_service.setCurrentIndex(self._index_of(self.combo_service, self.controller.config.get("translation.service", "mymemory")))
         self.check_keep_original.setChecked(bool(self.controller.config.get("translation.keep_original", False)))
+        self.check_context.setChecked(bool(self.controller.config.get("translation.use_context", False)))
+        self.check_lyrics.setChecked(bool(self.controller.config.get("translation.lyrics_mode", False)))
         # 譯文放在框下方時原文本來就留在畫面上，「保留原文」只對蓋在原文上的模式有意義
         self.check_keep_original.setVisible(self.controller.config.get("overlay.placement", "below") == "in_place")
         self._block_signals = False
@@ -900,6 +910,13 @@ class MainWindow(QWidget):
     def _on_toggle_overlay(self, _checked: bool) -> None:
         if not getattr(self, "_block_signals", False):
             self.controller.toggle_overlay()
+
+    def _on_translation_flag(self, key: str, checked: bool) -> None:
+        """上下文、歌詞模式：勾選立即生效（翻譯器每次翻譯都讀設定），不必重新載入模型。"""
+        if getattr(self, "_block_signals", False):
+            return
+        self.controller.config.set(key, checked)
+        self.controller.config.save()
 
     def _on_keep_original(self, checked: bool) -> None:
         if getattr(self, "_block_signals", False):

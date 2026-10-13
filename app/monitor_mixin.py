@@ -42,6 +42,7 @@ class MonitorMixin:
         }
         if self._last_capture.mode == "region":
             self._create_monitor_region_selector()
+        self._reset_translation_context()
         self._monitor_active = True
         self._monitor_errors = 0
         self._monitor_no_text = False
@@ -60,6 +61,7 @@ class MonitorMixin:
         if not self._monitor_active:
             return
         self._monitor_active = False
+        self._reset_translation_context()
         self._monitor_timer.stop()
         self._monitor_request = None
         self._monitor_known = {}
@@ -115,8 +117,9 @@ class MonitorMixin:
             self.config.get("monitor.skip_unchanged", True)
             and self._monitor_known
             and self.cache is not None
+            and self.translator is not None
         ):
-            source = str(self.config.get("translation.source_language", "auto"))
+            source = self.translator.cache_namespace(str(self.config.get("translation.source_language", "auto")))
             target = str(self.config.get("translation.target_language", "zh"))
             for text, translated in self._monitor_known.items():
                 try:

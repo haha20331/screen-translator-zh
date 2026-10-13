@@ -108,7 +108,7 @@ class ChineseTargetTranslator(Translator):
         return chinese.to_traditional(text)
 
     def output_looks_untranslated(self, source: str, output: str) -> bool:
-        return looks_untranslated(source, output)
+        return looks_untranslated(source, output) or chinese.has_runaway_repetition(output, source)
 
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:
         if not (target_language or "").lower().startswith("zh"):

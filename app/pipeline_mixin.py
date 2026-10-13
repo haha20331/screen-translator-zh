@@ -17,7 +17,14 @@ log = get_logger("application")
 class PipelineMixin:
     """翻译管线协调：启动 worker、接收状态/错误/结果、收尾与回滚。"""
 
+    def _reset_translation_context(self) -> None:
+        """新的擷取、監控開始／停止＝換了一段內容，先前記住的上下文不該再影響翻譯。"""
+        if self.translator is not None:
+            self.translator.reset_context()
+
     def _start_pipeline(self, capture: CaptureInfo) -> None:
+        if not self._monitor_active:  # 監控期間每一輪都是同一段內容的延續，要保留上下文
+            self._reset_translation_context()
         if not self._cancel_worker():
             self._abort_capture(
                 "上一次翻譯仍在結束，請稍後重試",
