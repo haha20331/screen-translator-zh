@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 
@@ -54,6 +56,23 @@ def frame_signature(image_bgr: np.ndarray, size: int = 16) -> str:
             small[i, j] = gray[ys[i]:ys[i + 1], xs[j]:xs[j + 1]].mean()
     diff = small[:, 1:] > small[:, :-1]
     return diff.flatten().tobytes().hex()
+
+
+def frame_fingerprint(image_bgr: np.ndarray) -> str:
+    """整張畫面逐像素的指紋：畫面有任何一個像素不同，指紋就不同；空畫面回傳空串。
+
+    即時監控用它判斷「這一格跟上一格完全一樣」（靜止畫面的螢幕擷取是逐位元相同的）而跳過辨識。
+    不用 :func:`frame_signature`：它縮成 16x17 再比相鄰亮度，實測換掉整句字幕只差 16 個位元、
+    改一個字只差 1 個位元，而影片背景稍微移動就差上百位元，所以無法用門檻區分，還可能漏掉真正的變化。
+    """
+    if image_bgr is None:
+        return ""
+    arr = np.ascontiguousarray(image_bgr)
+    if arr.size == 0:
+        return ""
+    digest = hashlib.blake2b(arr.tobytes(), digest_size=16)
+    digest.update(repr(arr.shape).encode("ascii"))
+    return digest.hexdigest()
 
 
 def rgb_to_hex(rgb) -> str:

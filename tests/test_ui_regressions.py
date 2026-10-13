@@ -50,8 +50,12 @@ def qapp():
     yield instance
 
 
-def _wait_until(qapp, predicate, *, timeout_ms: int = 1400) -> None:
-    """Drive the offscreen event loop until a transition reaches a stable state."""
+def _wait_until(qapp, predicate, *, timeout_ms: int = 5000) -> None:
+    """Drive the offscreen event loop until a transition reaches a stable state.
+
+    The timeout is only a ceiling: in the full suite earlier tests leave many windows alive and a
+    transition can take several times longer than when the file runs alone.
+    """
     deadline = time.monotonic() + timeout_ms / 1000
     while time.monotonic() < deadline:
         qapp.processEvents()

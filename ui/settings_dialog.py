@@ -694,6 +694,26 @@ class SettingsDialog(QWidget):
         merge_form.addRow("行合併容差", self.spin_y_tol)
         merge_form.addRow("橫向合併閾值", self.spin_x_gap)
         layout.addWidget(self._card("文本組合", "控制零散文字塊如何合併成自然語句。", merge_form))
+
+        self.combo_stability = QComboBox()
+        self.combo_stability.addItem("穩定（預設）", "stable")
+        self.combo_stability.addItem("快速", "fast")
+        self.combo_stability.setToolTip(
+            "穩定：同一句字幕連續辨識到兩次才翻譯並顯示。字幕淡入淡出、換字幕的過渡畫面不會被翻成怪句子，"
+            "代價是換字幕時多等約 0.5～1 秒。\n"
+            "快速：辨識到就立刻翻譯並顯示，反應最快，但過渡畫面可能先閃出殘缺的句子。\n"
+            "兩種模式下，辨識結果與目前顯示的相同時都不會重複翻譯。"
+        )
+        monitor_form = self._new_form()
+        monitor_form.addRow("字幕顯示", self.combo_stability)
+        explanation = QLabel(
+            "穩定：同一句連續辨識到兩次才顯示，不會閃出辨識到一半的怪句子，換字幕約慢 0.5～1 秒。\n"
+            "快速：辨識到就立刻顯示，反應最快，但字幕淡入淡出時可能先閃出殘缺的句子。"
+        )
+        explanation.setObjectName("SettingsCardDescription")
+        explanation.setWordWrap(True)
+        monitor_form.addRow(explanation)
+        layout.addWidget(self._card("即時監控", "控制即時監控時，辨識到的字幕何時翻譯並顯示。", monitor_form))
         layout.addStretch(1)
         return tab
 
@@ -936,6 +956,7 @@ class SettingsDialog(QWidget):
 
         self._set_combo(self.combo_engine, cfg.get("ocr.engine", "windows"))
         self._set_combo(self.combo_lang, cfg.get("ocr.lang", "auto"))
+        self._set_combo(self.combo_stability, cfg.get("monitor.stability", "stable"))
         self.spin_confidence.setValue(float(cfg.get("ocr.min_confidence", 0.6)))
         self.spin_y_tol.setValue(float(cfg.get("ocr.merge_y_tolerance_ratio", 0.5)))
         self.spin_x_gap.setValue(float(cfg.get("ocr.merge_x_gap_ratio", 0.8)))
@@ -1054,6 +1075,7 @@ class SettingsDialog(QWidget):
 
             cfg.set("ocr.engine", self.combo_engine.currentData() or "windows")
             cfg.set("ocr.lang", self.combo_lang.currentData() or "auto")
+            cfg.set("monitor.stability", self.combo_stability.currentData() or "stable")
             cfg.set("ocr.min_confidence", self.spin_confidence.value())
             cfg.set("ocr.merge_y_tolerance_ratio", self.spin_y_tol.value())
             cfg.set("ocr.merge_x_gap_ratio", self.spin_x_gap.value())

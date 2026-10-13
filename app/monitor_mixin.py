@@ -5,6 +5,7 @@ from __future__ import annotations
 # 通过 app.application 命名空间解析 is_window_capturable，使测试对该符号的 monkeypatch 仍然生效。
 from app import application as _application
 from app.logger import get_logger
+from utils.stability import TextStabilizer
 
 log = get_logger("application")
 
@@ -49,6 +50,9 @@ class MonitorMixin:
         self._monitor_known = {}
         self._monitor_signature = ""
         self._monitor_frame_hash = ""
+        self._monitor_idle_hash = ""
+        self._monitor_stabilizer = TextStabilizer()
+        self._configure_stabilizer()
         self._set_busy(True)
         self.set_status("即時監控已開啟，頁面一動就會自動重譯")
         if self.window is not None:
@@ -67,8 +71,14 @@ class MonitorMixin:
         self._monitor_known = {}
         self._monitor_signature = ""
         self._monitor_frame_hash = ""
+        self._monitor_idle_hash = ""
+        self._monitor_stabilizer = None
         self._dispose_monitor_region()
         self._cancel_worker()
+        # 監控期間顯示的譯文隨監控結束一起清掉，不留在畫面上
+        if self.overlay_manager is not None:
+            self.overlay_manager.clear_all()
+            self._sync_overlay_state(False)
         self._set_busy(False)
         if self.window is not None:
             self.window.set_monitor_checked(False)
@@ -77,7 +87,7 @@ class MonitorMixin:
         self.set_status(reason or "已停止即時監控")
 
     def _monitor_cycle(self) -> None:
-        from utils.image_utils import frame_signature
+        from utils.image_utils import frame_fingerprint
 
         if not self._monitor_active or self._shutting_down:
             return
@@ -105,9 +115,13 @@ class MonitorMixin:
             return
         capture.mode = request["mode"]
         self._last_capture = capture
-        # 像素差异门控：画面完全没变就跳过整轮 OCR + 翻译管线，覆盖层保持，省资源。
-        frame_hash = frame_signature(capture.image)
-        if self._monitor_frame_hash and self._monitor_frame_hash == frame_hash and self._monitor_signature:
+        # 像素差异门控：画面逐像素完全没变就跳过整轮 OCR + 翻译管线，覆盖层保持，省资源。
+        # 例外：有一組新文字正在等第二次確認時，同一格畫面也要再辨識一次，才能放行。
+        self._configure_stabilizer()
+        frame_hash = frame_fingerprint(capture.image)
+        pending = self._monitor_stabilizer is not None and self._monitor_stabilizer.has_pending
+        settled = bool(self._monitor_signature) or self._monitor_idle_hash == frame_hash
+        if self._monitor_frame_hash and self._monitor_frame_hash == frame_hash and settled and not pending:
             self._monitor_schedule_next()
             return
         self._monitor_frame_hash = frame_hash
@@ -129,6 +143,14 @@ class MonitorMixin:
         self._pipeline_succeeded = False
         self._pipeline_error = ""
         self._start_pipeline(capture)
+
+    def _configure_stabilizer(self) -> None:
+        """依設定決定要穩定幾輪：穩定 = 同一組文字連續兩輪才顯示；快速 = 辨識到就顯示。"""
+        if self._monitor_stabilizer is None:
+            return
+        fast = str(self.config.get("monitor.stability", "stable")) == "fast"
+        rounds = 1 if fast else max(2, int(self.config.get("monitor.stable_rounds", 2)))
+        self._monitor_stabilizer.configure(rounds, float(self.config.get("monitor.max_wait_seconds", 2.5)))
 
     def _monitor_schedule_next(self) -> None:
         if not self._monitor_active:

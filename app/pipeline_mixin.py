@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 from app.logger import get_logger
 from app.models import CaptureInfo, TextRegion
 from ui.motion import STATUS_HOLD
+from utils.stability import CONFIRMED, PENDING
 from workers.translation_worker import PipelineTask
 
 log = get_logger("application")
@@ -16,6 +17,11 @@ log = get_logger("application")
 
 class PipelineMixin:
     """翻译管线协调：启动 worker、接收状态/错误/结果、收尾与回滚。"""
+
+    def _commit_stable_text(self) -> None:
+        """放行的那組文字已經顯示出來了：之後辨識到一樣的文字就不再翻譯。"""
+        if self._monitor_active and self._monitor_stabilizer is not None:
+            self._monitor_stabilizer.commit()
 
     def _reset_translation_context(self) -> None:
         """新的擷取、監控開始／停止＝換了一段內容，先前記住的上下文不該再影響翻譯。"""
@@ -41,6 +47,7 @@ class PipelineMixin:
                 ocr_engine=self.ocr_engine,
                 translator=self.translator,
                 config=config_snapshot,
+                gate=self._monitor_stabilizer.observe if self._monitor_active and self._monitor_stabilizer else None,
             )
             self.worker.status.connect(self._on_worker_status)
             self.worker.error.connect(self._on_worker_error)
@@ -80,6 +87,7 @@ class PipelineMixin:
             # 画面里没有文字是常态（视频/空白），不算错误，照常继续轮询
             if message.startswith("沒有識別到文字"):
                 self._monitor_no_text = True
+                self._monitor_idle_hash = self._monitor_frame_hash
                 self.set_status("監控中：當前畫面沒有可翻譯的文字")
             else:
                 self._pipeline_error = message
@@ -150,6 +158,13 @@ class PipelineMixin:
         ):
             return
         capture: CaptureInfo = payload["capture"]
+        verdict = payload.get("verdict", CONFIRMED)
+        if verdict != CONFIRMED:
+            # 穩定化：文字與已顯示的相同（不必再翻譯），或是新文字還沒穩定。畫面維持原樣，也不算失敗。
+            self._pipeline_succeeded = True
+            if verdict == PENDING:
+                self.set_status("監控中：等待字幕穩定")
+            return
         regions: list[TextRegion] = payload["regions"]
         recognized_count = int(payload.get("recognized_count", len(regions)))
         translated_count = int(
@@ -169,6 +184,7 @@ class PipelineMixin:
             self._monitor_known = known_translations(regions)
             if signature == self._monitor_signature:
                 self._pipeline_succeeded = True
+                self._commit_stable_text()
                 return
             self._monitor_signature = signature
         # Preserve the previous translation until a new result actually exists;
@@ -183,6 +199,7 @@ class PipelineMixin:
         if self._monitor_active and self._monitor_region_selector is not None:
             self._monitor_region_selector.raise_()
         self._pipeline_succeeded = True
+        self._commit_stable_text()
         if failed_count:
             self.set_status(
                 f"識別 {recognized_count} 個文本塊，已翻譯 {translated_count} 個，"

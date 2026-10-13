@@ -168,6 +168,13 @@ DEFAULTS: dict[str, Any] = {
         "max_consecutive_errors": 3,
         # 把上一轮译文写回缓存：内容没变过的文本块直接命中缓存，几乎瞬时
         "skip_unchanged": True,
+        # 字幕顯示方式。stable（預設）：同一組辨識結果連續 stable_rounds 輪相同才翻譯並顯示，
+        # 過渡畫面（淡入淡出）的殘缺句子不會被翻譯；fast：辨識到就立刻翻譯顯示。
+        # 與已顯示的相同時，兩種模式都不再翻譯。
+        "stability": "stable",
+        "stable_rounds": 2,
+        # 新文字一直在變（辨識抖動）時，最久等幾秒就放行最新的一組
+        "max_wait_seconds": 2.5,
     },
     "hotkeys": {
         "capture_region": "ctrl+shift+a",
@@ -254,6 +261,12 @@ def _normalize_overlay(data: dict[str, Any]) -> None:
 _LEGACY_MONITOR_INTERVAL_MS = 1200
 
 
+def _normalize_monitor_stability(data: dict[str, Any]) -> None:
+    monitor = data.setdefault("monitor", {})
+    if monitor.get("stability") not in {"stable", "fast"}:
+        monitor["stability"] = DEFAULTS["monitor"]["stability"]
+
+
 def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
     """舊預設的輪詢間隔 1200 ms 太慢（每輪結束後固定多等 1.2 秒）；沒被使用者改過就換成新預設。
 
@@ -316,6 +329,7 @@ class AppConfig:
                 _normalize_translation(self.data)
                 _normalize_ocr(self.data, loaded)
                 _normalize_monitor(self.data, loaded)
+                _normalize_monitor_stability(self.data)
                 _normalize_overlay(self.data)
                 # This legacy field is retained for compatibility; capture
                 # feedback now reads appearance.accent.  Normalize the red

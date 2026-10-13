@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide6.QtCore import QThread, Signal
 
 from app.config import AppConfig
@@ -23,6 +25,7 @@ from utils.layout_utils import (
     ocr_lines_to_regions,
     uses_translation_panel,
 )
+from utils.stability import CONFIRMED
 from utils.text_utils import clean_text, normalize_ocr_text, protect_texts, restore_texts
 
 log = get_logger("worker")
@@ -40,12 +43,15 @@ class PipelineTask(QThread):
         translator: Translator,
         config: AppConfig,
         parent=None,
+        gate: Callable[[list[str]], str] | None = None,
     ) -> None:
         super().__init__(parent)
         self.capture = capture
         self.ocr_engine = ocr_engine
         self.translator = translator
         self.config = config
+        # 即時監控的穩定化：拿要翻譯的文字問「該不該翻」，回傳 stability.SAME / PENDING / CONFIRMED
+        self.gate = gate
         self._stop = False
 
     def cancel(self) -> None:
@@ -117,6 +123,32 @@ class PipelineTask(QThread):
                 han_is_source=han_is_source,
             )
 
+            source = str(self.config.get("translation.source_language", "auto"))
+            texts = [region.text for region in regions]
+            # 同批去重：重复文本只请求一次，减少免费服务限流压力
+            unique_texts = list(dict.fromkeys(texts))
+            # 雙語字幕裡疊在日文旁的那行中文譯文：本來就看得懂，不要再當日文翻一遍
+            skipped = (
+                companion_translation_texts(regions)
+                if han_is_source and target.lower().startswith("zh")
+                and bool(self.config.get("ocr.skip_companion_translation", True))
+                else set()
+            )
+            translatable = [
+                text
+                for text in unique_texts
+                if text not in skipped and needs_translation(text, target, han_is_source=han_is_source)
+            ]
+
+            if self.gate is not None:
+                verdict = self.gate(translatable)
+                if verdict != CONFIRMED:
+                    # 與已顯示的相同（不必再翻），或是還沒穩定的新文字（先不翻）：不動畫面
+                    self.result.emit({"capture": self.capture, "regions": [], "verdict": verdict})
+                    return
+            if self._stop:
+                return
+
             # 背景亮度 -> 自动文字颜色
             auto_color = bool(self.config.get("overlay.use_auto_text_color", True))
             default_color = str(self.config.get("overlay.text_color", "#FFFFFF"))
@@ -140,22 +172,6 @@ class PipelineTask(QThread):
                     region.text_color = ensure_text_contrast(region.text_color, region.background_color)
 
             self._emit_status(f"正在翻譯 {len(regions)} 個文本塊...")
-            source = str(self.config.get("translation.source_language", "auto"))
-            texts = [region.text for region in regions]
-            # 同批去重：重复文本只请求一次，减少免费服务限流压力
-            unique_texts = list(dict.fromkeys(texts))
-            # 雙語字幕裡疊在日文旁的那行中文譯文：本來就看得懂，不要再當日文翻一遍
-            skipped = (
-                companion_translation_texts(regions)
-                if han_is_source and target.lower().startswith("zh")
-                and bool(self.config.get("ocr.skip_companion_translation", True))
-                else set()
-            )
-            translatable = [
-                text
-                for text in unique_texts
-                if text not in skipped and needs_translation(text, target, han_is_source=han_is_source)
-            ]
             # 图标、文件名以及已经是目标语言的文字保持原样。旧逻辑把中文
             # 中文再翻一遍、把文件夹图标“O/0”翻成方块，是整页发脏的主因。
             restored_map = {text: text for text in unique_texts}

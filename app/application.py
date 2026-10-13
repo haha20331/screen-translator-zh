@@ -72,6 +72,7 @@ from ui.tray_icon import TrayIcon, build_icon
 from ui.window_capture_highlight import WindowCaptureHighlight
 from utils import dpi_utils
 from utils.language_utils import LANGUAGE_CODES, LANGUAGES
+from utils.stability import TextStabilizer
 from utils.window_affinity import CaptureExclusionFilter
 from workers.translation_worker import PipelineTask
 
@@ -150,6 +151,8 @@ class Application(
         self._monitor_known: dict[str, str] = {}
         self._monitor_signature = ""
         self._monitor_frame_hash = ""
+        self._monitor_idle_hash = ""  # 辨識不到任何文字的那一格畫面；一模一樣的畫面不必再辨識
+        self._monitor_stabilizer: TextStabilizer | None = None
         self._monitor_errors = 0
         self._monitor_no_text = False
         self._last_original_text = ""
