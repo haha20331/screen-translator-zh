@@ -355,6 +355,7 @@ class SettingsDialog(QWidget):
         footer.addWidget(self.btn_cancel)
         footer.addWidget(self.btn_save)
         layout.addLayout(footer)
+        self.combo_placement.currentIndexChanged.connect(self._sync_placement)
         self.combo_display_mode.currentIndexChanged.connect(self._sync_display_mode)
         self.chk_keep_original.toggled.connect(self._sync_keep_original)
         self._select_page(0)
@@ -791,6 +792,9 @@ class SettingsDialog(QWidget):
     def _build_overlay_tab(self) -> QWidget:
         tab, layout = self._new_page()
 
+        self.combo_placement = QComboBox()
+        self.combo_placement.addItem("框選區域時，顯示在框的下方（原文保持可見，推薦）", "below")
+        self.combo_placement.addItem("蓋在原文上方（取代原文）", "in_place")
         self.combo_display_mode = QComboBox()
         self.combo_display_mode.addItem("僅顯示譯文", False)
         self.combo_display_mode.addItem("原文 + 譯文（兩行對照）", True)
@@ -817,7 +821,8 @@ class SettingsDialog(QWidget):
 
         text_form = self._new_form()
         text_form.addRow("字型", self.combo_font)
-        text_form.addRow("譯文顯示形式", self.combo_display_mode)
+        text_form.addRow("譯文位置", self.combo_placement)
+        text_form.addRow("蓋在原文上時", self.combo_display_mode)
         text_form.addRow("字號", self.spin_font_size)
         text_form.addRow("最小字號", self.spin_min_font)
         layout.addWidget(self._card("文字排版", "讓譯文保持清晰，並匹配原始文字層級。", text_form))
@@ -941,6 +946,8 @@ class SettingsDialog(QWidget):
         self.edit_azure_key.setText(str(cfg.get("translation.azure.api_key", "")))
         self.edit_azure_region.setText(str(cfg.get("translation.azure.region", "")))
 
+        self._set_combo(self.combo_placement, cfg.get("overlay.placement", "below"))
+        self._sync_placement()
         self._set_combo(self.combo_font, cfg.get("overlay.font_family", ""))
         self.spin_font_size.setValue(int(cfg.get("overlay.font_size", 18)))
         self.spin_min_font.setValue(int(cfg.get("overlay.min_font_size", 8)))
@@ -1053,6 +1060,7 @@ class SettingsDialog(QWidget):
             cfg.set("translation.azure.api_key", self.edit_azure_key.text().strip())
             cfg.set("translation.azure.region", self.edit_azure_region.text().strip())
 
+            cfg.set("overlay.placement", self.combo_placement.currentData() or "below")
             cfg.set("overlay.font_family", self.combo_font.currentData() or "")
             cfg.set("overlay.font_size", self.spin_font_size.value())
             cfg.set("overlay.min_font_size", self.spin_min_font.value())
@@ -1155,6 +1163,14 @@ class SettingsDialog(QWidget):
                 f"color: {foreground}; background: {value}; border: 1px solid {value};"
                 "border-radius: 8px; padding: 6px 10px;"
             )
+
+    def _sync_placement(self, *_args) -> None:
+        """譯文放在框下方時，原文本來就留在畫面上：「蓋在原文上時」的選項用不到，先停用。"""
+        covering = self.combo_placement.currentData() == "in_place"
+        reason = "" if covering else "譯文顯示在框的下方時，原文會保持原樣可見，這項設定用不到。"
+        for control in (self.combo_display_mode, self.chk_keep_original):
+            control.setEnabled(covering)
+            control.setToolTip(reason)
 
     def _sync_display_mode(self, *_args) -> None:
         """覆盖层"译文显示形式"与翻译页"保留原文"保持同步。"""

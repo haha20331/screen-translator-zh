@@ -146,6 +146,10 @@ DEFAULTS: dict[str, Any] = {
         "border_alpha": 60,
         "show_border": True,
         "min_font_size": 8,
+        # below：框選區域時，譯文放在框的下方，原文保持可見；in_place：譯文蓋在原文位置上取代原文
+        "placement": "below",
+        # 譯文面板（below 模式）的底色不透明度 0–255
+        "panel_alpha": 215,
     },
     "monitor": {
         "enabled": True,
@@ -232,6 +236,12 @@ def _normalize_translation(data: dict[str, Any]) -> None:
     translation.setdefault("google_free_fallback_to_mymemory", True)
 
 
+def _normalize_overlay(data: dict[str, Any]) -> None:
+    overlay = data.setdefault("overlay", {})
+    if overlay.get("placement") not in {"below", "in_place"}:
+        overlay["placement"] = DEFAULTS["overlay"]["placement"]
+
+
 _LEGACY_MONITOR_INTERVAL_MS = 1200
 
 
@@ -297,6 +307,7 @@ class AppConfig:
                 _normalize_translation(self.data)
                 _normalize_ocr(self.data, loaded)
                 _normalize_monitor(self.data, loaded)
+                _normalize_overlay(self.data)
                 # This legacy field is retained for compatibility; capture
                 # feedback now reads appearance.accent.  Normalize the red
                 # debug value so old files no longer carry misleading state.

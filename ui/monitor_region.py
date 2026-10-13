@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, QRect, Qt, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
-from utils import dpi_utils, window_affinity
+from utils import dpi_utils
 
 
 class MonitorRegionSelector(QWidget):
@@ -40,6 +40,8 @@ class MonitorRegionSelector(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.SizeAllCursor)
+        # 操作說明用滑鼠停留時的提示，不畫在框內：框內是被擷取、被辨識的區域，常駐的字會擋住字幕
+        self.setToolTip("拖曳調整位置與大小 · 雙擊停止即時監控")
         self.setGeometry(self._geometry)
 
         self._pulse_t = 0.0
@@ -198,27 +200,3 @@ class MonitorRegionSelector(QWidget):
             (w - hh // 2, h - hh // 2),
         ):
             painter.drawRoundedRect(cx - 3, cy - 3, 6, 6, 2, 2)
-
-        # 提示文字畫在被擷取的區域內：只有視窗能被排除在擷取之外時才畫，
-        # 否則它會被截進畫面、被 OCR 當成原文讀進來。
-        if not window_affinity.supported():
-            return
-        text = "拖拽調整 · 雙擊停止"
-        font = QFont()
-        font.setFamilies(["Microsoft JhengHei UI", "Microsoft JhengHei", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
-        font.setPixelSize(12)
-        painter.setFont(font)
-        metrics = painter.fontMetrics()
-        badge_w = metrics.horizontalAdvance(text) + 22
-        badge_h = 26
-        bx = max(2, min(w - badge_w - 2, 2))
-        by = max(2, h - badge_h - 6) if h > badge_h + 12 else 2
-        painter.setPen(QPen(QColor("#DEDCD5"), 1))
-        painter.setBrush(QColor("#FFFEFC"))
-        painter.drawRoundedRect(bx, by, badge_w, badge_h, 8, 8)
-        painter.setPen(self._accent)
-        painter.drawText(
-            bx + 11, by, badge_w - 16, badge_h,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            text,
-        )

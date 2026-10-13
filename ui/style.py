@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from PySide6.QtGui import QColor, QPalette
+
 from ui.appearance import AppearanceTokens, set_current_appearance
 from ui.motion import configure_motion
 
@@ -48,13 +50,17 @@ QPushButton#ToggleButton:checked {
 QComboBox {
     min-height: 28px; background: #FFFEFC; color: #30322F;
     border: 1px solid #DCDAD3; border-radius: 9px; padding: 5px 28px 5px 10px;
-    font-size: 13px;
+    font-size: 13px; combobox-popup: 0;
 }
 QComboBox:hover, QComboBox:focus { border-color: #86B4F0; }
 QComboBox::drop-down { border: none; width: 26px; }
 QComboBox QAbstractItemView {
-    background: #FFFEFC; border: 1px solid #DCDAD3; border-radius: 8px;
+    background: #FFFEFC; color: #30322F; border: 1px solid #DCDAD3; border-radius: 8px;
     selection-background-color: #EDF5FF; selection-color: #216FD6; padding: 4px; outline: none;
+}
+QComboBox QAbstractItemView::item { min-height: 26px; padding: 2px 8px; background: transparent; color: #30322F; }
+QComboBox QAbstractItemView::item:selected, QComboBox QAbstractItemView::item:hover {
+    background: #EDF5FF; color: #216FD6;
 }
 QCheckBox { color: #4F514D; font-size: 13px; spacing: 7px; }
 QCheckBox::indicator {
@@ -254,8 +260,39 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QKeySequenceEdit, QComboBox {{ min-height: 
     return sheet
 
 
+def build_palette(tokens: AppearanceTokens) -> QPalette:
+    """依主題色明確指定整組調色盤，不跟著系統走。
+
+    樣式表只管得到有寫規則的元件；下拉清單的項目、對話框、選單等其餘部分會吃系統調色盤。
+    Windows 深色模式下系統文字是白色，卻配上樣式表的淺色底，就變成白底白字（看不見）。
+    """
+    palette = QPalette()
+    roles = (
+        (QPalette.ColorRole.Window, tokens.root),
+        (QPalette.ColorRole.WindowText, tokens.ink),
+        (QPalette.ColorRole.Base, tokens.surface),
+        (QPalette.ColorRole.AlternateBase, tokens.surface_alt),
+        (QPalette.ColorRole.Text, tokens.ink),
+        (QPalette.ColorRole.Button, tokens.surface),
+        (QPalette.ColorRole.ButtonText, tokens.ink),
+        (QPalette.ColorRole.ToolTipBase, tokens.ink),
+        (QPalette.ColorRole.ToolTipText, tokens.root),
+        (QPalette.ColorRole.Highlight, tokens.accent_soft),
+        (QPalette.ColorRole.HighlightedText, tokens.accent_hover),
+        (QPalette.ColorRole.PlaceholderText, tokens.muted),
+        (QPalette.ColorRole.Link, tokens.accent),
+        (QPalette.ColorRole.BrightText, "#FFFFFF"),
+    )
+    for role, color in roles:
+        palette.setColor(role, QColor(color))
+    for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(tokens.disabled))
+    return palette
+
+
 def apply_style(app, appearance: dict[str, Any] | None = None) -> AppearanceTokens:
     tokens = set_current_appearance(appearance)
     configure_motion(tokens.motion_profile, tokens.reduce_motion)
+    app.setPalette(build_palette(tokens))
     app.setStyleSheet(build_stylesheet(tokens))
     return tokens

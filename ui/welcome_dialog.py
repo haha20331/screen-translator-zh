@@ -139,7 +139,7 @@ class WelcomeDialog(QDialog):
         v.addWidget(
             self._mode_row(
                 "▦", "框選翻譯", self._hotkeys.get("capture_region", ""),
-                "拖拽滑鼠圈出任意螢幕區域，適合零散段落。",
+                "拖曳滑鼠圈出任意螢幕區域，適合零散段落。",
             )
         )
         v.addWidget(

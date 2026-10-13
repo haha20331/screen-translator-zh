@@ -17,7 +17,7 @@ from utils.image_utils import (
     sanitize_background,
 )
 from utils.language_utils import needs_translation
-from utils.layout_utils import merge_wrapped_labels, ocr_lines_to_regions
+from utils.layout_utils import merge_wrapped_labels, ocr_lines_to_regions, uses_translation_panel
 from utils.text_utils import clean_text, normalize_ocr_text, protect_texts, restore_texts
 
 log = get_logger("worker")
@@ -159,7 +159,10 @@ class PipelineTask(QThread):
                 failed = getattr(self.translator, "last_failed_count", 0)
             restored = [restored_map[text] for text in texts]
 
-            if self.config.get("translation.keep_original", False):
+            # 譯文放在框下方時原文本來就留在畫面上，不需要再把原文併進譯文
+            if self.config.get("translation.keep_original", False) and not uses_translation_panel(
+                self.config.get("overlay.placement", "below"), self.capture.mode
+            ):
                 restored = [
                     f"{original}\n{translated_text}"
                     if translated_text.strip() != original.strip()

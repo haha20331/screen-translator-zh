@@ -260,7 +260,7 @@ class SelectionOverlay(QWidget):
         self._paint_size_badge(painter, rect)
 
     def _paint_idle_guides(self, painter: QPainter) -> None:
-        text = "拖拽選擇要翻譯的區域    Esc 取消"
+        text = "拖曳選擇要翻譯的區域    Esc 取消"
         font = QFont()
         font.setFamilies(["Microsoft JhengHei UI", "Microsoft JhengHei", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI"])
         font.setPixelSize(13)

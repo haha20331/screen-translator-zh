@@ -161,6 +161,9 @@ class MonitorMixin:
     def _on_monitor_region_changed(self, bbox) -> None:
         if self._monitor_request is not None:
             self._monitor_request["bbox"] = tuple(bbox)
+        # 譯文面板跟著框走（框內容沒變時不會重新翻譯，也就不會自己更新位置）
+        if self.overlay_manager is not None:
+            self.overlay_manager.follow_region(tuple(bbox))
 
     def _on_monitor_region_committed(self, bbox) -> None:
         if self._monitor_request is not None:

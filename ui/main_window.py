@@ -423,7 +423,7 @@ class MainWindow(QWidget):
         self._action_layout = action_row
         action_row.setContentsMargins(18, 16, 18, 16)
         action_row.setSpacing(16)
-        self.btn_region = CaptureActionCard("框選翻譯", "拖拽選擇螢幕區域", "region", active=False)
+        self.btn_region = CaptureActionCard("框選翻譯", "拖曳選擇螢幕區域", "region", active=False)
         self.btn_fullscreen = CaptureActionCard("全屏翻譯", "翻譯整個螢幕", "screen")
         self.btn_window = CaptureActionCard("當前視窗", "翻譯當前活動視窗", "window")
         for card in (self.btn_region, self.btn_fullscreen, self.btn_window):
@@ -544,6 +544,8 @@ class MainWindow(QWidget):
         self.combo_ocr.setCurrentIndex(self._index_of(self.combo_ocr, self.controller.config.get("ocr.engine", "windows")))
         self.combo_service.setCurrentIndex(self._index_of(self.combo_service, self.controller.config.get("translation.service", "mymemory")))
         self.check_keep_original.setChecked(bool(self.controller.config.get("translation.keep_original", False)))
+        # 譯文放在框下方時原文本來就留在畫面上，「保留原文」只對蓋在原文上的模式有意義
+        self.check_keep_original.setVisible(self.controller.config.get("overlay.placement", "below") == "in_place")
         self._block_signals = False
 
     def refresh_appearance(self) -> None:

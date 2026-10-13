@@ -201,3 +201,41 @@ def clamp_region(region: TextRegion, bounds: tuple[int, int, int, int]) -> TextR
     region.x, region.y = x, y
     region.width, region.height = x2 - x, y2 - y
     return region
+
+
+# ----------------------------------------------------------------------------- 譯文面板（框選區域下方）
+PLACEMENT_BELOW = "below"
+PLACEMENT_IN_PLACE = "in_place"
+
+
+def uses_translation_panel(placement: str | None, capture_mode: str | None) -> bool:
+    """譯文是否放在框選區域下方（原文不被遮住）。
+
+    只有框選區域（``region``）有「框」可以放在下方；全螢幕、視窗擷取的文字塊遍布整個畫面，
+    仍然逐塊蓋在原文位置上。
+    """
+    return (placement or PLACEMENT_BELOW) == PLACEMENT_BELOW and capture_mode == "region"
+
+
+def translation_lines(regions: Iterable[TextRegion]) -> list[str]:
+    """譯文面板要顯示的文字，依閱讀順序（由上到下，同一列由左到右）。
+
+    略過空白，以及沒翻成功（譯文與原文相同）的文字塊：原文本來就在畫面上，重複顯示只是雜訊。
+    同一列的多個文字塊接成一行。
+    """
+    translated = [
+        region
+        for region in regions
+        if (region.translated_text or "").strip()
+        and region.translated_text.strip() != region.text.strip()
+    ]
+    rows: list[list[TextRegion]] = []
+    for region in sorted(translated, key=lambda item: (item.y, item.x)):
+        middle = region.y + region.height / 2
+        row = rows[-1] if rows else None
+        # 垂直中心落在目前這一列的範圍內，就視為同一列
+        if row is not None and min(r.y for r in row) <= middle <= max(r.bottom for r in row):
+            row.append(region)
+        else:
+            rows.append([region])
+    return ["  ".join(r.translated_text.strip() for r in sorted(row, key=lambda item: item.x)) for row in rows]

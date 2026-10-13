@@ -69,7 +69,13 @@ def test_full_motion_reuses_objects_and_does_not_replay_old_content(
     overlay.show_fade()
     assert fade.state() == QAbstractAnimation.State.Running
     assert reveal.state() == QAbstractAnimation.State.Running
+    # 等淡入與展開動畫真正結束：完整測試時前面測試留下的視窗會讓事件迴圈停頓數百毫秒～數秒，
+    # Qt 的動畫時鐘不會追回停頓的時間，固定等 SLOW+80 毫秒會時好時壞。
     QTest.qWait(SLOW + 80)
+    for _ in range(80):
+        if fade.state() == QAbstractAnimation.State.Stopped and reveal.state() == QAbstractAnimation.State.Stopped:
+            break
+        QTest.qWait(25)
     assert overlay.isVisible()
     assert overlay.windowOpacity() == pytest.approx(1.0, abs=0.03)
     assert overlay._reveal_progress == pytest.approx(1.0)

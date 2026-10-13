@@ -32,6 +32,24 @@ from ui.motion import (
 log = get_logger("overlay")
 
 
+def font_families(config) -> list[str]:
+    """字体回退链：自定义字体在前，CJK 字体兜底，避免中文/日文/韩文变豆腐块。"""
+    custom = str(config.get("overlay.font_family", "")) or ""
+    families = [custom] if custom else []
+    families += [
+        "Microsoft JhengHei UI",
+        "Microsoft JhengHei",
+        "Noto Sans CJK TC",
+        "Microsoft YaHei UI",
+        "Microsoft YaHei",
+        "Noto Sans CJK SC",
+        "SimSun",
+        "Segoe UI",
+        "Arial",
+    ]
+    return families
+
+
 @dataclass
 class Block:
     rect: QRectF
@@ -619,21 +637,7 @@ class TranslationOverlayWindow(QWidget):
         return font
 
     def _font_families(self) -> list[str]:
-        """字体回退链：自定义字体在前，CJK 字体兜底，避免中文/日文/韩文变豆腐块。"""
-        custom = str(self._config.get("overlay.font_family", "")) or ""
-        families = [custom] if custom else []
-        families += [
-            "Microsoft JhengHei UI",
-            "Microsoft JhengHei",
-            "Noto Sans CJK TC",
-            "Microsoft YaHei UI",
-            "Microsoft YaHei",
-            "Noto Sans CJK SC",
-            "SimSun",
-            "Segoe UI",
-            "Arial",
-        ]
-        return families
+        return font_families(self._config)
 
     def _make_font(self, families: list[str], size: int) -> QFont:
         # 按 (字体族, 字号) 缓存 QFont，避免 _fit_font 逐字号循环时反复重建对象。

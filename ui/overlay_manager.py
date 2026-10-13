@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QRectF
+from PySide6.QtCore import QObject, QRect, QRectF
 from PySide6.QtGui import QColor
 
 from app.config import AppConfig
 from app.logger import get_logger
 from app.models import CaptureInfo, TextRegion
 from ui.translation_overlay import Block, TranslationOverlayWindow
+from ui.translation_panel import TranslationPanelWindow
 from utils import dpi_utils
+from utils.layout_utils import translation_lines, uses_translation_panel
 
 log = get_logger("overlay.manager")
 
@@ -20,6 +22,10 @@ class OverlayManager(QObject):
         self._config = config
         self._monitors: list[dpi_utils.MonitorInfo] = []
         self._windows: dict[int, TranslationOverlayWindow] = {}
+        # 框選區域時，譯文放在框的下方（原文保持可見）：每個顯示器至多一個面板
+        self._panels: dict[int, TranslationPanelWindow] = {}
+        self._panel_lines: list[str] = []
+        self._panel_bbox: tuple[int, int, int, int] | None = None
         self._visible = True
         self._edit_mode = False
 
@@ -32,6 +38,9 @@ class OverlayManager(QObject):
     ) -> bool:
         if not self._monitors:
             return False
+        if uses_translation_panel(self._config.get("overlay.placement", "below"), capture.mode):
+            return self._show_panel(capture, regions)
+        self._clear_panels()
         groups: dict[int, list[TextRegion]] = {}
         for region in regions:
             monitor = dpi_utils.monitor_for_physical_point(region.center[0], region.center[1], self._monitors)
@@ -90,6 +99,64 @@ class OverlayManager(QObject):
         self._visible = shown
         return shown
 
+    # ------------------------------------------------------------- panel below the selection
+    def _show_panel(self, capture: CaptureInfo, regions: list[TextRegion]) -> bool:
+        for window in self._windows.values():  # 先前以「蓋在原文上」顯示的內容不應殘留
+            window.clear()
+            window.hide()
+        lines = translation_lines(regions)
+        if not lines:
+            self._clear_panels()
+            self._visible = False
+            return False
+        self._panel_lines = lines
+        self._panel_bbox = tuple(capture.bbox)
+        self._visible = self._place_panel()
+        return self._visible
+
+    def _place_panel(self) -> bool:
+        """把面板（重新）放到目前的框下方；框換了螢幕就換那個螢幕的面板。"""
+        if self._panel_bbox is None or not self._panel_lines or not self._monitors:
+            return False
+        bbox = self._panel_bbox
+        monitor = dpi_utils.monitor_for_physical_point(
+            (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2, self._monitors
+        )
+        origin_x, origin_y = monitor.logical_origin
+        physical = monitor.physical
+        bounds = QRect(
+            origin_x,
+            origin_y,
+            round((physical[2] - physical[0]) / monitor.dpr),
+            round((physical[3] - physical[1]) / monitor.dpr),
+        )
+        geometry = dpi_utils.physical_rect_to_overlay_geometry(dpi_utils.clamp_bbox_to_monitor(bbox, monitor), monitor)
+        anchor = QRect(geometry[0], geometry[1], max(1, geometry[2]), max(1, geometry[3]))
+        for index, panel in self._panels.items():
+            if index != monitor.index:
+                panel.hide()
+        panel = self._panels.get(monitor.index)
+        if panel is None:
+            panel = TranslationPanelWindow(self._config)
+            self._panels[monitor.index] = panel
+        panel.set_content(self._panel_lines, anchor, bounds)
+        panel.show()
+        panel.raise_()
+        return True
+
+    def follow_region(self, bbox: tuple[int, int, int, int]) -> None:
+        """使用者拖動／縮放監控框時，讓譯文面板跟著框走。"""
+        if self._panel_bbox is None or not self._visible:
+            return
+        self._panel_bbox = tuple(bbox)
+        self._place_panel()
+
+    def _clear_panels(self) -> None:
+        for panel in self._panels.values():
+            panel.clear()
+        self._panel_lines = []
+        self._panel_bbox = None
+
     def _on_overlay_close_requested(self) -> None:
         self.hide_all()
         self._visible = False
@@ -102,6 +169,8 @@ class OverlayManager(QObject):
                 window.hide_fade()
             else:
                 window.hide()
+        for panel in self._panels.values():
+            panel.hide()
         self._visible = False
 
     def show_all(self) -> None:
@@ -109,6 +178,8 @@ class OverlayManager(QObject):
             if window._blocks:
                 window.show_fade()
                 window.raise_()
+        if self._panel_lines:
+            self._place_panel()
         self._visible = True
 
     def clear_all(self) -> None:
@@ -116,6 +187,7 @@ class OverlayManager(QObject):
         for window in self._windows.values():
             window.clear()
             window.hide()
+        self._clear_panels()
         self._visible = False
 
     def toggle(self) -> bool:
@@ -142,3 +214,5 @@ class OverlayManager(QObject):
     def apply_style(self) -> None:
         for window in self._windows.values():
             window.apply_style()
+        for panel in self._panels.values():
+            panel.apply_style()
