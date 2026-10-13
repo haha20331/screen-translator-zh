@@ -5,7 +5,13 @@ from __future__ import annotations
 # 通过 app.application 命名空间解析 is_window_capturable，使测试对该符号的 monkeypatch 仍然生效。
 from app import application as _application
 from app.logger import get_logger
-from utils.stability import TextStabilizer
+from utils.stability import (
+    MAX_ROUNDS,
+    MIN_ROUNDS,
+    RECOMMENDED_FAST_ROUNDS,
+    RECOMMENDED_MAX_WAIT,
+    TextStabilizer,
+)
 
 log = get_logger("application")
 
@@ -145,12 +151,15 @@ class MonitorMixin:
         self._start_pipeline(capture)
 
     def _configure_stabilizer(self) -> None:
-        """依設定決定要穩定幾輪：快速 = 辨識到就顯示；穩定 = 同一組文字連續兩輪才顯示。"""
+        """依設定決定要連續辨識到相同結果幾次才顯示（1 = 快速、2 = 穩定，使用者可自訂）。"""
         if self._monitor_stabilizer is None:
             return
-        fast = str(self.config.get("monitor.stability", "fast")) != "stable"
-        rounds = 1 if fast else max(2, int(self.config.get("monitor.stable_rounds", 2)))
-        self._monitor_stabilizer.configure(rounds, float(self.config.get("monitor.max_wait_seconds", 2.5)))
+        try:
+            rounds = int(self.config.get("monitor.confirm_rounds", RECOMMENDED_FAST_ROUNDS))
+            max_wait = float(self.config.get("monitor.max_wait_seconds", RECOMMENDED_MAX_WAIT))
+        except (TypeError, ValueError):
+            rounds, max_wait = RECOMMENDED_FAST_ROUNDS, RECOMMENDED_MAX_WAIT
+        self._monitor_stabilizer.configure(max(MIN_ROUNDS, min(MAX_ROUNDS, rounds)), max_wait)
 
     def _monitor_schedule_next(self) -> None:
         if not self._monitor_active:

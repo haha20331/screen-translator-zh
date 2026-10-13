@@ -168,12 +168,12 @@ DEFAULTS: dict[str, Any] = {
         "max_consecutive_errors": 3,
         # 把上一轮译文写回缓存：内容没变过的文本块直接命中缓存，几乎瞬时
         "skip_unchanged": True,
-        # 字幕顯示方式。fast（預設）：辨識到就立刻翻譯並顯示；stable：同一組辨識結果連續 stable_rounds 輪
-        # 相同才翻譯並顯示，過渡畫面（淡入淡出）的殘缺句子不會被翻譯，但換字幕約慢 0.5～1 秒。
-        # 與已顯示的相同時，兩種模式都不再翻譯。
-        "stability": "fast",
-        "stable_rounds": 2,
-        # 新文字一直在變（辨識抖動）時，最久等幾秒就放行最新的一組
+        # 確認次數：辨識到的新字幕要「連續幾次辨識結果相同」才翻譯並顯示。
+        # 1 = 快速（系統推薦，辨識到就顯示，但字幕淡入淡出時可能先閃出殘缺的句子）；
+        # 2 = 穩定（系統推薦，過渡畫面的殘缺句子不會被翻譯，但換字幕約慢 0.5～1 秒）。
+        # 與已顯示的相同時，不論次數都不再翻譯。
+        "confirm_rounds": 1,
+        # 新文字一直在變（辨識抖動）時，最久等幾秒就放行最新的一組（推薦 2.5 秒）
         "max_wait_seconds": 2.5,
     },
     "hotkeys": {
@@ -261,10 +261,25 @@ def _normalize_overlay(data: dict[str, Any]) -> None:
 _LEGACY_MONITOR_INTERVAL_MS = 1200
 
 
-def _normalize_monitor_stability(data: dict[str, Any]) -> None:
+def _normalize_monitor_stability(data: dict[str, Any], loaded: dict[str, Any]) -> None:
+    """確認次數與最久等待要是合理範圍內的數字；舊版的「快速／穩定」選項換算成次數。"""
     monitor = data.setdefault("monitor", {})
-    if monitor.get("stability") not in {"stable", "fast"}:
-        monitor["stability"] = DEFAULTS["monitor"]["stability"]
+    loaded_monitor = loaded.get("monitor") if isinstance(loaded.get("monitor"), dict) else {}
+    legacy = monitor.pop("stability", None)
+    monitor.pop("stable_rounds", None)
+    if "confirm_rounds" not in loaded_monitor and legacy == "stable":
+        monitor["confirm_rounds"] = 2
+    defaults = DEFAULTS["monitor"]
+    try:
+        rounds = int(monitor.get("confirm_rounds", defaults["confirm_rounds"]))
+    except (TypeError, ValueError):
+        rounds = defaults["confirm_rounds"]
+    try:
+        wait = float(monitor.get("max_wait_seconds", defaults["max_wait_seconds"]))
+    except (TypeError, ValueError):
+        wait = defaults["max_wait_seconds"]
+    monitor["confirm_rounds"] = max(1, min(10, rounds))
+    monitor["max_wait_seconds"] = max(0.5, min(30.0, wait))
 
 
 def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
@@ -329,7 +344,7 @@ class AppConfig:
                 _normalize_translation(self.data)
                 _normalize_ocr(self.data, loaded)
                 _normalize_monitor(self.data, loaded)
-                _normalize_monitor_stability(self.data)
+                _normalize_monitor_stability(self.data, loaded)
                 _normalize_overlay(self.data)
                 # This legacy field is retained for compatibility; capture
                 # feedback now reads appearance.accent.  Normalize the red

@@ -1,7 +1,8 @@
 """即時監控的文字穩定化：辨識結果連續相同才翻譯並顯示，與已顯示的相同就完全不翻。
 
 字幕淡入淡出、換字幕的過渡畫面常被辨識成殘缺的句子，翻出來就是一句怪話。穩定化只在
-「同一組文字連續出現 N 次」之後才放行；快速模式 N = 1（辨識到就顯示）。
+「同一組文字連續出現 N 次」之後才放行（N = 確認次數，使用者可調）：N = 1 是快速（辨識到就顯示），
+N = 2 是穩定（系統推薦值見 ``RECOMMENDED_*``）。
 """
 
 from __future__ import annotations
@@ -15,8 +16,13 @@ SAME = "same"  # 與目前顯示的相同：不必翻譯、不必重畫
 PENDING = "pending"  # 新的文字，但還沒穩定：先不翻譯
 CONFIRMED = "confirmed"  # 穩定了（或等太久）：翻譯並顯示
 
-STABLE = "stable"
-FAST = "fast"
+# 系統推薦值：連續幾次辨識到相同結果才翻譯並顯示（確認次數），以及新文字一直在變時最久等幾秒。
+# 設定畫面、說明文字與預設值都從這裡取，避免說明和實際行為不一致。
+RECOMMENDED_FAST_ROUNDS = 1
+RECOMMENDED_STABLE_ROUNDS = 2
+RECOMMENDED_MAX_WAIT = 2.5
+MIN_ROUNDS, MAX_ROUNDS = 1, 10
+MIN_MAX_WAIT, MAX_MAX_WAIT = 0.5, 30.0
 
 
 def signature(texts: Sequence[str]) -> tuple[str, ...]:

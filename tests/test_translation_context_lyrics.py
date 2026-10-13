@@ -344,38 +344,42 @@ def test_settings_dialog_round_trips_the_two_options(qapp, tmp_path):
     dialog.deleteLater()
 
 
-def test_main_window_toggles_write_the_config_immediately(qapp, tmp_path):
+def test_main_window_lyrics_toggle_writes_the_config_immediately(qapp, tmp_path):
     config = AppConfig(tmp_path / "config.json")
     window = MainWindow(_Controller(config))
-    assert not window.check_context.isChecked() and not window.check_lyrics.isChecked()
+    assert not window.check_lyrics.isChecked()
 
-    window.check_context.setChecked(True)
     window.check_lyrics.setChecked(True)
 
-    saved = AppConfig(tmp_path / "config.json")
-    assert saved.get("translation.use_context") is True
-    assert saved.get("translation.lyrics_mode") is True
+    assert AppConfig(tmp_path / "config.json").get("translation.lyrics_mode") is True
     window.check_lyrics.setChecked(False)
     assert AppConfig(tmp_path / "config.json").get("translation.lyrics_mode") is False
     window.deleteLater()
 
 
-def test_main_window_toggles_stay_usable_while_monitoring(qapp, tmp_path):
+def test_context_is_only_switched_in_the_settings_dialog(qapp, tmp_path):
+    window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
+
+    assert not hasattr(window, "check_context")  # 主視窗下方不放上下文勾選
+    window.deleteLater()
+
+
+def test_main_window_lyrics_toggle_stays_usable_while_monitoring(qapp, tmp_path):
     window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
 
     window.set_busy(True)
 
-    assert window.check_context.isEnabled() and window.check_lyrics.isEnabled()
+    assert window.check_lyrics.isEnabled()
     window.deleteLater()
 
 
 def test_main_window_reload_shows_saved_values_without_rewriting_them(qapp, tmp_path):
     config = AppConfig(tmp_path / "config.json")
-    config.set("translation.use_context", True)
+    config.set("translation.lyrics_mode", True)
     window = MainWindow(_Controller(config))
 
     window.reload_values()
 
-    assert window.check_context.isChecked()
-    assert not window.check_lyrics.isChecked()
+    assert window.check_lyrics.isChecked()
+    assert AppConfig(tmp_path / "config.json").get("translation.lyrics_mode") is False  # 沒存檔就不會寫入
     window.deleteLater()

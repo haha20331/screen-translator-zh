@@ -10,7 +10,7 @@ import json
 
 import numpy as np
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel
 
 from app.application import Application
 from app.config import DEFAULTS, AppConfig
@@ -19,6 +19,7 @@ from services.ocr.base import OCRLine
 from ui.main_window import MainWindow
 from ui.settings_dialog import SettingsDialog
 from ui.style import apply_style
+from utils import stability
 from utils.image_utils import frame_fingerprint
 from utils.stability import CONFIRMED, PENDING, SAME, TextStabilizer, signature
 from workers.translation_worker import PipelineTask
@@ -294,18 +295,32 @@ def test_stop_does_nothing_when_the_monitor_was_not_running(controller):
     assert controller.overlay_manager.cleared == 0
 
 
-def test_stability_setting_picks_the_number_of_rounds(controller):
-    controller.config.set("monitor.stability", "fast")
+def test_confirm_rounds_setting_is_used_and_can_change_while_monitoring(controller):
+    controller.config.set("monitor.confirm_rounds", 1)
     controller._configure_stabilizer()
     assert controller._monitor_stabilizer.rounds == 1
 
-    controller.config.set("monitor.stability", "stable")
+    controller.config.set("monitor.confirm_rounds", 2)
     controller._configure_stabilizer()
     assert controller._monitor_stabilizer.rounds == 2
 
-    controller.config.set("monitor.stability", "fast")  # 監控中途切換，下一輪就生效
+    controller.config.set("monitor.confirm_rounds", 5)  # 使用者自訂：監控中途改，下一輪就生效
+    controller.config.set("monitor.max_wait_seconds", 4.0)
+    controller._configure_stabilizer()
+    assert controller._monitor_stabilizer.rounds == 5
+    assert controller._monitor_stabilizer.max_wait == 4.0
+
+
+def test_out_of_range_or_broken_values_are_clamped_not_fatal(controller):
+    controller.config.set("monitor.confirm_rounds", 99)
+    controller._configure_stabilizer()
+    assert controller._monitor_stabilizer.rounds == 10
+
+    controller.config.set("monitor.confirm_rounds", "abc")
+    controller.config.set("monitor.max_wait_seconds", None)
     controller._configure_stabilizer()
     assert controller._monitor_stabilizer.rounds == 1
+    assert controller._monitor_stabilizer.max_wait == 2.5
 
 
 # ----------------------------------------------------------------------------- 監控每一輪的畫面門控
@@ -370,23 +385,44 @@ def test_an_identical_frame_with_no_text_is_not_recognised_again(cycling):
 
 
 # ----------------------------------------------------------------------------- 設定
-def test_defaults_to_the_fast_mode():
-    assert DEFAULTS["monitor"]["stability"] == "fast"
-    assert DEFAULTS["monitor"]["stable_rounds"] == 2
+def test_defaults_are_the_recommended_fast_values():
+    assert DEFAULTS["monitor"]["confirm_rounds"] == stability.RECOMMENDED_FAST_ROUNDS == 1
+    assert DEFAULTS["monitor"]["max_wait_seconds"] == stability.RECOMMENDED_MAX_WAIT == 2.5
+    assert stability.RECOMMENDED_STABLE_ROUNDS == 2
+    assert "stability" not in DEFAULTS["monitor"] and "stable_rounds" not in DEFAULTS["monitor"]
 
 
-def test_an_invalid_stability_value_falls_back_to_fast(tmp_path):
+def _load(tmp_path, monitor):
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({"monitor": {"stability": "turbo"}}), encoding="utf-8")
+    path.write_text(json.dumps({"monitor": monitor}), encoding="utf-8")
+    return AppConfig(path)
 
-    assert AppConfig(path).get("monitor.stability") == "fast"
+
+@pytest.mark.parametrize(
+    ("saved", "rounds"),
+    [
+        ({}, 1),
+        ({"stability": "fast"}, 1),  # 舊版的選項換算成次數
+        ({"stability": "stable"}, 2),
+        ({"stability": "stable", "stable_rounds": 2}, 2),
+        ({"stability": "stable", "confirm_rounds": 4}, 4),  # 使用者新輸入的次數優先
+        ({"stability": "turbo"}, 1),
+        ({"confirm_rounds": 3}, 3),
+        ({"confirm_rounds": 0}, 1),
+        ({"confirm_rounds": 50}, 10),
+        ({"confirm_rounds": "many"}, 1),
+    ],
+)
+def test_confirm_rounds_are_migrated_and_clamped(tmp_path, saved, rounds):
+    config = _load(tmp_path, saved)
+
+    assert config.get("monitor.confirm_rounds") == rounds
+    assert config.get("monitor.stability") is None and config.get("monitor.stable_rounds") is None
 
 
-def test_an_old_config_without_the_setting_gets_the_fast_mode(tmp_path):
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps({"monitor": {"interval_ms": 400}}), encoding="utf-8")
-
-    assert AppConfig(path).get("monitor.stability") == "fast"
+@pytest.mark.parametrize(("saved", "wait"), [({}, 2.5), ({"max_wait_seconds": 5}, 5.0), ({"max_wait_seconds": 0}, 0.5), ({"max_wait_seconds": 999}, 30.0), ({"max_wait_seconds": "x"}, 2.5)])
+def test_max_wait_is_clamped(tmp_path, saved, wait):
+    assert _load(tmp_path, saved).get("monitor.max_wait_seconds") == wait
 
 
 @pytest.fixture
@@ -396,19 +432,48 @@ def qapp():
     return app
 
 
-def test_settings_dialog_explains_and_saves_the_stability_mode_on_the_general_page(qapp, tmp_path):
-    config = AppConfig(tmp_path / "config.json")
-    dialog = SettingsDialog(config)
-    assert dialog.combo_stability.currentData() == "fast"
-    assert "穩定" in dialog.combo_stability.toolTip() and "快速" in dialog.combo_stability.toolTip()
-    assert dialog.pages.widget(0).widget().isAncestorOf(dialog.combo_stability)  # 第一頁「通用」，不用往下捲
+def test_settings_dialog_lets_the_user_type_the_threshold_and_lists_the_recommendations(qapp, tmp_path):
+    dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
 
-    dialog.combo_stability.setCurrentIndex(dialog.combo_stability.findData("stable"))
+    assert dialog.pages.widget(0).widget().isAncestorOf(dialog.spin_confirm_rounds)  # 第一頁「通用」，不用往下捲
+    assert (dialog.spin_confirm_rounds.minimum(), dialog.spin_confirm_rounds.maximum()) == (1, 10)
+    assert dialog.spin_confirm_rounds.value() == 1 and dialog.spin_max_wait.value() == 2.5
+    texts = [label.text() for label in dialog.pages.widget(0).widget().findChildren(QLabel)]
+    recommendation = next(text for text in texts if "系統推薦" in text)
+    assert "快速：確認 1 次" in recommendation and "穩定：確認 2 次" in recommendation
+    assert "2.5 秒" in recommendation
+    assert not hasattr(dialog, "combo_stability")
+    dialog.deleteLater()
+
+
+def test_preset_buttons_fill_in_the_recommended_values(qapp, tmp_path):
+    dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
+    dialog.spin_confirm_rounds.setValue(7)
+    dialog.spin_max_wait.setValue(9.0)
+
+    dialog.btn_preset_stable.click()
+    assert (dialog.spin_confirm_rounds.value(), dialog.spin_max_wait.value()) == (2, 2.5)
+    dialog.spin_max_wait.setValue(9.0)
+    dialog.btn_preset_fast.click()
+    assert (dialog.spin_confirm_rounds.value(), dialog.spin_max_wait.value()) == (1, 2.5)
+    dialog.deleteLater()
+
+
+def test_settings_dialog_saves_the_typed_values(qapp, tmp_path):
+    dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
+
+    dialog.spin_confirm_rounds.setValue(3)
+    dialog.spin_max_wait.setValue(4.5)
     dialog._commit_accept(dialog._validated_hotkeys())
     dialog._save_close_timer.stop()
 
-    assert AppConfig(tmp_path / "config.json").get("monitor.stability") == "stable"
+    saved = AppConfig(tmp_path / "config.json")
+    assert saved.get("monitor.confirm_rounds") == 3
+    assert saved.get("monitor.max_wait_seconds") == 4.5
+    reopened = SettingsDialog(saved)
+    assert reopened.spin_confirm_rounds.value() == 3 and reopened.spin_max_wait.value() == 4.5
     dialog.deleteLater()
+    reopened.deleteLater()
 
 
 class _Controller:
@@ -419,37 +484,11 @@ class _Controller:
         return lambda *args, **kwargs: None
 
 
-def test_main_window_has_a_stable_display_checkbox_that_is_off_by_default(qapp, tmp_path):
+def test_main_window_footer_no_longer_shows_stability_or_context(qapp, tmp_path):
     window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
 
-    assert window.check_stable.text() == "穩定顯示"
-    assert not window.check_stable.isChecked()
-    assert "快速" in window.check_stable.toolTip()
-    window.deleteLater()
-
-
-def test_main_window_checkbox_switches_the_mode_immediately(qapp, tmp_path):
-    window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
-
-    window.check_stable.setChecked(True)
-    assert AppConfig(tmp_path / "config.json").get("monitor.stability") == "stable"
-    window.check_stable.setChecked(False)
-    assert AppConfig(tmp_path / "config.json").get("monitor.stability") == "fast"
-    window.deleteLater()
-
-
-def test_main_window_checkbox_follows_the_saved_setting_and_stays_usable_while_monitoring(qapp, tmp_path):
-    config = AppConfig(tmp_path / "config.json")
-    config.set("monitor.stability", "stable")
-    config.save()
-    window = MainWindow(_Controller(config))
-    assert window.check_stable.isChecked()
-
-    window.set_busy(True)
-
-    assert window.check_stable.isEnabled()  # 即時監控中也能切換
-    config.set("monitor.stability", "fast")
-    window.reload_values()
-    assert not window.check_stable.isChecked()
-    assert AppConfig(tmp_path / "config.json").get("monitor.stability") == "stable"  # 同步介面不會反過來寫設定檔
+    assert not hasattr(window, "check_stable") and not hasattr(window, "check_context")
+    assert hasattr(window, "check_lyrics")  # 歌詞勾選留在主視窗
+    texts = {box.text() for box in window.findChildren(QCheckBox)}
+    assert "穩定顯示" not in texts and "上下文" not in texts and "歌詞" in texts
     window.deleteLater()

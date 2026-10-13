@@ -52,6 +52,7 @@ from ui.appearance import (
 )
 from ui.motion import BASE, ENTER_EASING, EXIT_EASING, MOVE_EASING, SLOW, motion_duration
 from ui.personalization import AppearancePreview, PersonalizationChoiceRow
+from utils import stability
 from utils.language_utils import LANGUAGES
 
 log = get_logger("settings")
@@ -517,24 +518,46 @@ class SettingsDialog(QWidget):
         startup_form.addRow(self.chk_tray)
         layout.addWidget(self._card("啟動與後臺", "決定應用如何進入工作狀態與停留在系統托盤。", startup_form))
 
-        self.combo_stability = QComboBox()
-        self.combo_stability.addItem("快速（預設）", "fast")
-        self.combo_stability.addItem("穩定", "stable")
-        self.combo_stability.setToolTip(
-            "快速：辨識到就立刻翻譯並顯示，反應最快，但字幕淡入淡出、換字幕的過渡畫面可能先閃出殘缺的句子。\n"
-            "穩定：同一句字幕連續辨識到兩次才翻譯並顯示，不會閃出過渡畫面的怪句子，代價是換字幕時多等約 0.5～1 秒。\n"
-            "兩種模式下，辨識結果與目前顯示的相同時都不會重複翻譯。主視窗下方的「穩定顯示」勾選與這裡同步。"
+        self.spin_confirm_rounds = QSpinBox()
+        self.spin_confirm_rounds.setRange(stability.MIN_ROUNDS, stability.MAX_ROUNDS)
+        self.spin_confirm_rounds.setSuffix(" 次")
+        self.spin_confirm_rounds.setToolTip(
+            "新字幕要連續辨識到幾次相同的結果，才翻譯並顯示。次數越少反應越快，但字幕淡入淡出、"
+            "換字幕的過渡畫面可能先閃出殘缺的句子；次數越多越不會閃怪句子，但換字幕越慢"
+            "（每多一次約慢 0.5～1 秒）。辨識結果與目前顯示的相同時，不論次數都不會重複翻譯。"
         )
+        self.spin_max_wait = QDoubleSpinBox()
+        self.spin_max_wait.setRange(stability.MIN_MAX_WAIT, stability.MAX_MAX_WAIT)
+        self.spin_max_wait.setSingleStep(0.5)
+        self.spin_max_wait.setDecimals(1)
+        self.spin_max_wait.setSuffix(" 秒")
+        self.spin_max_wait.setToolTip("新字幕一直在變（辨識結果抖動）時，最久等這麼久就直接顯示最新的一句，避免畫面卡住不更新。")
+        self.btn_preset_fast = QPushButton("套用快速推薦")
+        self.btn_preset_stable = QPushButton("套用穩定推薦")
+        for button in (self.btn_preset_fast, self.btn_preset_stable):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_preset_fast.clicked.connect(lambda: self._apply_stability_preset(stability.RECOMMENDED_FAST_ROUNDS))
+        self.btn_preset_stable.clicked.connect(lambda: self._apply_stability_preset(stability.RECOMMENDED_STABLE_ROUNDS))
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(8)
+        preset_row.addWidget(self.btn_preset_fast)
+        preset_row.addWidget(self.btn_preset_stable)
+        preset_row.addStretch(1)
         monitor_form = self._new_form()
-        monitor_form.addRow("字幕顯示", self.combo_stability)
+        monitor_form.addRow("確認次數", self.spin_confirm_rounds)
+        monitor_form.addRow("最久等待", self.spin_max_wait)
+        monitor_form.addRow(preset_row)
         explanation = QLabel(
-            "快速：辨識到就立刻顯示，反應最快，但字幕淡入淡出時可能先閃出殘缺的句子。\n"
-            "穩定：同一句連續辨識到兩次才顯示，不會閃出辨識到一半的怪句子，換字幕約慢 0.5～1 秒。"
+            f"系統推薦：\n"
+            f"．快速：確認 {stability.RECOMMENDED_FAST_ROUNDS} 次，最久等待 {stability.RECOMMENDED_MAX_WAIT:g} 秒。"
+            "辨識到就立刻顯示，反應最快，但字幕淡入淡出時可能先閃出殘缺的句子。\n"
+            f"．穩定：確認 {stability.RECOMMENDED_STABLE_ROUNDS} 次，最久等待 {stability.RECOMMENDED_MAX_WAIT:g} 秒。"
+            "同一句連續辨識到兩次才顯示，不會閃出辨識到一半的怪句子，換字幕約慢 0.5～1 秒。"
         )
         explanation.setObjectName("SettingsCardDescription")
         explanation.setWordWrap(True)
         monitor_form.addRow(explanation)
-        layout.addWidget(self._card("即時監控", "控制即時監控時，辨識到的字幕何時翻譯並顯示。", monitor_form))
+        layout.addWidget(self._card("即時監控", "新字幕連續辨識到相同結果幾次才翻譯並顯示（確認次數）。", monitor_form))
 
         self.history_dir = QLineEdit()
         pick = QPushButton("選擇目錄")
@@ -956,7 +979,8 @@ class SettingsDialog(QWidget):
 
         self._set_combo(self.combo_engine, cfg.get("ocr.engine", "windows"))
         self._set_combo(self.combo_lang, cfg.get("ocr.lang", "auto"))
-        self._set_combo(self.combo_stability, cfg.get("monitor.stability", "fast"))
+        self.spin_confirm_rounds.setValue(int(cfg.get("monitor.confirm_rounds", stability.RECOMMENDED_FAST_ROUNDS)))
+        self.spin_max_wait.setValue(float(cfg.get("monitor.max_wait_seconds", stability.RECOMMENDED_MAX_WAIT)))
         self.spin_confidence.setValue(float(cfg.get("ocr.min_confidence", 0.6)))
         self.spin_y_tol.setValue(float(cfg.get("ocr.merge_y_tolerance_ratio", 0.5)))
         self.spin_x_gap.setValue(float(cfg.get("ocr.merge_x_gap_ratio", 0.8)))
@@ -1075,7 +1099,8 @@ class SettingsDialog(QWidget):
 
             cfg.set("ocr.engine", self.combo_engine.currentData() or "windows")
             cfg.set("ocr.lang", self.combo_lang.currentData() or "auto")
-            cfg.set("monitor.stability", self.combo_stability.currentData() or "fast")
+            cfg.set("monitor.confirm_rounds", self.spin_confirm_rounds.value())
+            cfg.set("monitor.max_wait_seconds", self.spin_max_wait.value())
             cfg.set("ocr.min_confidence", self.spin_confidence.value())
             cfg.set("ocr.merge_y_tolerance_ratio", self.spin_y_tol.value())
             cfg.set("ocr.merge_x_gap_ratio", self.spin_x_gap.value())
@@ -1205,6 +1230,11 @@ class SettingsDialog(QWidget):
                 f"color: {foreground}; background: {value}; border: 1px solid {value};"
                 "border-radius: 8px; padding: 6px 10px;"
             )
+
+    def _apply_stability_preset(self, rounds: int) -> None:
+        """套用系統推薦：確認次數依快速／穩定，最久等待用推薦值。"""
+        self.spin_confirm_rounds.setValue(rounds)
+        self.spin_max_wait.setValue(stability.RECOMMENDED_MAX_WAIT)
 
     def _sync_placement(self, *_args) -> None:
         """譯文放在框下方時，原文本來就留在畫面上：「蓋在原文上時」的選項用不到，先停用。"""
