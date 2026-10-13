@@ -23,7 +23,6 @@ import services.ocr.rapidocr_ocr  # noqa: F401
 # 确保各 OCR 引擎 / 翻译适配器已注册（顺序影响 UI 下拉框默认项）
 import services.ocr.windows_ocr  # noqa: F401
 import services.translation.deepl_translator  # noqa: F401
-import services.translation.fast_translator  # noqa: F401
 import services.translation.google_free_translator  # noqa: F401
 import services.translation.google_translator  # noqa: F401
 import services.translation.mock_translator  # noqa: F401

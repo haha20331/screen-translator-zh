@@ -65,7 +65,11 @@ class SettingsMixin:
         # A direct or queued open has now reached the only point where it can
         # succeed. Consume the request here, never when merely scheduling it.
         self._reopen_settings_after_close = False
-        dialog = SettingsDialog(self.config, parent=self.window)
+        dialog = SettingsDialog(
+            self.config,
+            parent=self.window,
+            cache_actions=(self.translation_cache_count, self.clear_translation_cache),
+        )
         dialog.setWindowFlags(Qt.WindowType.Widget)
         dialog.setMinimumSize(0, 0)
         self._settings_page = dialog
@@ -124,6 +128,7 @@ class SettingsMixin:
             self.config.save()
             self.set_status(f"檢測到 API Key，已自動切換到 {resolved_service} 翻譯服務")
         self.translator = self._build_translator()
+        self._forget_displayed_translations()  # 可能換了模型：畫面上舊模型的譯文不能被寫進新模型的快取
         self._warmup()
         if self.overlay_manager is not None:
             self.overlay_manager.apply_style()
@@ -181,7 +186,7 @@ class SettingsMixin:
         section = self.config.section("translation")
         current = getattr(self, "translator", None)
         if (
-            service in ("offline", "offline_fast")
+            service == "offline"
             and current is not None
             and getattr(current, "name", "") == service
             and current.config.get(service) == section.get(service)

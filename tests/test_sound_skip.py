@@ -6,27 +6,24 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import re
-from types import SimpleNamespace
-
 import pytest
 from PySide6.QtWidgets import QApplication
 
 from app.config import DEFAULTS, AppConfig
+from app.models import TextRegion
 from services.translation.cache import TranslationCache
-from services.translation.ct2_common import (
+from services.translation.offline_common import (
     SKIP_MARKER,
     is_onomatopoeia_output,
     is_skip_output,
     looks_like_sound_ja,
 )
-from services.translation.fast_translator import FastTranslator
 from services.translation.offline_translator import OfflineTranslator, static_prompt
+from tests.fake_llama import offline_translator, source_of, static_part_of
 from ui.settings_dialog import SettingsDialog
 from ui.style import apply_style
 from utils import chinese
 from utils.layout_utils import translation_lines
-from app.models import TextRegion
 
 pytestmark = pytest.mark.skipif(not chinese.available(), reason="opencc 未安裝")
 
@@ -82,39 +79,21 @@ def test_prompt_without_the_rule_has_no_skip_instruction_or_examples(language, l
     assert prompt.endswith("<|im_end|>\n")
 
 
-# ----------------------------------------------------------------------------- 標準翻譯（假模型）
-class FakeTokenizer:
-    def encode(self, prompt, add_special_tokens):
-        return SimpleNamespace(tokens=[prompt])
-
-    def decode(self, ids, skip_special_tokens):
-        context = ids[0]
-        source = re.findall(r"Translate this \w+ text:\n(.*?)<\|im_end\|>", context)[-1]
-        has_rule = SKIP_MARKER in context.split("<|im_start|>user", 1)[0]
-        if source in {"ドン！", "Boom!"}:
-            return SKIP_MARKER if has_rule else "砰！"
-        if source == "ワンワン":
-            return "汪汪"  # 模型沒照規則回標記，卻「翻」成了中文擬聲詞
-        if source == "またね":
-            return SKIP_MARKER if has_rule else "再見"  # 模型誤判：一般短句被回報成音效
-        return {"こんにちは": "你好", "さようなら": "再見"}.get(source, "")
-
-
-class FakeGenerator:
-    def __init__(self) -> None:
-        self.calls = []
-
-    def generate_batch(self, batches, **kwargs):
-        self.calls.append(kwargs)
-        static = "".join(kwargs["static_prompt"])
-        return [SimpleNamespace(sequences_ids=[[static + "".join(batch)]]) for batch in batches]
+# ----------------------------------------------------------------------------- 翻譯（假模型）
+def decode(prompt: str) -> str:
+    source = source_of(prompt)
+    has_rule = SKIP_MARKER in static_part_of(prompt)
+    if source in {"ドン！", "Boom!"}:
+        return SKIP_MARKER if has_rule else "砰！"
+    if source == "ワンワン":
+        return "汪汪"  # 模型沒照規則回標記，卻「翻」成了中文擬聲詞
+    if source == "またね":
+        return SKIP_MARKER if has_rule else "再見"  # 模型誤判：一般短句被回報成音效
+    return {"こんにちは": "你好", "さようなら": "再見"}.get(source, "")
 
 
 def _translator(**section):
-    instance = OfflineTranslator({"offline": {}, **section})
-    generator = FakeGenerator()
-    instance._generator, instance._tokenizer = generator, FakeTokenizer()
-    return instance, generator
+    return offline_translator(decode, **section)
 
 
 @pytest.mark.parametrize(("text", "language"), [("ドン！", "ja"), ("Boom!", "en"), ("ワンワン", "ja")])
@@ -135,7 +114,7 @@ def test_a_skipped_sound_is_cached_so_it_is_not_asked_again(tmp_path):
     instance.translate(["ドン！"], "auto", "zh-hant")
     instance.translate(["ドン！"], "auto", "zh-hant")
 
-    assert len(generator.calls) == 1
+    assert generator.calls == 1
 
 
 def test_an_ordinary_phrase_wrongly_reported_as_a_sound_is_translated_again_without_the_rule():
@@ -144,9 +123,9 @@ def test_an_ordinary_phrase_wrongly_reported_as_a_sound_is_translated_again_with
     out = instance.translate(["またね"], "auto", "zh-hant")
 
     assert out == ["再見"]
-    assert len(generator.calls) == 2
-    assert SKIP_MARKER in "".join(generator.calls[0]["static_prompt"])
-    assert SKIP_MARKER not in "".join(generator.calls[1]["static_prompt"])
+    assert generator.calls == 2
+    assert SKIP_MARKER in generator.prefixes[0]
+    assert SKIP_MARKER not in generator.prefixes[1]
 
 
 def test_with_the_retry_off_an_ordinary_phrase_reported_as_a_sound_is_not_run_again():
@@ -154,7 +133,7 @@ def test_with_the_retry_off_an_ordinary_phrase_reported_as_a_sound_is_not_run_ag
 
     out = instance.translate(["またね"], "auto", "zh-hant")
 
-    assert len(generator.calls) == 1  # 只進模型一次
+    assert generator.calls == 1  # 只進模型一次
     assert out == ["またね"] and instance.last_failed_count == 1  # 不顯示「[SKIP]」，原文保留、算失敗
 
 
@@ -164,10 +143,10 @@ def test_turning_the_option_off_translates_everything_and_separates_the_cache():
     out = instance.translate(["ドン！", "ワンワン"], "auto", "zh-hant")
 
     assert out == ["砰！", "汪汪"]  # 關閉：連擬聲詞也翻
-    assert all(SKIP_MARKER not in "".join(call["static_prompt"]) for call in generator.calls)
-    assert instance.cache_namespace("auto") == "auto|nosound"
+    assert all(SKIP_MARKER not in prefix for prefix in generator.prefixes)
+    assert instance.cache_namespace("auto") == "auto|nosound|p2|1.5b-q4_k_m"
     instance.config["skip_sounds"] = True
-    assert instance.cache_namespace("auto") == "auto"
+    assert instance.cache_namespace("auto") == "auto|p2|1.5b-q4_k_m"
 
 
 def test_the_marker_is_never_shown_when_skipping_is_not_allowed_and_the_retry_also_fails():
@@ -181,15 +160,15 @@ def test_the_marker_is_never_shown_when_skipping_is_not_allowed_and_the_retry_al
     assert out == ["Hello"] and instance.last_failed_count == 1
 
 
-# ----------------------------------------------------------------------------- 快速翻譯（只過濾譯文）
-def _fast(outputs):
-    instance = FastTranslator({"offline_fast": {}})
+# ----------------------------------------------------------------------------- 只過濾譯文（模型沒照規則回標記時）
+def _answering(outputs):
+    instance, _ = _translator()
     instance._generate = lambda texts, language: [outputs[text] for text in texts]
     return instance
 
 
-def test_fast_translator_drops_chinese_sound_words_for_sound_like_sources():
-    instance = _fast({"ワンワン": "汪汪", "Woof woof": "汪汪", "ふふっ": "嘻嘻", "こんにちは": "你好"})
+def test_chinese_sound_words_are_dropped_for_sound_like_sources():
+    instance = _answering({"ワンワン": "汪汪", "Woof woof": "汪汪", "ふふっ": "嘻嘻", "こんにちは": "你好"})
 
     out = instance.translate(["ワンワン", "Woof woof", "ふふっ", "こんにちは"], "auto", "zh-hant")
 
@@ -197,20 +176,12 @@ def test_fast_translator_drops_chinese_sound_words_for_sound_like_sources():
     assert instance.last_failed_count == 0
 
 
-def test_fast_translator_keeps_translating_ordinary_japanese_even_if_it_comes_out_sound_like():
-    instance = _fast({"またね": "哈哈"})
+def test_ordinary_japanese_is_still_translated_even_if_it_comes_out_sound_like():
+    instance = _answering({"またね": "哈哈"})
 
     out = instance.translate(["またね"], "auto", "zh-hant")
 
     assert out == ["哈哈"]  # 原文不像音效：不採信「全是擬聲用字」的判斷
-
-
-def test_the_fast_translator_uses_its_own_cache_namespace_for_the_option():
-    instance = _fast({})
-
-    assert instance.cache_namespace("auto") == "auto"
-    instance.config["skip_sounds"] = False
-    assert instance.cache_namespace("auto") == "auto|nosound"
 
 
 # ----------------------------------------------------------------------------- 顯示

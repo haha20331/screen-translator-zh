@@ -34,6 +34,18 @@ def available() -> bool:
     return importlib.util.find_spec("llama_cpp") is not None
 
 
+def gpu_offload_supported() -> bool:
+    """安裝的 llama-cpp-python 是不是有 GPU 支援的版本（CUDA／Vulkan／Metal）；預設的 CPU 版回傳 False。"""
+    if not available():
+        return False
+    try:
+        import llama_cpp
+
+        return bool(llama_cpp.llama_supports_gpu_offload())
+    except Exception:  # 函式庫版本太舊沒有這個函式、載入動態函式庫失敗等
+        return False
+
+
 def find_gguf(directory: Path) -> Path | None:
     """模型資料夾裡的 GGUF 檔（一個資料夾放一個模型；有多個時取檔名排序第一個，結果才穩定）。"""
     if not directory.is_dir():
@@ -45,19 +57,35 @@ def find_gguf(directory: Path) -> Path | None:
 class LlamaCppEngine:
     """載入一個 GGUF 模型，``complete(prompt, max_tokens)`` 回傳貪婪解碼的文字。"""
 
-    def __init__(self, model_path: Path, threads: int, context_tokens: int = DEFAULT_CONTEXT_TOKENS) -> None:
+    def __init__(self, model_path: Path, threads: int, context_tokens: int = DEFAULT_CONTEXT_TOKENS, gpu_layers: int = 0) -> None:
+        """``gpu_layers``：交給 GPU 的層數（-1 = 全部，0 = 只用 CPU）。GPU 載入失敗（顯示卡記憶體不足等）會退回 CPU。"""
+        self.model_path = Path(model_path)
+        self.gpu_layers = 0
+        try:
+            self._llama = self._open(threads, context_tokens, gpu_layers)
+            self.gpu_layers = gpu_layers
+        except Exception as exc:
+            if not gpu_layers:
+                raise
+            log.warning("GPU 載入 %s 失敗（%s），改用 CPU", self.model_path.name, exc)
+            self._llama = self._open(threads, context_tokens, 0)
+        self._init_prefix_cache()
+
+    def _open(self, threads: int, context_tokens: int, gpu_layers: int):
         from llama_cpp import Llama
 
-        self.model_path = Path(model_path)
-        self._llama = Llama(
+        return Llama(
             model_path=str(self.model_path),
             n_ctx=context_tokens,
             n_threads=threads,
             n_threads_batch=threads,
             n_batch=512,
+            n_gpu_layers=gpu_layers,
             use_mmap=True,
             verbose=False,
         )
+
+    def _init_prefix_cache(self) -> None:
         # 固定前綴（系統提示 + 示範，約 300 個 token）的 KV 快取：前綴 → 序列狀態位元組。
         # llama.cpp 只記得「上一次」的提示詞，日文換英文（或換歌詞模式）時前綴不同，要重算約 1 秒；
         # 存起來之後換回來只要毫秒。出任何錯就停用這個加速，照函式庫原本的行為（只重用上一次的前綴）。
@@ -117,17 +145,24 @@ class LlamaCppEngine:
             self._prefix_states.clear()
             llama.reset()
 
-    def complete(self, prompt: str, max_tokens: int, prefix: str = "") -> str:
-        """``prefix`` 是 ``prompt`` 開頭那段固定不變的部分（提供就先讓 KV 快取停在它上面）。"""
+    def complete(self, prompt: str, max_tokens: int, prefix: str = "", seed: int | None = None) -> str:
+        """``prefix`` 是 ``prompt`` 開頭那段固定不變的部分（提供就先讓 KV 快取停在它上面）。
+
+        預設貪婪解碼（每次結果相同）。給 ``seed`` 就改用 Qwen 官方建議的取樣（溫度 0.7、top-p 0.8、top-k 20、
+        重複懲罰 1.05），同一個種子結果可重現；用來重翻貪婪解碼翻壞的句子（貪婪重翻只會得到一樣的壞結果）。
+        """
         if prefix and prompt.startswith(prefix):
             self.prepare(prefix)
+        if seed is None:
+            sampling = {"temperature": 0.0, "top_k": 1}
+        else:
+            sampling = {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "repeat_penalty": 1.05, "seed": seed}
         result = self._llama.create_completion(
             prompt,
             max_tokens=max_tokens,
-            temperature=0.0,
-            top_k=1,
             stop=[END_TOKEN],
             echo=False,
+            **sampling,
         )
         return str(result["choices"][0]["text"])
 

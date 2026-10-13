@@ -52,10 +52,18 @@ class TranslationCache:
             self._data[key] = {"text": text, "translated": translated, "ts": time.time()}
             self._prune_locked()
 
-    def clear(self) -> None:
+    def count(self) -> int:
+        """目前存了幾句（含還沒過期的）。"""
         with self._lock:
+            return len(self._data)
+
+    def clear(self) -> int:
+        """刪除所有已儲存的翻譯（記憶體與檔案），回傳刪了幾句。"""
+        with self._lock:
+            removed = len(self._data)
             self._data.clear()
         self.flush()
+        return removed
 
     def flush(self) -> None:
         with self._lock:

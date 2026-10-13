@@ -68,14 +68,14 @@ DEFAULTS: dict[str, Any] = {
         "source_language": "auto",
         "target_language": "zh-hant",
         "keep_original": False,
-        # 離線翻譯・標準（LLM）的輔助功能，即時生效：
+        # 離線翻譯（LLM）的輔助功能，即時生效：
         # 上下文：記住最近 context_size 句已翻好的句子，當成前文協助翻譯這一句（超過 context_ttl_seconds 的不用）
         "use_context": False,
         "context_size": 2,
         "context_ttl_seconds": 120,
         # 歌詞模式：提示模型這是歌詞，用較自然、有詩意的方式意譯
         "lyrics_mode": False,
-        # 只有擬聲詞（音效、笑聲、狀聲詞）的句子不翻譯也不顯示（標準翻譯靠提示詞判斷，快速翻譯只過濾中文擬聲詞譯文）
+        # 只有擬聲詞（音效、笑聲、狀聲詞）的句子不翻譯也不顯示（由提示詞判斷，再用譯文與原文的長相把關）
         "skip_sounds": True,
         # 譯文不是中文（殘留日文假名、不該略過的句子被回報略過）時，改用一般提示重翻一次（預設開）；
         # 關閉就只進模型一次，翻出什麼就輸出什麼，每句少一次模型運算
@@ -84,32 +84,18 @@ DEFAULTS: dict[str, Any] = {
         "max_retries": 3,
         "retry_delay_seconds": 1.0,
         "request_interval_seconds": 0.0,
-        # 離線翻譯（Qwen2.5-Instruct）；model_dir 留空 = 自動尋找 models/translation/
+        # 離線翻譯（Qwen2.5-Instruct，llama.cpp / GGUF）；model_dir 留空 = 自動尋找 models/translation/
         "offline": {
-            # 推論引擎：ctranslate2（CTranslate2 int8，有 NVIDIA GPU 時可用 CUDA 與 7B）或 llama.cpp（GGUF）。
-            # model_name 設成 GGUF 模型名稱（含 gguf）時自動使用 llama.cpp
-            "engine": "ctranslate2",
-            # auto：有 NVIDIA GPU 時優先用 7B 模型（載入失敗退回 1.5B），沒有 GPU 用 CPU 的 1.5B
+            # 模型名稱（見 services/translation/offline_translator.OFFLINE_MODELS，由小到大 0.5B／1.5B／3B／7B）。
+            # auto：有 GPU 版的 llama.cpp 且放了 7B 就用 7B，否則用 1.5B Q4_K_M
             "model_name": "auto",
             "model_dir": "",
-            # auto：有 NVIDIA GPU（CUDA）就用 GPU，否則 CPU
-            "device": "auto",
-            "compute_type": "auto",
-            # 0 = 自動（最多 6；Intel 混合核心 CPU 上超過 8 會明顯變慢）
+            # 交給 GPU 的層數：-1 = 有 GPU 版的 llama.cpp 就全部（預設 CPU 版沒有），0 = 只用 CPU
+            "gpu_layers": -1,
+            # 0 = 自動（最多 6；Intel 混合核心 CPU 上執行緒開太多反而更慢）
             "threads": 0,
-            "beam_size": 1,
             "max_new_tokens": 160,
             # 只有漢字、沒有假名的文字視為：ja（日文）或 空字串（不翻譯）
-            "han_only_as": "ja",
-        },
-        # 離線快速翻譯（NLLB-200 600M，貪婪解碼）：近乎即時，品質較低
-        "offline_fast": {
-            "model_name": "nllb-200-distilled-600m-ct2-int8",
-            "model_dir": "",
-            "device": "auto",
-            "compute_type": "auto",
-            "threads": 0,
-            "beam_size": 1,
             "han_only_as": "ja",
         },
         "google_free_max_workers": 6,
@@ -174,8 +160,10 @@ DEFAULTS: dict[str, Any] = {
         "enabled": True,
         # 框選／全螢幕／視窗翻譯完成後，自動接著進入即時監控（預設開啟；監控中隨時可關，也能直接開始新的擷取）
         "auto_start": True,
-        # 相邻两轮监控的间隔（毫秒）。页面静止时这基本就是“刷新延迟”
-        "interval_ms": 400,
+        # 相鄰兩輪監控的間隔（毫秒），設定畫面可輸入到 0.01 秒（最小 100）。畫面靜止時這基本就是「刷新延遲」
+        "interval_ms": 100,
+        # 預設值版本：檔案裡沒有這個標記的舊設定，才會把舊預設的間隔（1200／400）換成新預設（見 _normalize_monitor）
+        "interval_default_version": 2,
         # 连续出错超过这个次数就自动停掉监控，避免一直空转
         "max_consecutive_errors": 3,
         # 把上一轮译文写回缓存：内容没变过的文本块直接命中缓存，几乎瞬时
@@ -264,6 +252,16 @@ def _normalize_translation(data: dict[str, Any]) -> None:
     # 旧版逐条重试会把 20 个失败尾项串行拖几十秒；失败尾巴现在直接批量兜底。
     translation["google_free_partial_retries"] = 0
     translation.setdefault("google_free_fallback_to_mymemory", True)
+    # CTranslate2 引擎與 NLLB「快速翻譯」已移除：舊設定改成 llama.cpp 的對應設定（沿用 auto 的預設模型）
+    if translation.get("service") == "offline_fast":
+        translation["service"] = "offline"
+    translation.pop("offline_fast", None)
+    offline = translation.setdefault("offline", {})
+    for obsolete in ("engine", "device", "compute_type", "beam_size"):
+        offline.pop(obsolete, None)
+    name = str(offline.get("model_name") or "auto")
+    if name != "auto" and "gguf" not in name.lower():  # CTranslate2 的模型名稱（qwen2.5-…-ct2-int8）
+        offline["model_name"] = "auto"
 
 
 def _normalize_overlay(data: dict[str, Any]) -> None:
@@ -277,7 +275,8 @@ def _normalize_overlay(data: dict[str, Any]) -> None:
         overlay["placement"] = DEFAULTS["overlay"]["placement"]
 
 
-_LEGACY_MONITOR_INTERVAL_MS = 1200
+_LEGACY_MONITOR_INTERVAL_MS = 1200  # 上游的預設
+_PREVIOUS_MONITOR_INTERVAL_MS = 400  # 前一版的預設
 
 
 def _normalize_monitor_stability(data: dict[str, Any], loaded: dict[str, Any]) -> None:
@@ -302,23 +301,28 @@ def _normalize_monitor_stability(data: dict[str, Any], loaded: dict[str, Any]) -
 
 
 def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
-    """辨識間隔：舊預設 1200 ms 太慢，沒被使用者改過就換成新預設；其餘限制在合理範圍。
+    """辨識間隔：舊的預設值換成新預設（100 ms），使用者自己選的值保留；其餘限制在合理範圍（100～10000 ms）。
 
+    舊預設有兩個：上游的 1200 ms 與前一版的 400 ms。檔案裡還沒有 ``interval_default_version`` 標記時，
+    這兩個值視為「沒改過」換掉；換過（標記存進檔案）之後，使用者選的任何值（包括剛好 0.4 或 1.2 秒）都照用。
+    例外：前一版的設定畫面存過的 1200（有 ``interval_migrated`` 標記）一定是使用者自己選的，保留。
     畫面沒變時會直接跳過 OCR 與翻譯，所以縮短間隔不會增加無謂的運算。
-    使用者現在可以在設定裡自己選間隔（包括剛好 1.2 秒），所以舊預設只在檔案裡還沒有
-    ``interval_migrated`` 標記時換掉；換過（或使用者存過設定）之後就照使用者的值。
     """
     monitor = data.setdefault("monitor", {})
     loaded_monitor = loaded.get("monitor") if isinstance(loaded.get("monitor"), dict) else {}
     default = DEFAULTS["monitor"]["interval_ms"]
-    if loaded_monitor.get("interval_ms") == _LEGACY_MONITOR_INTERVAL_MS and not loaded_monitor.get("interval_migrated"):
-        monitor["interval_ms"] = default
-    monitor["interval_migrated"] = True
+    if not loaded_monitor.get("interval_default_version"):
+        stored = loaded_monitor.get("interval_ms")
+        chosen_in_ui = bool(loaded_monitor.get("interval_migrated"))
+        if stored == _PREVIOUS_MONITOR_INTERVAL_MS or (stored == _LEGACY_MONITOR_INTERVAL_MS and not chosen_in_ui):
+            monitor["interval_ms"] = default
+    monitor["interval_default_version"] = 2
+    monitor.pop("interval_migrated", None)
     try:
         interval = int(monitor.get("interval_ms", default))
     except (TypeError, ValueError):
         interval = default
-    monitor["interval_ms"] = max(200, min(10_000, interval))
+    monitor["interval_ms"] = max(100, min(10_000, interval))
     try:
         hide_after = float(monitor.get("hide_after_no_text_seconds", DEFAULTS["monitor"]["hide_after_no_text_seconds"]))
     except (TypeError, ValueError):

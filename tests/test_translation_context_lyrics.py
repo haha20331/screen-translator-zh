@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -22,6 +21,7 @@ from services.translation.offline_translator import (
     static_prompt,
     user_prompt,
 )
+from tests.fake_llama import FakeLlamaEngine, offline_translator, source_of
 from ui.main_window import MainWindow
 from ui.settings_dialog import SettingsDialog
 from ui.style import apply_style
@@ -38,44 +38,24 @@ TRANSLATIONS = {
 }
 
 
-class FakeTokenizer:
-    """把整段提示詞當成一個「詞」，方便測試檢查送進模型的文字。"""
-
-    def encode(self, prompt, add_special_tokens):
-        return SimpleNamespace(tokens=[prompt])
-
-    def decode(self, ids, skip_special_tokens):
-        context = ids[0]
-        source = re.findall(r"Translate this \w+ text:\n(.*?)<\|im_end\|>", context)[-1]
-        if "song lyrics" in context and source == "進む":  # 歌詞提示讓模型把日文留在譯文裡
-            return "進むと"
-        return TRANSLATIONS.get(source, "")
+def decode(prompt: str) -> str:
+    source = source_of(prompt)
+    if "song lyrics" in prompt and source == "進む":  # 歌詞提示讓模型把日文留在譯文裡
+        return "進むと"
+    return TRANSLATIONS.get(source, "")
 
 
-class FakeGenerator:
-    def __init__(self) -> None:
-        self.calls: list[dict] = []
-
-    def generate_batch(self, batches, **kwargs):
-        self.calls.append({"batches": batches, **kwargs})
-        static = "".join(kwargs["static_prompt"])
-        return [SimpleNamespace(sequences_ids=[[static + "".join(batch)]]) for batch in batches]
-
-
-def _translator(**section) -> tuple[OfflineTranslator, FakeGenerator]:
-    config = {"offline": {}, **section}
-    instance = OfflineTranslator(config)
-    generator = FakeGenerator()
-    instance._generator, instance._tokenizer = generator, FakeTokenizer()
-    return instance, generator
+def _translator(**section) -> tuple[OfflineTranslator, FakeLlamaEngine]:
+    return offline_translator(decode, **section)
 
 
 def _user_turns(prompt: str) -> list[str]:
     return re.findall(r"<\|im_start\|>user\nTranslate this \w+ text:\n(.*?)<\|im_end\|>", prompt)
 
 
-def _last_prompt(generator: FakeGenerator, index: int = 0) -> str:
-    return "".join(generator.calls[-1]["batches"][index])
+def _last_prompt(generator: FakeLlamaEngine) -> str:
+    """最後一次送進模型的提示詞，去掉固定前綴（系統提示 + 示範）：剩下前文與待翻的句子。"""
+    return generator.prompts[-1][len(generator.prefixes[-1]) :]
 
 
 # ----------------------------------------------------------------------------- 提示詞
@@ -88,6 +68,36 @@ def test_lyrics_prompt_changes_system_text_and_examples_but_keeps_the_shape():
     assert lyrics.count("<|im_start|>assistant\n") == len(module._LYRICS_SHOTS["ja"])
     assert plain.count("<|im_start|>assistant\n") == len(module._SHOTS["ja"])
     assert static_prompt("en", lyrics=True) != static_prompt("en")
+
+
+@pytest.mark.parametrize("lyrics", [False, True])
+@pytest.mark.parametrize("skip_sounds", [False, True])
+@pytest.mark.parametrize("language", ["ja", "en"])
+def test_the_prompt_tells_the_model_not_to_add_a_subject_the_original_does_not_have(language, lyrics, skip_sounds):
+    system = static_prompt(language, lyrics, skip_sounds).split("<|im_end|>", 1)[0]
+
+    assert "Do not add a subject or pronoun" in system
+    assert "leave it out of the translation too" in system
+    assert "我" in system and "你" in system  # 舉例說明是哪種字
+
+
+def test_the_examples_do_not_contradict_the_no_subject_rule():
+    everything = "".join(static_prompt(language, lyrics) for language in ("ja", "en") for lyrics in (False, True))
+
+    # 原文沒有主詞的示範，譯文也不能有（這兩句以前的示範自己加了「我」）
+    assert "<|im_start|>assistant\n我喜歡你<|im_end|>" not in everything
+    assert "<|im_start|>assistant\n我聽見了你的聲音<|im_end|>" not in everything
+    assert "<|im_start|>assistant\n喜歡喔<|im_end|>" in everything and "<|im_start|>assistant\n聽得見你的聲音<|im_end|>" in everything
+    # 原文有主詞的示範照翻，才不會被教成「一律拿掉主詞」
+    assert "Translate this Japanese text:\n私は学生です。<|im_end|>\n<|im_start|>assistant\n我是學生。" in static_prompt("ja")
+    assert "Translate this English text:\nI am a student.<|im_end|>\n<|im_start|>assistant\n我是學生。" in static_prompt("en")
+
+
+def test_the_cache_key_carries_the_prompt_version_so_old_prompts_leave_no_stale_translations():
+    instance, _ = _translator()
+
+    assert module.PROMPT_VERSION >= 2
+    assert f"|p{module.PROMPT_VERSION}|" in instance.cache_namespace("auto")
 
 
 def test_history_prompt_is_finished_chat_turns_in_time_order():
@@ -227,15 +237,15 @@ def test_placeholders_are_not_put_into_the_context():
 def test_lyrics_mode_switches_the_system_prompt_live():
     instance, generator = _translator()
     instance.translate(["こんにちは"], "auto", "zh-hant")
-    assert "song lyrics" not in "".join(generator.calls[-1]["static_prompt"])
+    assert "song lyrics" not in generator.prefixes[-1]
 
     instance.config["lyrics_mode"] = True
     instance.translate(["元気ですか"], "auto", "zh-hant")
-    assert "song lyrics" in "".join(generator.calls[-1]["static_prompt"])
+    assert "song lyrics" in generator.prefixes[-1]
 
     instance.config["lyrics_mode"] = False
     instance.translate(["ありがとう"], "auto", "zh-hant")
-    assert "song lyrics" not in "".join(generator.calls[-1]["static_prompt"])
+    assert "song lyrics" not in generator.prefixes[-1]
 
 
 def test_japanese_left_in_the_output_is_retried_with_the_plain_prompt():
@@ -244,8 +254,8 @@ def test_japanese_left_in_the_output_is_retried_with_the_plain_prompt():
     out = instance.translate(["進む"], "auto", "zh-hant")
 
     assert out == ["前進"]  # 歌詞提示回「進むと」（殘留假名），改用一般提示重翻
-    assert len(generator.calls) == 2
-    assert "song lyrics" not in "".join(generator.calls[-1]["static_prompt"])
+    assert generator.calls == 2
+    assert "song lyrics" not in generator.prefixes[-1]
 
 
 def test_retry_when_the_output_is_not_chinese_is_on_by_default():
@@ -259,7 +269,7 @@ def test_with_the_retry_off_the_model_runs_once_and_the_output_is_used_as_is():
     out = instance.translate(["進む"], "auto", "zh-hant")
 
     assert out == ["進むと"]  # 殘留假名也照輸出
-    assert len(generator.calls) == 1
+    assert generator.calls == 1
     assert instance.last_failed_count == 0
 
 
@@ -281,11 +291,11 @@ def test_the_retry_switch_takes_effect_while_running_and_does_not_mix_up_the_cac
 
     instance.config["retry_non_chinese"] = False
     assert instance.translate(["進む"], "auto", "zh-hant") == ["進むと"]
-    assert len(generator.calls) == 1
+    assert generator.calls == 1
 
     instance.config["retry_non_chinese"] = True  # 重新打開：不會拿到沒重翻過的舊結果
     assert instance.translate(["進む"], "auto", "zh-hant") == ["前進"]
-    assert len(generator.calls) == 3  # 第一次進模型 + 重翻（命中快取的沒有再算）
+    assert generator.calls == 3  # 第一次進模型 + 重翻（命中快取的沒有再算）
 
 
 def test_no_retry_when_the_output_is_clean():
@@ -293,20 +303,20 @@ def test_no_retry_when_the_output_is_clean():
 
     instance.translate(["こんにちは"], "auto", "zh-hant")
 
-    assert len(generator.calls) == 1
+    assert generator.calls == 1
 
 
 # ----------------------------------------------------------------------------- 快取分流
 @pytest.mark.parametrize(
     ("section", "expected"),
     [
-        ({}, "auto"),
-        ({"lyrics_mode": True}, "auto|lyrics"),
-        ({"use_context": True}, "auto|ctx"),
-        ({"lyrics_mode": True, "use_context": True}, "auto|lyrics|ctx"),
-        ({"retry_non_chinese": True}, "auto"),  # 預設就是開，不另外分流
-        ({"retry_non_chinese": False}, "auto|noretry"),
-        ({"lyrics_mode": True, "retry_non_chinese": False}, "auto|lyrics|noretry"),
+        ({}, "auto|p2|1.5b-q4_k_m"),
+        ({"lyrics_mode": True}, "auto|lyrics|p2|1.5b-q4_k_m"),
+        ({"use_context": True}, "auto|ctx|p2|1.5b-q4_k_m"),
+        ({"lyrics_mode": True, "use_context": True}, "auto|lyrics|ctx|p2|1.5b-q4_k_m"),
+        ({"retry_non_chinese": True}, "auto|p2|1.5b-q4_k_m"),  # 預設就是開，不另外分流
+        ({"retry_non_chinese": False}, "auto|noretry|p2|1.5b-q4_k_m"),
+        ({"lyrics_mode": True, "retry_non_chinese": False}, "auto|lyrics|noretry|p2|1.5b-q4_k_m"),
     ],
 )
 def test_cache_namespace_separates_translation_styles(section, expected):
@@ -319,26 +329,27 @@ def test_toggling_a_mode_does_not_reuse_translations_made_without_it(tmp_path):
     instance, generator = _translator()
     instance.cache = TranslationCache(tmp_path / "cache.json")
     instance.translate(["こんにちは"], "auto", "zh-hant")
-    assert len(generator.calls) == 1
+    assert generator.calls == 1
     instance.translate(["こんにちは"], "auto", "zh-hant")
-    assert len(generator.calls) == 1  # 同樣的設定：命中快取
+    assert generator.calls == 1  # 同樣的設定：命中快取
 
     instance.config["lyrics_mode"] = True
     instance.translate(["こんにちは"], "auto", "zh-hant")
 
-    assert len(generator.calls) == 2  # 換成歌詞模式：重新翻譯
+    assert generator.calls == 2  # 換成歌詞模式：重新翻譯
 
 
 def test_a_poisoned_cache_entry_with_the_original_prepended_is_ignored(tmp_path):
     instance, generator = _translator()
     instance.cache = TranslationCache(tmp_path / "cache.json")
     # 舊版「保留原文」+ 即時監控把「原文\n譯文」寫回快取，之後每輪再多疊一份原文
-    instance.cache.set("auto", "zh-hant", "こんにちは", "こんにちは\nこんにちは\n你好")
+    namespace = instance.cache_namespace("auto")
+    instance.cache.set(namespace, "zh-hant", "こんにちは", "こんにちは\nこんにちは\n你好")
 
     out = instance.translate(["こんにちは"], "auto", "zh-hant")
 
     assert out == ["你好"]
-    assert instance.cache.get("auto", "zh-hant", "こんにちは") == "你好"
+    assert instance.cache.get(namespace, "zh-hant", "こんにちは") == "你好"
 
 
 # ----------------------------------------------------------------------------- 設定與介面

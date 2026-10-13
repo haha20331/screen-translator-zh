@@ -1,23 +1,27 @@
-"""離線翻譯器：提示詞、輸出整理、模型位置、語言分組、繁體轉換、失敗判定與裝置選擇。"""
+"""離線翻譯器：提示詞、輸出整理、模型位置與選擇、語言分組、繁體轉換、失敗判定。"""
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
-from services.translation import ct2_common as module
+from services.translation import llama_backend
+from services.translation import offline_common as module
 from services.translation.base import TranslationError, list_translators
 from services.translation.cache import TranslationCache
-from services.translation.ct2_common import find_model_dir, model_search_paths
+from services.translation.offline_common import model_search_paths
 from services.translation.offline_translator import (
+    _SHOTS,
     DEFAULT_MODEL_NAME,
     LARGE_MODEL_NAME,
-    _SHOTS,
+    OFFLINE_MODELS,
     OfflineTranslator,
     build_prompt,
     clean_output,
+    llama_model_available,
+    model_tag,
     static_prompt,
     user_prompt,
 )
@@ -50,7 +54,7 @@ def test_prompt_has_system_shots_and_target_text(language, name):
 @pytest.mark.parametrize("language", ["ja", "en"])
 def test_prompt_is_static_prefix_plus_user_turn(language):
     assert build_prompt("文字", language) == static_prompt(language) + user_prompt("文字", language)
-    # 固定前綴不含待翻譯文字，且停在對話輪次邊界，才能被 CTranslate2 快取
+    # 固定前綴不含待翻譯文字，且停在對話輪次邊界，才能被引擎的 KV 快取重用
     assert "文字" not in static_prompt(language)
     assert static_prompt(language).endswith("<|im_end|>\n")
     assert user_prompt("文字", language).startswith("<|im_start|>user\n")
@@ -70,61 +74,154 @@ def test_clean_output_keeps_first_non_empty_line(raw, expected):
 
 
 # ----------------------------------------------------------------------------- 模型位置
-def _make_model(directory: Path) -> Path:
-    directory.mkdir(parents=True)
-    (directory / "model.bin").write_bytes(b"x")
-    (directory / "tokenizer.json").write_text("{}", encoding="utf-8")
-    return directory
+def _make_gguf(directory: Path, name: str = "model.gguf") -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_bytes(b"x")
+    return directory / name
+
+
+def _isolate(tmp_path, monkeypatch) -> Path:
+    """只在暫存資料夾裡找模型（不要找到開發機上真的模型）。"""
+    monkeypatch.setattr(module, "app_data_dir", lambda: tmp_path / "appdata")
+    monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
+    return tmp_path / "app" / "models" / "translation"
 
 
 def test_configured_model_dir_has_priority(tmp_path, monkeypatch):
-    configured = _make_model(tmp_path / "mine")
-    monkeypatch.setattr(module, "app_data_dir", lambda: tmp_path / "appdata")
-    monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
-    _make_model(tmp_path / "app" / "models" / "translation" / DEFAULT_MODEL_NAME)
+    models = _isolate(tmp_path, monkeypatch)
+    configured = _make_gguf(tmp_path / "mine")
+    _make_gguf(models / DEFAULT_MODEL_NAME)
 
-    assert find_model_dir(DEFAULT_MODEL_NAME, str(configured)) == configured
+    assert _translator(model_dir=str(configured.parent)).llama_model_path() == configured
 
 
 def test_default_locations_are_searched_in_order(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "app_data_dir", lambda: tmp_path / "appdata")
-    monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
+    models = _isolate(tmp_path, monkeypatch)
 
-    assert find_model_dir(DEFAULT_MODEL_NAME) is None
-    user_copy = _make_model(tmp_path / "appdata" / "models" / "translation" / DEFAULT_MODEL_NAME)
-    assert find_model_dir(DEFAULT_MODEL_NAME) == user_copy
-    app_copy = _make_model(tmp_path / "app" / "models" / "translation" / DEFAULT_MODEL_NAME)
-    assert find_model_dir(DEFAULT_MODEL_NAME) == app_copy  # 程式資料夾優先於使用者資料夾
+    assert not llama_model_available(DEFAULT_MODEL_NAME)
+    user_copy = _make_gguf(tmp_path / "appdata" / "models" / "translation" / DEFAULT_MODEL_NAME)
+    assert _translator().llama_model_path() == user_copy
+    app_copy = _make_gguf(models / DEFAULT_MODEL_NAME)
+    assert _translator().llama_model_path() == app_copy  # 程式資料夾優先於使用者資料夾
 
 
 def test_relative_model_dir_is_resolved_against_app_root(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "app_data_dir", lambda: tmp_path / "appdata")
-    monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
-    model = _make_model(tmp_path / "app" / "custom" / "model")
+    _isolate(tmp_path, monkeypatch)
+    model = _make_gguf(tmp_path / "app" / "custom" / "model")
 
-    assert find_model_dir(DEFAULT_MODEL_NAME, "custom/model") == model
+    assert _translator(model_dir="custom/model").llama_model_path() == model
     assert tmp_path / "app" / "custom" / "model" in model_search_paths(DEFAULT_MODEL_NAME, "custom/model")
 
 
-def test_incomplete_model_dir_is_ignored(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "app_data_dir", lambda: tmp_path / "appdata")
-    monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
-    broken = tmp_path / "app" / "models" / "translation" / DEFAULT_MODEL_NAME
-    broken.mkdir(parents=True)
-    (broken / "model.bin").write_bytes(b"x")  # 少了 tokenizer.json
+def test_a_folder_without_a_gguf_file_is_ignored(tmp_path, monkeypatch):
+    models = _isolate(tmp_path, monkeypatch)
+    (models / DEFAULT_MODEL_NAME).mkdir(parents=True)
+    (models / DEFAULT_MODEL_NAME / "manifest.json").write_text("{}", encoding="utf-8")  # 只有說明檔，沒有模型
 
-    assert find_model_dir(DEFAULT_MODEL_NAME) is None
+    assert not llama_model_available(DEFAULT_MODEL_NAME)
+    with pytest.raises(TranslationError):
+        _translator().llama_model_path()
 
 
-def test_missing_model_error_lists_search_locations(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "app_data_dir", lambda: tmp_path / "appdata")
-    monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
+def test_a_split_model_is_loaded_through_its_first_part(tmp_path, monkeypatch):
+    models = _isolate(tmp_path, monkeypatch)
+    _make_gguf(models / LARGE_MODEL_NAME, "qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf")
+    first = _make_gguf(models / LARGE_MODEL_NAME, "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf")
+
+    assert _translator(model_name=LARGE_MODEL_NAME).llama_model_path() == first  # llama.cpp 讀第一片會自動找其餘的
+
+
+def test_missing_model_error_lists_search_locations_and_how_to_get_it(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
 
     with pytest.raises(TranslationError) as excinfo:
-        _translator().load_plans(_FakeCT2())
+        _translator().llama_model_path()
 
     message = str(excinfo.value)
     assert DEFAULT_MODEL_NAME in message and str(tmp_path / "app") in message
+    assert f"fetch_translation_models.py --model {DEFAULT_MODEL_NAME}" in message
+
+
+# ----------------------------------------------------------------------------- 模型選擇
+def test_auto_uses_the_default_model_on_cpu_only_builds(monkeypatch):
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: False)
+
+    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME == "qwen2.5-1.5b-instruct-gguf-q4_k_m"
+
+
+def test_auto_uses_the_large_model_only_with_gpu_support_and_the_model_file(tmp_path, monkeypatch):
+    models = _isolate(tmp_path, monkeypatch)
+    monkeypatch.setattr(llama_backend, "available", lambda: True)
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+
+    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 有 GPU 但沒放 7B：用預設的
+    _make_gguf(models / LARGE_MODEL_NAME)
+    assert _translator().resolved_model_name() == LARGE_MODEL_NAME  # 有 GPU 且放了 7B：用 7B
+
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: False)
+    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 放了 7B 但只有 CPU 版：不自動用（太慢）
+
+
+@pytest.mark.parametrize("name", [model.name for model in OFFLINE_MODELS])
+def test_an_explicit_model_name_is_used_as_is(name, monkeypatch):
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+
+    assert _translator(model_name=name).resolved_model_name() == name
+
+
+def test_the_choice_is_made_once_per_translator(monkeypatch):
+    instance = _translator()
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: False)
+    assert instance.resolved_model_name() == DEFAULT_MODEL_NAME
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+
+    assert instance.resolved_model_name() == DEFAULT_MODEL_NAME  # 設定改了會重建翻譯器；這個實例的快取鍵不能中途變
+
+
+def test_the_model_list_is_ordered_small_to_large_and_has_distinct_names():
+    names = [model.name for model in OFFLINE_MODELS]
+
+    assert len(set(names)) == len(names) and DEFAULT_MODEL_NAME in names and LARGE_MODEL_NAME in names
+    sizes = [float(name.split("-")[1].removesuffix("b")) for name in names]
+    assert sizes == sorted(sizes)
+    assert [size for size in sizes if size < 1.5] and [size for size in sizes if size > 1.5]  # 有比預設更小、更大的可試
+
+
+def test_every_listed_model_can_be_fetched_by_the_download_script():
+    path = Path(__file__).resolve().parents[1] / "scripts" / "fetch_translation_models.py"
+    spec = importlib.util.spec_from_file_location("fetch_translation_models", path)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+
+    assert {model.name for model in OFFLINE_MODELS} == set(script.MODELS)
+    assert script.DEFAULT_MODEL == DEFAULT_MODEL_NAME
+    for info in script.MODELS.values():
+        assert info["revision"] and len(info["revision"]) == 40  # 固定版本
+        assert all(file.endswith(".gguf") for file in info["files"])
+
+
+@pytest.mark.parametrize(
+    ("name", "tag"),
+    [
+        ("qwen2.5-1.5b-instruct-gguf-q4_k_m", "1.5b-q4_k_m"),
+        ("qwen2.5-0.5b-instruct-gguf-q8_0", "0.5b-q8_0"),
+        ("qwen2.5-7b-instruct-gguf-q4_k_m", "7b-q4_k_m"),
+        ("my-own-model", "my-own-model"),
+    ],
+)
+def test_the_cache_tag_tells_models_apart(name, tag):
+    assert model_tag(name) == tag
+    assert _translator(model_name=name).cache_namespace("auto") == f"auto|p2|{tag}"
+
+
+@pytest.mark.parametrize(
+    ("setting", "supported", "expected"),
+    [(-1, True, -1), (-1, False, 0), (0, True, 0), (20, True, 20), ("abc", True, -1), ("abc", False, 0), (None, False, 0)],
+)
+def test_gpu_layers(setting, supported, expected, monkeypatch):
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: supported)
+
+    assert _translator(gpu_layers=setting).gpu_layers() == expected
 
 
 # ----------------------------------------------------------------------------- 翻譯流程
@@ -187,7 +284,7 @@ def test_unchanged_result_is_not_reported_as_failure_and_is_cached(translator, t
 
     assert out == ["設定"]
     assert translator.last_failed_count == 0
-    assert translator.cache.get("auto", "zh-hant", "設定") == "設定"
+    assert translator.cache.get(translator.cache_namespace("auto"), "zh-hant", "設定") == "設定"
 
 
 def test_echoed_japanese_is_kept_and_marked_failed(translator):
@@ -236,85 +333,24 @@ def test_han_only_text_can_be_excluded_by_configuration(monkeypatch):
     assert recorder.calls == []
 
 
-# ----------------------------------------------------------------------------- 裝置與可用性
-class _FakeCT2:
-    def __init__(self, count=0, error=None) -> None:
-        self._count, self._error = count, error
-
-    def get_cuda_device_count(self):
-        if self._error:
-            raise self._error
-        return self._count
-
-
-@pytest.mark.parametrize(
-    ("setting", "fake", "expected"),
-    [
-        ("auto", _FakeCT2(count=1), "cuda"),
-        ("auto", _FakeCT2(count=0), "cpu"),
-        ("auto", _FakeCT2(error=RuntimeError("no cuda runtime")), "cpu"),
-        ("cpu", _FakeCT2(count=1), "cpu"),
-        ("cuda", _FakeCT2(count=0), "cuda"),
-    ],
-)
-def test_device_resolution(setting, fake, expected):
-    assert _translator(device=setting)._resolve_device(fake) == expected
-
-
-def test_availability_reason_reports_missing_dependency(monkeypatch):
-    import importlib.util
-
-    from services.translation import llama_backend
+# ----------------------------------------------------------------------------- 可用性
+def test_availability_reports_the_missing_dependency(monkeypatch):
+    monkeypatch.setattr(llama_backend, "available", lambda: False)
+    assert "llama-cpp-python" in OfflineTranslator.availability_reason()
 
     real = importlib.util.find_spec
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a, **k: None if name == "ctranslate2" else real(name, *a, **k))
-    monkeypatch.setattr(llama_backend, "available", lambda: False)  # 開發機有裝 llama.cpp 時，CTranslate2 缺了也不算不可用
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a, **k: None if name == "opencc" else real(name, *a, **k))
+    assert "opencc" in OfflineTranslator.availability_reason()
 
-    assert "ctranslate2" in OfflineTranslator.availability_reason()
-
-
-# ----------------------------------------------------------------------------- 推論包裝（假的 CTranslate2）
-def test_generate_builds_prompts_and_decodes_results(monkeypatch):
-    instance = _translator(beam_size=2, max_new_tokens=50)
-    seen = {}
-
-    class FakeTokenizer:
-        def encode(self, prompt, add_special_tokens):
-            seen.setdefault("prompts", []).append((prompt, add_special_tokens))
-            return SimpleNamespace(tokens=["<tok>", prompt[-30:]])
-
-        def decode(self, ids, skip_special_tokens):
-            return f"\n  譯文{ids[0]}  \n(註解)"
-
-    class FakeGenerator:
-        def generate_batch(self, batches, **kwargs):
-            seen["batches"], seen["kwargs"] = batches, kwargs
-            return [SimpleNamespace(sequences_ids=[[index]]) for index, _ in enumerate(batches)]
-
-    instance._generator, instance._tokenizer = FakeGenerator(), FakeTokenizer()
-
-    out = instance._generate(["こんにちは", "さようなら"], "ja")
-
-    assert out == ["譯文0", "譯文1"]
-    assert all(flag is False for _, flag in seen["prompts"])
-    assert seen["prompts"][0][0] == static_prompt("ja")  # 固定前綴只分詞一次
-    assert "こんにちは" in seen["prompts"][1][0] and "さようなら" in seen["prompts"][2][0]
-    assert len(seen["prompts"]) == 3
-    assert seen["kwargs"]["static_prompt"] == ["<tok>", static_prompt("ja")[-30:]]
-    assert seen["batches"][0][1].endswith("assistant\n")
-    # 第二次呼叫沿用快取的前綴，不重新分詞
-    instance._generate(["もう一つ"], "ja")
-    assert len(seen["prompts"]) == 4
-    assert seen["kwargs"]["beam_size"] == 2
-    assert seen["kwargs"]["max_length"] == 50
-    assert seen["kwargs"]["include_prompt_in_result"] is False
-    assert seen["kwargs"]["end_token"] == "<|im_end|>"
+    monkeypatch.setattr(importlib.util, "find_spec", real)
+    monkeypatch.setattr(llama_backend, "available", lambda: True)
+    assert OfflineTranslator.availability_reason() is None
 
 
 # ----------------------------------------------------------------------------- 真實模型（有模型才跑）
 @pytest.mark.skipif(
-    find_model_dir(DEFAULT_MODEL_NAME) is None or OfflineTranslator.availability_reason() is not None or not chinese.available(),
-    reason="未安裝離線翻譯模型或相依套件",
+    not llama_model_available(DEFAULT_MODEL_NAME) or not chinese.available(),
+    reason="未安裝 llama-cpp-python 或預設模型",
 )
 def test_real_model_translates_to_traditional_chinese():
     instance = OfflineTranslator({"offline": {}})
@@ -328,88 +364,3 @@ def test_real_model_translates_to_traditional_chinese():
         assert chinese.to_traditional(text) == text
         assert not any("぀" <= char <= "ヿ" for char in text)
     assert instance.last_failed_count == 0
-
-
-# ----------------------------------------------------------------------------- 依硬體自動選模型
-def _models(tmp_path, monkeypatch, *names):
-    monkeypatch.setattr(module, "app_data_dir", lambda: tmp_path / "appdata")
-    monkeypatch.setattr(module, "_app_roots", lambda: [tmp_path / "app"])
-    for name in names:
-        _make_model(tmp_path / "app" / "models" / "translation" / name)
-
-
-def test_auto_uses_the_large_model_only_on_cuda(tmp_path, monkeypatch):
-    _models(tmp_path, monkeypatch, LARGE_MODEL_NAME, DEFAULT_MODEL_NAME)
-
-    cpu_plans = _translator().load_plans(_FakeCT2(count=0))
-    cuda_plans = _translator().load_plans(_FakeCT2(count=1))
-
-    assert [(plan.model_name, plan.device) for plan in cpu_plans] == [(DEFAULT_MODEL_NAME, "cpu")]
-    # GPU：7B 優先；載入失敗（顯示卡記憶體不足等）依序退到 GPU 上的 1.5B、最後 CPU 上的 1.5B
-    assert [(plan.model_name, plan.device) for plan in cuda_plans] == [
-        (LARGE_MODEL_NAME, "cuda"),
-        (DEFAULT_MODEL_NAME, "cuda"),
-        (DEFAULT_MODEL_NAME, "cpu"),
-    ]
-
-
-def test_auto_without_the_large_model_still_works_on_cuda(tmp_path, monkeypatch):
-    _models(tmp_path, monkeypatch, DEFAULT_MODEL_NAME)
-
-    plans = _translator().load_plans(_FakeCT2(count=1))
-
-    assert [(plan.model_name, plan.device) for plan in plans][0] == (DEFAULT_MODEL_NAME, "cuda")
-
-
-def test_explicit_model_name_disables_auto_selection(tmp_path, monkeypatch):
-    _models(tmp_path, monkeypatch, LARGE_MODEL_NAME, DEFAULT_MODEL_NAME)
-
-    plans = _translator(model_name=DEFAULT_MODEL_NAME).load_plans(_FakeCT2(count=1))
-
-    assert [(plan.model_name, plan.device) for plan in plans] == [(DEFAULT_MODEL_NAME, "cuda")]
-
-
-def test_loading_falls_back_to_the_next_plan_when_a_model_fails(tmp_path, monkeypatch):
-    _models(tmp_path, monkeypatch, LARGE_MODEL_NAME, DEFAULT_MODEL_NAME)
-    attempts = []
-
-    class FakeGenerator:
-        def __init__(self, path, device, compute_type, inter_threads, intra_threads):
-            attempts.append((Path(path).name, device, compute_type))
-            if Path(path).name == LARGE_MODEL_NAME:
-                raise RuntimeError("CUDA out of memory")
-
-    class FakeTokenizerClass:
-        @staticmethod
-        def from_file(path):
-            return object()
-
-    import sys
-
-    fake_ct2 = SimpleNamespace(Generator=FakeGenerator, get_cuda_device_count=lambda: 1)
-    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
-    monkeypatch.setitem(sys.modules, "tokenizers", SimpleNamespace(Tokenizer=FakeTokenizerClass))
-    monkeypatch.setattr(OfflineTranslator, "availability_reason", classmethod(lambda cls: None))
-    instance = _translator()
-
-    instance._load()
-
-    assert attempts == [(LARGE_MODEL_NAME, "cuda", "int8_float16"), (DEFAULT_MODEL_NAME, "cuda", "int8_float16")]
-    assert (instance.model_name, instance.device) == (DEFAULT_MODEL_NAME, "cuda")
-
-
-def test_loading_reports_every_failure_when_no_plan_works(tmp_path, monkeypatch):
-    _models(tmp_path, monkeypatch, DEFAULT_MODEL_NAME)
-
-    class BrokenGenerator:
-        def __init__(self, *args, **kwargs):
-            raise RuntimeError("no luck")
-
-    import sys
-
-    monkeypatch.setitem(sys.modules, "ctranslate2", SimpleNamespace(Generator=BrokenGenerator, get_cuda_device_count=lambda: 0))
-    monkeypatch.setitem(sys.modules, "tokenizers", SimpleNamespace(Tokenizer=SimpleNamespace(from_file=lambda p: object())))
-    monkeypatch.setattr(OfflineTranslator, "availability_reason", classmethod(lambda cls: None))
-
-    with pytest.raises(TranslationError, match="no luck"):
-        _translator()._load()

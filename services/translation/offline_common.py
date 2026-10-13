@@ -1,4 +1,4 @@
-"""CTranslate2 離線翻譯器共用的小工具：模型位置、裝置與執行緒、譯文整理。"""
+"""離線翻譯器共用的小工具：模型位置、執行緒、擬聲詞防呆、譯文整理。"""
 
 from __future__ import annotations
 
@@ -11,9 +11,16 @@ from typing import Any
 from app.logger import app_data_dir
 from services.translation.base import TranslationError, Translator
 from utils import chinese
-from utils.language_utils import detect_source_language, has_han, has_kana
+from utils.language_utils import (
+    detect_source_language,
+    has_foreign_script,
+    has_han,
+    has_kana,
+    has_spaced_out_chars,
+    unexpected_latin_words,
+)
 
-# 在 Intel 混合核心 CPU（i7-13700H）上實測：6 執行緒最快，超過 8 反而慢 3 倍以上。
+# 預設最多用幾個執行緒（設定 ``threads`` 可改）。在 Intel 混合核心 CPU（i7-13700H）上，執行緒開太多反而更慢。
 DEFAULT_MAX_THREADS = 6
 
 
@@ -44,29 +51,7 @@ def model_search_paths(model_name: str, model_dir: str = "") -> list[Path]:
     return candidates
 
 
-def find_model_dir(model_name: str, model_dir: str = "", required: tuple[str, ...] = ("model.bin", "tokenizer.json")) -> Path | None:
-    for candidate in model_search_paths(model_name, model_dir):
-        if all((candidate / name).is_file() for name in required):
-            return candidate
-    return None
-
-
-# ----------------------------------------------------------------------------- 裝置與執行緒
-def cuda_available(ctranslate2: Any) -> bool:
-    try:
-        return ctranslate2.get_cuda_device_count() > 0
-    except Exception:  # 沒有 CUDA 執行環境時 CTranslate2 可能丟例外
-        return False
-
-
-def resolve_device(setting: str, ctranslate2: Any) -> str:
-    """``cpu`` / ``cuda`` 依設定；``auto`` 有 NVIDIA GPU（CUDA）就用 GPU，否則 CPU。"""
-    setting = (setting or "auto").lower()
-    if setting in ("cpu", "cuda"):
-        return setting
-    return "cuda" if cuda_available(ctranslate2) else "cpu"
-
-
+# ----------------------------------------------------------------------------- 執行緒
 def default_threads(setting: int = 0) -> int:
     return setting if setting > 0 else min(DEFAULT_MAX_THREADS, os.cpu_count() or 1)
 
@@ -132,6 +117,21 @@ def looks_untranslated(source: str, output: str) -> bool:
     if kana / max(1, len(output)) > 0.5:
         return True
     return not has_han(output)
+
+
+def looks_not_chinese(source: str, output: str) -> bool:
+    """譯文夾雜了不該有的字：日文假名、韓文／俄文等外文、原文沒有的英文單字，或每個字都隔著空格的失控輸出。
+
+    小模型偶爾會寫出「明天見ます」「계속你的名字」「數 NIGHT SKY 中的星星」「淚 的 數 越 總 勝 達」。
+    這種結果值得再翻一次（改用取樣，貪婪解碼重翻會得到一模一樣的結果）；
+    再翻還是不行就照原樣輸出，不算翻譯失敗。
+    """
+    return (
+        has_kana(output)
+        or has_foreign_script(output)
+        or has_spaced_out_chars(output)
+        or bool(unexpected_latin_words(source, output))
+    )
 
 
 # ----------------------------------------------------------------------------- 共用基底類別

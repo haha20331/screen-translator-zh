@@ -8,7 +8,10 @@ requests>=2.31
 winocr==0.0.15
 rapidocr>=3.10,<4
 onnxruntime>=1.20,<2
-# Offline translation (Qwen2.5-Instruct int8 via CTranslate2) and Traditional Chinese conversion
-ctranslate2>=4.5,<5
-tokenizers>=0.20
+# Offline translation: Qwen2.5-Instruct (GGUF) on llama.cpp, and Traditional Chinese conversion.
+# PyPI only has the llama-cpp-python source (needs a C++ compiler and CMake). Prebuilt CPU wheels live on
+# the project's own index, so point pip at it and accept wheels only.
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+--only-binary=llama-cpp-python
+llama-cpp-python>=0.3,<0.4
 opencc>=1.1

@@ -204,6 +204,29 @@ class MonitorMixin:
         self._monitor_timer.stop()
         self._monitor_timer.start(self._monitor_interval_ms())
 
+    def _forget_displayed_translations(self) -> None:
+        """忘掉畫面上已顯示的譯文與上下文，下一輪重新辨識、重新翻譯。
+
+        換翻譯模型或清除快取之後必須做：監控每一輪會把「已顯示的譯文」寫回快取，
+        不忘掉的話，舊模型的譯文會被寫進新模型的快取項目，看起來像新模型翻的。
+        """
+        self._monitor_known = {}
+        self._monitor_signature = ""
+        self._monitor_frame_hash = ""
+        if self._monitor_stabilizer is not None:
+            self._monitor_stabilizer.reset()
+        self._reset_translation_context()
+
+    def clear_translation_cache(self) -> int:
+        """設定畫面的「清除翻譯快取」：刪除所有已儲存的翻譯，回傳刪了幾句。"""
+        removed = self.cache.clear() if self.cache is not None else 0
+        self._forget_displayed_translations()
+        self.set_status(f"已清除翻譯快取（{removed} 句）")
+        return removed
+
+    def translation_cache_count(self) -> int:
+        return self.cache.count() if self.cache is not None else 0
+
     def _arm_no_text_timer(self) -> None:
         """這一輪 OCR 沒抓到任何文字：開始計時，連續這麼久都沒有字幕就把譯文關掉。
         已經在計時（連續好幾輪都沒字）就不重新開始，才是「連續」一段時間；0 = 不自動關閉。"""

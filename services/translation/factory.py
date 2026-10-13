@@ -7,8 +7,7 @@ from typing import Callable
 from services.translation.base import _REGISTRY, Translator, list_translators
 
 _SERVICE_DISPLAY = {
-    "offline": "離線翻譯・標準（品質優先，有 GPU 時自動用更大的模型）",
-    "offline_fast": "離線翻譯・快速（近乎即時，品質較低）",
+    "offline": "離線翻譯（llama.cpp，本機執行，可選不同大小的模型）",
     "mock": "Mock（本地詞典演示）",
     "mymemory": "MyMemory（免費線上）",
     "google_free": "Google 免費（無 Key）",

@@ -1,6 +1,8 @@
 """配置文件读写与默认值合并测试。"""
 
-from app.config import AppConfig
+import json
+
+from app.config import DEFAULTS, AppConfig
 
 
 def test_defaults_loaded(tmp_path):
@@ -124,7 +126,7 @@ def test_legacy_monitor_interval_is_migrated_to_the_faster_default(tmp_path):
     path = tmp_path / "config.json"
     path.write_text('{"monitor": {"interval_ms": 1200}}', encoding="utf-8")
 
-    assert AppConfig(path).get("monitor.interval_ms") == 400
+    assert AppConfig(path).get("monitor.interval_ms") == 100
 
 
 def test_customised_monitor_interval_is_kept(tmp_path):
@@ -132,3 +134,53 @@ def test_customised_monitor_interval_is_kept(tmp_path):
     path.write_text('{"monitor": {"interval_ms": 2500}}', encoding="utf-8")
 
     assert AppConfig(path).get("monitor.interval_ms") == 2500
+
+
+# ----------------------------------------------------------------------------- 已移除的 CTranslate2 / NLLB 設定
+def _offline_config(tmp_path, translation):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"translation": translation}), encoding="utf-8")
+    return AppConfig(path)
+
+
+def test_old_ctranslate2_and_fast_translator_settings_are_migrated(tmp_path):
+    config = _offline_config(
+        tmp_path,
+        {
+            "service": "offline_fast",
+            "offline_fast": {"model_name": "nllb-200-distilled-600m-ct2-int8", "device": "auto"},
+            "offline": {
+                "engine": "ctranslate2",
+                "model_name": "qwen2.5-7b-instruct-ct2-int8",
+                "device": "cuda",
+                "compute_type": "int8_float16",
+                "beam_size": 4,
+                "threads": 4,
+                "model_dir": "D:/models",
+            },
+        },
+    )
+
+    translation = config.section("translation")
+    assert translation["service"] == "offline"  # 「快速翻譯」已移除
+    assert "offline_fast" not in translation
+    offline = translation["offline"]
+    assert offline["model_name"] == "auto"  # CTranslate2 的模型名稱沒有意義了
+    assert not {"engine", "device", "compute_type", "beam_size"} & set(offline)
+    assert offline["threads"] == 4 and offline["model_dir"] == "D:/models"  # 其餘使用者的設定照舊
+
+
+def test_gguf_model_names_and_other_services_are_left_alone(tmp_path):
+    config = _offline_config(tmp_path, {"service": "google_free", "offline": {"model_name": "qwen2.5-3b-instruct-gguf-q4_k_m", "gpu_layers": 20}})
+
+    assert config.get("translation.service") == "google_free"
+    assert config.get("translation.offline.model_name") == "qwen2.5-3b-instruct-gguf-q4_k_m"
+    assert config.get("translation.offline.gpu_layers") == 20
+
+
+def test_the_default_offline_settings_only_have_llama_cpp_options():
+    offline = DEFAULTS["translation"]["offline"]
+
+    assert set(offline) == {"model_name", "model_dir", "gpu_layers", "threads", "max_new_tokens", "han_only_as"}
+    assert offline["model_name"] == "auto" and offline["gpu_layers"] == -1
+    assert "offline_fast" not in DEFAULTS["translation"]

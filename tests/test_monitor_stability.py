@@ -496,31 +496,55 @@ def test_main_window_footer_no_longer_shows_stability_or_context(qapp, tmp_path)
 
 # ----------------------------------------------------------------------------- 辨識間隔（使用者可調）
 def test_default_scan_interval_is_the_recommended_value():
-    assert DEFAULTS["monitor"]["interval_ms"] == stability.RECOMMENDED_INTERVAL_MS == 400
-    assert (stability.MIN_INTERVAL_MS, stability.MAX_INTERVAL_MS) == (200, 10_000)
+    assert DEFAULTS["monitor"]["interval_ms"] == stability.RECOMMENDED_INTERVAL_MS == 100
+    assert (stability.MIN_INTERVAL_MS, stability.MAX_INTERVAL_MS) == (100, 10_000)
 
 
 @pytest.mark.parametrize(
     ("saved", "interval"),
     [
-        ({}, 400),
-        ({"interval_ms": 800}, 800),
+        ({}, 100),
+        ({"interval_ms": 150}, 150),  # 小數兩位的 0.15 秒
+        ({"interval_ms": 800, "interval_default_version": 2}, 800),
         ({"interval_ms": 2500}, 2500),
-        ({"interval_ms": 50}, 200),
+        ({"interval_ms": 50}, 100),  # 太短：夾到最小 0.1 秒
+        ({"interval_ms": 0}, 100),
+        ({"interval_ms": -300}, 100),
         ({"interval_ms": 99999}, 10_000),
-        ({"interval_ms": "fast"}, 400),
-        ({"interval_ms": None}, 400),
+        ({"interval_ms": "fast"}, 100),
+        ({"interval_ms": None}, 100),
     ],
 )
 def test_scan_interval_is_clamped_to_the_allowed_range(tmp_path, saved, interval):
     assert _load(tmp_path, saved).get("monitor.interval_ms") == interval
 
 
-def test_the_old_default_is_replaced_once_but_a_chosen_1_2_seconds_is_kept(tmp_path):
-    assert _load(tmp_path, {"interval_ms": 1200}).get("monitor.interval_ms") == 400  # 舊預設：換成新預設
+@pytest.mark.parametrize(
+    ("saved", "interval"),
+    [
+        ({"interval_ms": 1200}, 100),  # 上游的舊預設：換成新預設
+        ({"interval_ms": 400}, 100),  # 前一版的預設：換成新預設
+        ({"interval_ms": 400, "interval_migrated": True}, 100),  # 前一版設定畫面存的預設值也一樣
+        ({"interval_ms": 1200, "interval_migrated": True}, 1200),  # 前一版設定畫面存的 1.2 秒是使用者自己選的
+        ({"interval_ms": 1200, "interval_default_version": 2}, 1200),  # 換過之後，任何值都照使用者的
+        ({"interval_ms": 400, "interval_default_version": 2}, 400),
+    ],
+)
+def test_old_defaults_are_replaced_once_but_what_the_user_chose_is_kept(tmp_path, saved, interval):
+    config = _load(tmp_path, saved)
 
-    chosen = _load(tmp_path, {"interval_ms": 1200, "interval_migrated": True})
-    assert chosen.get("monitor.interval_ms") == 1200  # 使用者自己選的 1.2 秒，重開不能被改回去
+    assert config.get("monitor.interval_ms") == interval
+    assert config.get("monitor.interval_default_version") == 2  # 標記存進檔案，之後就不會再換
+    assert config.get("monitor.interval_migrated") is None
+
+
+def test_after_the_replacement_is_saved_a_typed_value_survives_restarts(tmp_path):
+    config = _load(tmp_path, {"interval_ms": 400})
+    assert config.get("monitor.interval_ms") == 100
+    config.set("monitor.interval_ms", 400)  # 使用者自己選了 0.4 秒
+    config.save()
+
+    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") == 400
 
 
 def test_the_scheduler_uses_the_configured_interval(controller):
@@ -529,13 +553,17 @@ def test_the_scheduler_uses_the_configured_interval(controller):
     controller._monitor_schedule_next()
     assert controller._monitor_timer.interval() == 800 and controller._monitor_timer.isActive()
 
+    controller.config.set("monitor.interval_ms", 150)  # 小數兩位的 0.15 秒
+    controller._monitor_schedule_next()
+    assert controller._monitor_timer.interval() == 150
+
     controller.config.set("monitor.interval_ms", 50)  # 太短：夾到最小值，避免整台電腦被辨識佔滿
     controller._monitor_schedule_next()
-    assert controller._monitor_timer.interval() == 200
+    assert controller._monitor_timer.interval() == 100
 
     controller.config.set("monitor.interval_ms", "abc")
     controller._monitor_schedule_next()
-    assert controller._monitor_timer.interval() == 400
+    assert controller._monitor_timer.interval() == 100
     controller._monitor_timer.stop()
 
 
@@ -567,11 +595,12 @@ def test_settings_dialog_lets_the_user_set_the_scan_interval(qapp, tmp_path):
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
 
     assert dialog.pages.widget(0).widget().isAncestorOf(dialog.spin_scan_interval)  # 「通用」頁，不用往下捲
-    assert (dialog.spin_scan_interval.minimum(), dialog.spin_scan_interval.maximum()) == (0.2, 10.0)
-    assert dialog.spin_scan_interval.value() == 0.4
-    assert dialog.lbl_scan_rate.text() == "約每秒檢查 2.5 次畫面"
+    assert (dialog.spin_scan_interval.minimum(), dialog.spin_scan_interval.maximum()) == (0.1, 10.0)
+    assert dialog.spin_scan_interval.decimals() == 2  # 小數下兩位
+    assert dialog.spin_scan_interval.value() == 0.1  # 預設 0.1 秒
+    assert dialog.lbl_scan_rate.text() == "約每秒檢查 10.0 次畫面"
     texts = [label.text() for label in dialog.pages.widget(0).widget().findChildren(QLabel)]
-    assert "辨識間隔：0.4 秒" in next(text for text in texts if "系統推薦" in text)
+    assert "辨識間隔：0.1 秒" in next(text for text in texts if "系統推薦" in text)
 
     dialog.spin_scan_interval.setValue(0.5)
     assert dialog.lbl_scan_rate.text() == "約每秒檢查 2.0 次畫面"
@@ -586,6 +615,42 @@ def test_settings_dialog_lets_the_user_set_the_scan_interval(qapp, tmp_path):
     assert reopened.spin_scan_interval.value() == 1.2
     dialog.deleteLater()
     reopened.deleteLater()
+
+
+def _type_into_the_interval_box(dialog, text):
+    dialog.spin_scan_interval.lineEdit().setText(text)  # 像使用者輸入
+    dialog.spin_scan_interval.interpretText()
+
+
+@pytest.mark.parametrize(
+    ("typed", "milliseconds"),
+    [("0.15", 150), ("0.25", 250), ("0.29", 290), ("0.1", 100), ("0.10", 100), ("0.35 秒", 350), ("1.2", 1200), ("10", 10_000)],
+)
+def test_typed_values_are_accepted_to_two_decimals(qapp, tmp_path, typed, milliseconds):
+    dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
+
+    _type_into_the_interval_box(dialog, typed)
+    dialog._commit_accept(dialog._validated_hotkeys())
+    dialog._save_close_timer.stop()
+
+    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") == milliseconds
+    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") == milliseconds  # 再載入一次，仍是同一個值
+    dialog.deleteLater()
+
+
+@pytest.mark.parametrize("typed", ["0.07", "0.05", "0", "-1", "12", "0.123", "abc", ""])
+def test_values_the_box_cannot_take_leave_the_previous_value(qapp, tmp_path, typed):
+    """低於 0.1、超過 10、第三位小數、不是數字：輸入框直接拒絕，維持原本的值（不會存進奇怪的數字）。"""
+    config = AppConfig(tmp_path / "config.json")
+    config.set("monitor.interval_ms", 300)
+    dialog = SettingsDialog(config)
+
+    _type_into_the_interval_box(dialog, typed)
+    dialog._commit_accept(dialog._validated_hotkeys())
+    dialog._save_close_timer.stop()
+
+    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") == 300
+    dialog.deleteLater()
 
 
 # ----------------------------------------------------------------------------- 抓不到字幕一段時間後自動關閉譯文
@@ -718,8 +783,8 @@ def test_the_main_window_opens_1_3_times_taller_than_before():
 
 
 def test_a_new_main_window_uses_the_default_size(qapp, tmp_path):
-    from ui.main_window import default_window_size
     from tests.test_translation_context_lyrics import _Controller
+    from ui.main_window import default_window_size
 
     window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
     screen = qapp.primaryScreen()

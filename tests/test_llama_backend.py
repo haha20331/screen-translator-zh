@@ -1,24 +1,25 @@
-"""llama.cpp 推論引擎：引擎選擇、提示詞、模型位置、快取分流、設定介面（用假的 llama 引擎，不載入真模型）。"""
+"""llama.cpp 引擎：提示詞、載入、GPU 卸載與退回、固定前綴的 KV 快取、設定介面（用假的引擎，不載入真模型）。"""
 
 from __future__ import annotations
 
 import os
-import re
-from pathlib import Path
+import sys
+import types
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from app.config import DEFAULTS, AppConfig
+from app.config import AppConfig
 from services.translation import llama_backend
 from services.translation import offline_translator as module
 from services.translation.base import TranslationError
-from services.translation.ct2_common import SKIP_MARKER
+from services.translation.offline_common import SKIP_MARKER
 from services.translation.offline_translator import OfflineTranslator
+from tests.fake_llama import FakeLlamaEngine, offline_translator, source_of
 from ui import settings_dialog as settings_module
-from ui.settings_dialog import INFERENCE_ENGINES, SettingsDialog
+from ui.settings_dialog import OFFLINE_MODEL_CHOICES, SettingsDialog
 from ui.style import apply_style
 from utils import chinese
 
@@ -27,56 +28,15 @@ pytestmark = pytest.mark.skipif(not chinese.available(), reason="opencc 未安�
 TRANSLATIONS = {"こんにちは": "你好", "ありがとう": "謝謝", "進む": "前進", "ドン！": SKIP_MARKER, "Hello": "哈囉"}
 
 
-class FakeLlama:
-    """像 LlamaCppEngine：收到完整提示詞，回傳「模型會寫的字」。"""
-
-    def __init__(self) -> None:
-        self.prompts: list[str] = []
-        self.max_tokens: list[int] = []
-        self.prefixes: list[str] = []
-
-    def complete(self, prompt: str, max_tokens: int, prefix: str = "") -> str:
-        self.prompts.append(prompt)
-        self.max_tokens.append(max_tokens)
-        self.prefixes.append(prefix)
-        source = re.findall(r"Translate this \w+ text:\n(.*?)<\|im_end\|>", prompt)[-1]
-        if "song lyrics" in prompt and source == "進む":  # 歌詞提示讓模型把日文留在譯文裡
-            return "進むと"
-        return TRANSLATIONS.get(source, "")
+def decode(prompt: str) -> str:
+    source = source_of(prompt)
+    if "song lyrics" in prompt and source == "進む":  # 歌詞提示讓模型把日文留在譯文裡
+        return "進むと"
+    return TRANSLATIONS.get(source, "")
 
 
-def _translator(**section):
-    instance = OfflineTranslator({"offline": {"engine": "llama.cpp"}, **section})
-    fake = FakeLlama()
-    instance._llama = fake
-    return instance, fake
-
-
-# ----------------------------------------------------------------------------- 引擎選擇
-@pytest.mark.parametrize(
-    ("offline", "engine"),
-    [
-        ({}, "ctranslate2"),
-        ({"engine": "ctranslate2"}, "ctranslate2"),
-        ({"engine": "llama.cpp"}, "llama.cpp"),
-        ({"engine": "LLAMA.CPP"}, "llama.cpp"),
-        ({"engine": "ctranslate2", "model_name": "qwen2.5-1.5b-instruct-gguf-q8_0"}, "llama.cpp"),  # GGUF 模型名稱本身就決定引擎
-        ({"model_name": "qwen2.5-7b-instruct-ct2-int8"}, "ctranslate2"),
-        ({"engine": ""}, "ctranslate2"),
-    ],
-)
-def test_engine_is_chosen_from_the_settings(offline, engine):
-    assert OfflineTranslator({"offline": offline}).engine() == engine
-
-
-def test_the_default_engine_stays_ctranslate2():
-    assert DEFAULTS["translation"]["offline"]["engine"] == "ctranslate2"
-
-
-def test_the_model_name_falls_back_to_q4_k_m_when_only_the_engine_is_set():
-    assert OfflineTranslator({"offline": {"engine": "llama.cpp"}}).llama_model_name() == "qwen2.5-1.5b-instruct-gguf-q4_k_m"
-    chosen = OfflineTranslator({"offline": {"model_name": "qwen2.5-1.5b-instruct-gguf-q8_0"}})
-    assert chosen.llama_model_name() == "qwen2.5-1.5b-instruct-gguf-q8_0"
+def _translator(**section) -> tuple[OfflineTranslator, FakeLlamaEngine]:
+    return offline_translator(decode, **section)
 
 
 # ----------------------------------------------------------------------------- 提示詞與翻譯流程
@@ -105,7 +65,7 @@ def test_the_fixed_part_of_the_prompt_is_passed_along_so_its_cache_can_be_kept()
     assert all(prompt.startswith(prefix) for prompt, prefix in zip(fake.prompts, fake.prefixes))
 
 
-def test_context_and_lyrics_use_the_same_prompts_as_the_other_engine():
+def test_context_and_lyrics_are_put_into_the_prompt():
     instance, fake = _translator(use_context=True, context_size=1, lyrics_mode=True)
     instance.translate(["こんにちは"], "auto", "zh-hant")
 
@@ -117,10 +77,10 @@ def test_context_and_lyrics_use_the_same_prompts_as_the_other_engine():
     assert "<|im_start|>assistant\n你好<|im_end|>\n" in prompt
 
 
-def test_the_kana_retry_and_the_sound_skip_work_on_this_engine_too():
+def test_the_kana_retry_and_the_sound_skip_work():
     instance, fake = _translator(lyrics_mode=True)
     assert instance.translate(["進む"], "auto", "zh-hant") == ["前進"]  # 歌詞提示殘留假名 → 改用一般提示重翻
-    assert len(fake.prompts) == 2 and "song lyrics" not in fake.prompts[-1]
+    assert fake.calls == 2 and "song lyrics" not in fake.prompts[-1]
 
     sound, _ = _translator()
     assert sound.translate(["ドン！"], "auto", "zh-hant") == ["ドン！"]  # 擬聲詞：原文保留、不算失敗
@@ -138,24 +98,6 @@ def test_sentences_in_one_batch_are_translated_one_by_one():
     assert out == ["你好", "謝謝"] and len(fake.prompts) == 2
 
 
-# ----------------------------------------------------------------------------- 快取分流
-@pytest.mark.parametrize(
-    ("offline", "namespace"),
-    [
-        ({"engine": "llama.cpp"}, "auto|llama-q4_k_m"),
-        ({"model_name": "qwen2.5-1.5b-instruct-gguf-q8_0"}, "auto|llama-q8_0"),
-        ({"engine": "ctranslate2"}, "auto"),  # CTranslate2 維持原本的鍵，舊快取不失效
-    ],
-)
-def test_translations_of_different_engines_are_cached_separately(offline, namespace):
-    assert OfflineTranslator({"offline": offline}).cache_namespace("auto") == namespace
-
-
-def test_the_tag_comes_after_the_style_tags():
-    instance = OfflineTranslator({"offline": {"engine": "llama.cpp"}, "lyrics_mode": True})
-    assert instance.cache_namespace("auto") == "auto|lyrics|llama-q4_k_m"
-
-
 # ----------------------------------------------------------------------------- 模型位置與載入
 def test_find_gguf_picks_the_first_file_by_name(tmp_path):
     assert llama_backend.find_gguf(tmp_path / "missing") is None
@@ -170,20 +112,9 @@ def test_the_gguf_is_found_in_the_configured_folder(tmp_path):
     model = tmp_path / "my-model" / "qwen.gguf"
     model.parent.mkdir()
     model.write_bytes(b"x")
-    instance = OfflineTranslator({"offline": {"engine": "llama.cpp", "model_dir": str(model.parent)}})
+    instance = OfflineTranslator({"offline": {"model_dir": str(model.parent)}})
 
     assert instance.llama_model_path() == model
-
-
-def test_a_missing_gguf_explains_how_to_get_it(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "model_search_paths", lambda name, model_dir="": [tmp_path / name])
-    instance = OfflineTranslator({"offline": {"engine": "llama.cpp"}})
-
-    with pytest.raises(TranslationError) as error:
-        instance.llama_model_path()
-
-    assert "fetch_translation_models.py --model qwen2.5-1.5b-instruct-gguf-q4_k_m" in str(error.value)
-    assert str(tmp_path) in str(error.value)
 
 
 def test_load_creates_the_llama_engine_with_the_default_threads(tmp_path, monkeypatch):
@@ -193,24 +124,48 @@ def test_load_creates_the_llama_engine_with_the_default_threads(tmp_path, monkey
     created = []
 
     class FakeEngine:
-        def __init__(self, path, threads):
-            created.append((path, threads))
+        gpu_layers = 0
+
+        def __init__(self, path, threads, gpu_layers=0):
+            created.append((path, threads, gpu_layers))
 
     monkeypatch.setattr(llama_backend, "available", lambda: True)
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: False)
     monkeypatch.setattr(llama_backend, "LlamaCppEngine", FakeEngine)
-    instance = OfflineTranslator({"offline": {"engine": "llama.cpp", "model_dir": str(model.parent)}})
+    instance = OfflineTranslator({"offline": {"model_dir": str(model.parent)}})
 
     instance._load()
 
-    assert created == [(model, 6)]  # 預設 6 執行緒（和 CTranslate2 一樣）
+    assert created == [(model, 6, 0)]  # 預設 6 執行緒；CPU 版沒有 GPU 可卸載
     assert (instance.device, instance.model_name) == ("cpu", "m")
     instance._load()  # 已載入：不會再建一次
     assert len(created) == 1
 
 
+def test_a_gpu_build_offloads_all_layers_by_default(tmp_path, monkeypatch):
+    model = tmp_path / "m" / "qwen.gguf"
+    model.parent.mkdir()
+    model.write_bytes(b"x")
+    created = []
+
+    class FakeEngine:
+        def __init__(self, path, threads, gpu_layers=0):
+            created.append(gpu_layers)
+            self.gpu_layers = gpu_layers
+
+    monkeypatch.setattr(llama_backend, "available", lambda: True)
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+    monkeypatch.setattr(llama_backend, "LlamaCppEngine", FakeEngine)
+    instance = OfflineTranslator({"offline": {"model_dir": str(model.parent)}})
+
+    instance._load()
+
+    assert created == [-1] and instance.device == "gpu"
+
+
 def test_missing_llama_cpp_python_is_reported(monkeypatch):
     monkeypatch.setattr(llama_backend, "available", lambda: False)
-    instance = OfflineTranslator({"offline": {"engine": "llama.cpp"}})
+    instance = OfflineTranslator({"offline": {}})
 
     with pytest.raises(TranslationError, match="llama-cpp-python"):
         instance._load()
@@ -222,27 +177,75 @@ def test_a_broken_model_file_is_reported_not_crashed(tmp_path, monkeypatch):
     model.write_bytes(b"not a model")
 
     class Broken:
-        def __init__(self, path, threads):
+        def __init__(self, path, threads, gpu_layers=0):
             raise ValueError("invalid magic")
 
     monkeypatch.setattr(llama_backend, "available", lambda: True)
     monkeypatch.setattr(llama_backend, "LlamaCppEngine", Broken)
-    instance = OfflineTranslator({"offline": {"engine": "llama.cpp", "model_dir": str(model.parent)}})
+    instance = OfflineTranslator({"offline": {"model_dir": str(model.parent)}})
 
     with pytest.raises(TranslationError, match="qwen.gguf"):
         instance._load()
 
 
-def test_ctranslate2_is_not_required_when_llama_cpp_is_installed(monkeypatch):
-    import importlib.util
+# ----------------------------------------------------------------------------- GPU 卸載與退回
+def _engine_with(monkeypatch, outcomes):
+    """依序回應 ``_open`` 的結果（例外就丟出）；回傳 (建好的引擎類別, 被要求的 gpu_layers 紀錄)。"""
+    asked = []
 
-    real = importlib.util.find_spec
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a, **k: None if name in ("ctranslate2", "tokenizers") else real(name, *a, **k))
+    def fake_open(self, threads, context_tokens, gpu_layers):
+        asked.append(gpu_layers)
+        outcome = outcomes[len(asked) - 1]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(llama_backend.LlamaCppEngine, "_open", fake_open)
+    return asked
+
+
+def test_the_gpu_is_used_when_it_loads(monkeypatch):
+    asked = _engine_with(monkeypatch, [object()])
+
+    engine = llama_backend.LlamaCppEngine("m.gguf", 6, gpu_layers=-1)
+
+    assert asked == [-1] and engine.gpu_layers == -1
+
+
+def test_a_gpu_that_cannot_load_the_model_falls_back_to_the_cpu(monkeypatch):
+    asked = _engine_with(monkeypatch, [RuntimeError("CUDA out of memory"), object()])
+
+    engine = llama_backend.LlamaCppEngine("m.gguf", 6, gpu_layers=-1)
+
+    assert asked == [-1, 0] and engine.gpu_layers == 0  # 顯示卡記憶體不足：改用 CPU，不是整個翻譯壞掉
+
+
+def test_a_cpu_failure_is_not_retried(monkeypatch):
+    asked = _engine_with(monkeypatch, [ValueError("bad file")])
+
+    with pytest.raises(ValueError, match="bad file"):
+        llama_backend.LlamaCppEngine("m.gguf", 6, gpu_layers=0)
+
+    assert asked == [0]
+
+
+def test_gpu_support_is_asked_from_the_library(monkeypatch):
     monkeypatch.setattr(llama_backend, "available", lambda: True)
-    assert OfflineTranslator.availability_reason() is None
+    fake = types.SimpleNamespace(llama_supports_gpu_offload=lambda: True)
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake)
+    assert llama_backend.gpu_offload_supported() is True
+
+    fake.llama_supports_gpu_offload = lambda: False  # 預設的 CPU 版
+    assert llama_backend.gpu_offload_supported() is False
+
+    def broken():
+        raise OSError("cannot load the shared library")
+
+    fake.llama_supports_gpu_offload = broken
+    assert llama_backend.gpu_offload_supported() is False  # 查不到就當沒有，不能讓載入失敗
 
     monkeypatch.setattr(llama_backend, "available", lambda: False)
-    assert "ctranslate2" in OfflineTranslator.availability_reason()
+    assert llama_backend.gpu_offload_supported() is False
 
 
 # ----------------------------------------------------------------------------- 設定介面
@@ -263,61 +266,70 @@ def _commit(dialog):
     dialog._save_close_timer.stop()
 
 
-def test_the_combo_lists_the_engines_and_defaults_to_ctranslate2(qapp, tmp_path, models_present):
+def test_the_combo_lists_auto_and_every_model_and_defaults_to_auto(qapp, tmp_path, models_present):
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
 
-    assert [dialog.combo_infer_engine.itemText(i) for i in range(3)] == [label for label, _e, _m in INFERENCE_ENGINES]
-    assert dialog.combo_infer_engine.currentIndex() == 0
-    assert dialog.pages.widget(3).widget().isAncestorOf(dialog.combo_infer_engine)  # 「翻譯」頁
+    assert dialog.combo_offline_model.count() == len(OFFLINE_MODEL_CHOICES) == 6  # 自動 + 0.5B／1.5B 兩種／3B／7B
+    assert [dialog.combo_offline_model.itemData(i) for i in range(6)] == [
+        "auto",
+        "qwen2.5-0.5b-instruct-gguf-q8_0",
+        "qwen2.5-1.5b-instruct-gguf-q4_k_m",
+        "qwen2.5-1.5b-instruct-gguf-q8_0",
+        "qwen2.5-3b-instruct-gguf-q4_k_m",
+        "qwen2.5-7b-instruct-gguf-q4_k_m",
+    ]
+    assert dialog.combo_offline_model.currentIndex() == 0
+    assert dialog.pages.widget(3).widget().isAncestorOf(dialog.combo_offline_model)  # 「翻譯」頁
     dialog.deleteLater()
 
 
-def test_options_are_disabled_when_the_model_or_the_package_is_missing(qapp, tmp_path, monkeypatch):
-    monkeypatch.setattr(settings_module, "llama_model_available", lambda name, model_dir="": name.endswith("q4_k_m"))
+def test_options_without_a_model_file_are_disabled_with_the_reason(qapp, tmp_path, monkeypatch):
+    present = {"qwen2.5-1.5b-instruct-gguf-q4_k_m", "qwen2.5-0.5b-instruct-gguf-q8_0"}
+    monkeypatch.setattr(settings_module, "llama_model_available", lambda name, model_dir="": name in present)
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
 
-    items = [dialog.combo_infer_engine.model().item(i) for i in range(3)]
-    assert [item.isEnabled() for item in items] == [True, True, False]
-    assert "fetch_translation_models.py --model qwen2.5-1.5b-instruct-gguf-q8_0" in dialog.combo_infer_engine.itemData(2, 3)  # ToolTipRole
+    enabled = [dialog.combo_offline_model.model().item(i).isEnabled() for i in range(6)]
+    assert enabled == [True, True, True, False, False, False]  # 「自動」永遠可選
+    tip = dialog.combo_offline_model.itemData(5, 3)  # ToolTipRole
+    assert "fetch_translation_models.py --model qwen2.5-7b-instruct-gguf-q4_k_m" in tip
+    assert dialog.combo_offline_model.itemData(2, 3) == ""
     dialog.deleteLater()
 
 
-def test_the_chosen_engine_is_saved_and_shown_again(qapp, tmp_path, models_present):
+def test_the_chosen_model_is_saved_and_shown_again(qapp, tmp_path, models_present):
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
-    dialog.combo_infer_engine.setCurrentIndex(2)
+    dialog.combo_offline_model.setCurrentIndex(5)
     _commit(dialog)
 
     saved = AppConfig(tmp_path / "config.json")
-    assert saved.get("translation.offline.engine") == "llama.cpp"
-    assert saved.get("translation.offline.model_name") == "qwen2.5-1.5b-instruct-gguf-q8_0"
+    assert saved.get("translation.offline.model_name") == "qwen2.5-7b-instruct-gguf-q4_k_m"
     reopened = SettingsDialog(saved)
-    assert reopened.combo_infer_engine.currentIndex() == 2
+    assert reopened.combo_offline_model.currentIndex() == 5
     dialog.deleteLater()
     reopened.deleteLater()
 
 
 def test_an_untouched_combo_does_not_overwrite_a_custom_model_name(qapp, tmp_path, models_present):
     config = AppConfig(tmp_path / "config.json")
-    config.set("translation.offline.model_name", "qwen2.5-7b-instruct-ct2-int8")
+    config.set("translation.offline.model_name", "my-own-finetune-gguf")
     config.save()
     dialog = SettingsDialog(config)
-    assert dialog.combo_infer_engine.currentIndex() == 0  # 顯示成 CTranslate2
+    assert dialog.combo_offline_model.currentIndex() == 0  # 不認得的名稱顯示成「自動」
 
     _commit(dialog)
 
-    assert AppConfig(tmp_path / "config.json").get("translation.offline.model_name") == "qwen2.5-7b-instruct-ct2-int8"
+    assert AppConfig(tmp_path / "config.json").get("translation.offline.model_name") == "my-own-finetune-gguf"
     dialog.deleteLater()
 
 
-@pytest.mark.parametrize(("offline", "index"), [({"engine": "llama.cpp"}, 1), ({"model_name": "qwen2.5-1.5b-instruct-gguf-q8_0"}, 2)])
-def test_existing_settings_select_the_matching_item(qapp, tmp_path, models_present, offline, index):
+@pytest.mark.parametrize(("name", "index"), [("auto", 0), ("qwen2.5-0.5b-instruct-gguf-q8_0", 1), ("qwen2.5-1.5b-instruct-gguf-q8_0", 3), ("qwen2.5-3b-instruct-gguf-q4_k_m", 4)])
+def test_existing_settings_select_the_matching_item(qapp, tmp_path, models_present, name, index):
     config = AppConfig(tmp_path / "config.json")
-    for key, value in offline.items():
-        config.set(f"translation.offline.{key}", value)
+    config.set("translation.offline.model_name", name)
 
     dialog = SettingsDialog(config)
 
-    assert dialog.combo_infer_engine.currentIndex() == index
+    assert dialog.combo_offline_model.currentIndex() == index
     dialog.deleteLater()
 
 

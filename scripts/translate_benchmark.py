@@ -53,10 +53,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--images", type=Path, required=True, help="含圖片（與可選的同名參考譯文 .txt）的資料夾")
     parser.add_argument(
-        "--engine",
-        choices=["ctranslate2", "llama-q4_k_m", "llama-q8_0"],
-        default="ctranslate2",
-        help="離線翻譯（標準）的推論引擎：ctranslate2（預設）、llama.cpp 的 Q4_K_M 或 Q8_0（需先下載 GGUF 模型）",
+        "--model",
+        default="auto",
+        help="離線翻譯的模型名稱（見 scripts/fetch_translation_models.py --list）；預設 auto = 1.5B Q4_K_M",
     )
     parser.add_argument("--threads", type=int, default=0, help="推論執行緒數（0 = 自動）")
     args = parser.parse_args()
@@ -70,9 +69,7 @@ def main() -> None:
         config = AppConfig(Path(tmp) / "config.json")
         offline = config.section("translation")["offline"]
         offline["threads"] = args.threads
-        if args.engine != "ctranslate2":
-            offline["engine"] = "llama.cpp"
-            offline["model_name"] = "qwen2.5-1.5b-instruct-gguf-" + args.engine.removeprefix("llama-")
+        offline["model_name"] = args.model
         engine = create_ocr_engine(config.get("ocr.engine", "rapidocr"), config.section("ocr"), config)
         translator = create_translator(
             config.get("translation.service", "offline"), config.section("translation"), cache=None

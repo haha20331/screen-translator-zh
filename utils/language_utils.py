@@ -54,6 +54,43 @@ def has_han(text: str) -> bool:
     return any("\u3400" <= char <= "\u9fff" for char in text)
 
 
+# 譯成中文時不該出現的文字：韓文、西里爾字母（俄文）、希臘、希伯來、阿拉伯、天城文（印地文）、泰文。
+# Qwen2.5 這類多語模型偶爾會在中文裡夾一個韓文字或俄文字（「계속呼唤著你的名字」）。
+_FOREIGN_SCRIPT_RANGES = (
+    (0x0370, 0x03FF),  # 希臘
+    (0x0400, 0x052F),  # 西里爾
+    (0x0590, 0x05FF),  # 希伯來
+    (0x0600, 0x06FF),  # 阿拉伯
+    (0x0900, 0x097F),  # 天城文
+    (0x0E00, 0x0E7F),  # 泰文
+    (0x1100, 0x11FF),  # 韓文字母
+    (0x3130, 0x318F),  # 韓文相容字母
+    (0xAC00, 0xD7AF),  # 韓文音節
+)
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+
+
+def has_foreign_script(text: str) -> bool:
+    """文字中有沒有韓文、俄文、阿拉伯文、泰文等不該出現在中文譯文裡的書寫系統。"""
+    return any(low <= ord(char) <= high for char in text for low, high in _FOREIGN_SCRIPT_RANGES)
+
+
+# 每個字中間都隔一個空格的中文（「淚 的 數 越 總 勝 達」）：小模型解碼失控時的典型輸出，正常的譯文不會這樣
+_SPACED_OUT_RE = re.compile(r"(?:[\u3400-\u9fff] ){3,}[\u3400-\u9fff]")
+
+
+def has_spaced_out_chars(text: str) -> bool:
+    """有連續四個以上的漢字、每個之間都隔著一個空格（失控的輸出）。「恢復了 50 點 HP」這種中文與數字間的空格不算。"""
+    return bool(_SPACED_OUT_RE.search(text or ""))
+
+
+def unexpected_latin_words(source: str, output: str) -> list[str]:
+    """譯文裡原文沒有的英文單字（3 個字母以上）。原文本來就有的（HP、Ctrl、Windows）不算；
+    「HP」「MP」這種兩個字母的縮寫也不算。"""
+    known = {word.lower() for word in _LATIN_WORD_RE.findall(source or "")}
+    return [word for word in _LATIN_WORD_RE.findall(output or "") if word.lower() not in known]
+
+
 def script_class(text: str) -> str:
     """文字的書寫系統：``ja``（含假名）、``han``（只有漢字，沒有假名）、``latin``、``other``（數字、符號）。"""
     value = text or ""

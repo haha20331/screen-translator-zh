@@ -23,9 +23,10 @@ RECOMMENDED_STABLE_ROUNDS = 2
 RECOMMENDED_MAX_WAIT = 2.5
 MIN_ROUNDS, MAX_ROUNDS = 1, 10
 MIN_MAX_WAIT, MAX_MAX_WAIT = 0.5, 30.0
-# 辨識間隔：每一輪監控結束後，再等多久才檢查下一次畫面（毫秒）。0.4 秒約每秒檢查 2 次。
-RECOMMENDED_INTERVAL_MS = 400
-MIN_INTERVAL_MS, MAX_INTERVAL_MS = 200, 10_000
+# 辨識間隔：每一輪監控結束後，再等多久才檢查下一次畫面（毫秒）。0.1 秒約每秒檢查 10 次；
+# 設定畫面可輸入到小數兩位（0.01 秒）。畫面一直在動時每次檢查都要辨識文字，間隔越短越吃 CPU。
+RECOMMENDED_INTERVAL_MS = 100
+MIN_INTERVAL_MS, MAX_INTERVAL_MS = 100, 10_000
 # 監控中 OCR 連續這麼久都抓不到字幕，就自動把譯文關掉（0 = 不自動關閉）
 RECOMMENDED_NO_TEXT_SECONDS = 1.0
 MAX_NO_TEXT_SECONDS = 30.0

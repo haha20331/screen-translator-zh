@@ -504,7 +504,7 @@ class MainWindow(QWidget):
         bottom_row.addWidget(self.status_label, 1)
         self.check_keep_original = QCheckBox("保留原文")
         self.check_lyrics = QCheckBox("歌詞")
-        self.check_lyrics.setToolTip("告訴模型這是歌詞，譯得較通順有詩意。只對「離線翻譯・標準」有效。")
+        self.check_lyrics.setToolTip("告訴模型這是歌詞，譯得較通順有詩意。只對「離線翻譯」有效。")
         self.btn_edit = QPushButton("編輯模式")
         self.btn_edit.setCheckable(True)
         self.btn_edit.setObjectName("ToggleButton")

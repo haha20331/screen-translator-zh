@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
     QComboBox,
-    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -27,8 +26,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
-    QSlider,
-    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -42,7 +39,7 @@ from services.diagnostics import DiagnosticsExportError, export_diagnostics
 from services.ocr.base import list_ocr_engines
 from services.translation.base import list_translators
 from services.translation.factory import service_display_name
-from services.translation.offline_translator import llama_model_available
+from services.translation.offline_translator import OFFLINE_MODELS, llama_model_available
 from ui.appearance import (
     ACCENT_PRESETS,
     DENSITY_PRESETS,
@@ -52,6 +49,7 @@ from ui.appearance import (
     current_tokens,
 )
 from ui.motion import BASE, ENTER_EASING, EXIT_EASING, MOVE_EASING, SLOW, motion_duration
+from ui.no_wheel import NoWheelDoubleSpinBox, NoWheelSlider, NoWheelSpinBox
 from ui.overlay_preview import OverlayPreview
 from ui.personalization import AppearancePreview, PersonalizationChoiceRow
 from utils import stability
@@ -93,11 +91,10 @@ class SettingsGlyph(QLabel):
         """Keep the canonical mark still while the surrounding page moves."""
 
 
-# 離線推論引擎的選項：(顯示名稱, engine, model_name)；model_name 為 auto 時由 CTranslate2 依硬體挑模型
-INFERENCE_ENGINES = (
-    ("CTranslate2・int8（預設）", "ctranslate2", "auto"),
-    ("llama.cpp・Q4_K_M（較快）", "llama.cpp", "qwen2.5-1.5b-instruct-gguf-q4_k_m"),
-    ("llama.cpp・Q8_0（品質較高）", "llama.cpp", "qwen2.5-1.5b-instruct-gguf-q8_0"),
+# 離線翻譯模型的選項：(顯示名稱, model_name)；auto 由翻譯器依硬體挑模型
+OFFLINE_MODEL_CHOICES = (
+    ("自動（預設 1.5B Q4_K_M；有 GPU 版 llama.cpp 且放了 7B 時用 7B）", "auto"),
+    *((model.label, model.name) for model in OFFLINE_MODELS),
 )
 
 
@@ -105,9 +102,11 @@ class SettingsDialog(QWidget):
     accepted = Signal()
     exit_requested = Signal(int)
     finished = Signal(int)
-    def __init__(self, config: AppConfig, parent=None) -> None:
+    def __init__(self, config: AppConfig, parent=None, cache_actions=None) -> None:
         super().__init__(parent)
         self.config = config
+        # (數量, 清除) 兩個函式，由應用程式提供；沒有時（例如單獨開設定視窗）「清除翻譯快取」不能用
+        self._cache_actions = cache_actions
         self.setObjectName("SettingsDialog")
         self.setWindowTitle("設定")
         self.setMinimumSize(900, 610)
@@ -528,15 +527,16 @@ class SettingsDialog(QWidget):
         startup_form.addRow(self.chk_tray)
         layout.addWidget(self._card("啟動與後臺", "決定應用如何進入工作狀態與停留在系統托盤。", startup_form))
 
-        self.spin_scan_interval = QDoubleSpinBox()
+        self.spin_scan_interval = NoWheelDoubleSpinBox()
         self.spin_scan_interval.setRange(stability.MIN_INTERVAL_MS / 1000, stability.MAX_INTERVAL_MS / 1000)
-        self.spin_scan_interval.setSingleStep(0.1)
-        self.spin_scan_interval.setDecimals(1)
+        self.spin_scan_interval.setSingleStep(0.05)
+        self.spin_scan_interval.setDecimals(2)  # 可輸入到小數兩位（0.01 秒）
         self.spin_scan_interval.setSuffix(" 秒")
         self.spin_scan_interval.setToolTip(
-            "每一輪檢查結束後，等這麼久再檢查下一次畫面。間隔越短，字幕一換就越快反應，但電腦負擔越重"
-            "（影片畫面一直在動時，每次檢查都要重新辨識文字）；間隔越長越省資源，但換字幕要多等一下。"
-            "畫面完全沒變時不會辨識，也不會翻譯。"
+            "每一輪檢查結束後，等這麼久再檢查下一次畫面（最短 0.1 秒，可輸入到小數兩位）。"
+            "間隔越短，字幕一換就越快反應，但電腦負擔越重"
+            "（影片畫面一直在動時，每次檢查都要重新辨識文字，0.1 秒幾乎是不停地辨識）；"
+            "間隔越長越省資源，但換字幕要多等一下。畫面完全沒變時不會辨識，也不會翻譯。"
         )
         self.lbl_scan_rate = QLabel()
         self.lbl_scan_rate.setObjectName("SettingsCardDescription")
@@ -546,7 +546,7 @@ class SettingsDialog(QWidget):
         scan_row.addWidget(self.spin_scan_interval)
         scan_row.addWidget(self.lbl_scan_rate)
         scan_row.addStretch(1)
-        self.spin_hide_no_text = QDoubleSpinBox()
+        self.spin_hide_no_text = NoWheelDoubleSpinBox()
         self.spin_hide_no_text.setRange(0.0, stability.MAX_NO_TEXT_SECONDS)
         self.spin_hide_no_text.setSingleStep(0.5)
         self.spin_hide_no_text.setDecimals(1)
@@ -556,7 +556,7 @@ class SettingsDialog(QWidget):
             "監控中，OCR 連續這麼久都抓不到任何文字（字幕消失了、換成沒有字的畫面），就自動把譯文關掉，"
             "不會一直留著上一句。字幕再出現時會重新翻譯顯示。0 = 不自動關閉。"
         )
-        self.spin_confirm_rounds = QSpinBox()
+        self.spin_confirm_rounds = NoWheelSpinBox()
         self.spin_confirm_rounds.setRange(stability.MIN_ROUNDS, stability.MAX_ROUNDS)
         self.spin_confirm_rounds.setSuffix(" 次")
         self.spin_confirm_rounds.setToolTip(
@@ -564,7 +564,7 @@ class SettingsDialog(QWidget):
             "換字幕的過渡畫面可能先閃出殘缺的句子；次數越多越不會閃怪句子，但換字幕越慢"
             "（每多一次約慢 0.5～1 秒）。辨識結果與目前顯示的相同時，不論次數都不會重複翻譯。"
         )
-        self.spin_max_wait = QDoubleSpinBox()
+        self.spin_max_wait = NoWheelDoubleSpinBox()
         self.spin_max_wait.setRange(stability.MIN_MAX_WAIT, stability.MAX_MAX_WAIT)
         self.spin_max_wait.setSingleStep(0.5)
         self.spin_max_wait.setDecimals(1)
@@ -595,8 +595,8 @@ class SettingsDialog(QWidget):
         monitor_form.addRow(preset_row)
         explanation = QLabel(
             f"系統推薦：\n"
-            f"．辨識間隔：{stability.RECOMMENDED_INTERVAL_MS / 1000:g} 秒（約每秒檢查 2 次）。"
-            "想省電腦資源就拉長，想讓換字幕更快反應就縮短（最短 0.2 秒）。\n"
+            f"．辨識間隔：{stability.RECOMMENDED_INTERVAL_MS / 1000:g} 秒（約每秒檢查 10 次）。"
+            "想省電腦資源就拉長，想讓換字幕更快反應就縮短（最短 0.1 秒，可輸入到小數兩位）。\n"
             f"．無字幕時關閉譯文：{stability.RECOMMENDED_NO_TEXT_SECONDS:g} 秒。OCR 連續抓不到字幕這麼久，就自動關掉譯文。\n"
             f"．快速：確認 {stability.RECOMMENDED_FAST_ROUNDS} 次，最久等待 {stability.RECOMMENDED_MAX_WAIT:g} 秒。"
             "辨識到就立刻顯示，反應最快，但字幕淡入淡出時可能先閃出殘缺的句子。\n"
@@ -762,13 +762,13 @@ class SettingsDialog(QWidget):
         self.combo_lang = QComboBox()
         for code, name in LANGUAGES:
             self.combo_lang.addItem(name, code)
-        self.spin_confidence = QDoubleSpinBox()
+        self.spin_confidence = NoWheelDoubleSpinBox()
         self.spin_confidence.setRange(0.0, 1.0)
         self.spin_confidence.setSingleStep(0.05)
-        self.spin_y_tol = QDoubleSpinBox()
+        self.spin_y_tol = NoWheelDoubleSpinBox()
         self.spin_y_tol.setRange(0.0, 2.0)
         self.spin_y_tol.setSingleStep(0.1)
-        self.spin_x_gap = QDoubleSpinBox()
+        self.spin_x_gap = NoWheelDoubleSpinBox()
         self.spin_x_gap.setRange(0.0, 5.0)
         self.spin_x_gap.setSingleStep(0.1)
         self.spin_confidence.setToolTip("低於該置信度的識別結果會被丟棄；0.6 左右較穩妥，越低越寬容但可能混入噪點。")
@@ -804,22 +804,21 @@ class SettingsDialog(QWidget):
         for code, name in LANGUAGES:
             self.combo_source.addItem(name, code)
             self.combo_target.addItem(name, code)
-        self.combo_infer_engine = QComboBox()
-        for label, engine, model in INFERENCE_ENGINES:
-            self.combo_infer_engine.addItem(label, (engine, model))
-        self.combo_infer_engine.setToolTip(
-            "「離線翻譯・標準」用哪個推論引擎跑同一個 Qwen2.5-1.5B 模型。\n"
-            "CTranslate2：預設，有 NVIDIA GPU 時可用 GPU 與更大的 7B 模型。\n"
-            "llama.cpp：CPU 上通常比較快、記憶體較省；Q4_K_M 最快，Q8_0 品質最接近 CTranslate2。\n"
-            "灰色的選項代表缺少 llama-cpp-python 或模型檔，請執行 scripts/fetch_translation_models.py 下載。\n"
-            "只對「離線翻譯・標準」有效；改了之後下次翻譯會重新載入模型。"
+        self.combo_offline_model = QComboBox()
+        for label, name in OFFLINE_MODEL_CHOICES:
+            self.combo_offline_model.addItem(label, name)
+        self.combo_offline_model.setToolTip(
+            "「離線翻譯」用哪個模型（同一個 Qwen2.5 系列，越大越準也越慢、越吃記憶體）。\n"
+            "0.5B 最快但日文品質差；1.5B 是速度與品質的平衡；3B、7B 較準，在 CPU 上明顯變慢。\n"
+            "灰色的選項代表缺少模型檔，請執行 scripts/fetch_translation_models.py --model <名稱> 下載。\n"
+            "改了之後下次翻譯會重新載入模型。換模型比較時，建議順便按旁邊的「清除翻譯快取」。"
         )
         self.chk_keep_original = QCheckBox("譯文上方同時保留原文")
         self.chk_use_context = QCheckBox("使用上下文：記住前面的句子，協助翻譯這一句")
-        self.spin_context_size = QSpinBox()
+        self.spin_context_size = NoWheelSpinBox()
         self.spin_context_size.setRange(1, 10)
         self.spin_context_size.setSuffix(" 句")
-        self.spin_min_hold = QDoubleSpinBox()
+        self.spin_min_hold = NoWheelDoubleSpinBox()
         self.spin_min_hold.setRange(0.0, 10.0)
         self.spin_min_hold.setSingleStep(0.1)
         self.spin_min_hold.setDecimals(1)
@@ -829,7 +828,7 @@ class SettingsDialog(QWidget):
             "第 N+1 句也翻好後，接在第 N 句的下方一起顯示，同樣至少留這麼久。預設 0.5 秒，0 = 立刻換掉。\n"
             "只適用於「顯示在框下方」的譯文面板（框選區域）。"
         )
-        self.spin_cache_entries = QSpinBox()
+        self.spin_cache_entries = NoWheelSpinBox()
         self.spin_cache_entries.setRange(50, 20000)
         self.spin_cache_entries.setSingleStep(50)
         self.spin_cache_entries.setSuffix(" 句")
@@ -841,8 +840,8 @@ class SettingsDialog(QWidget):
         self.chk_skip_sounds = QCheckBox("略過只有擬聲詞（音效、笑聲、狀聲詞）的句子，不翻譯也不顯示")
         self.chk_skip_sounds.setToolTip(
             "原文只是「ドン！」「ガシャーン」「Boom!」「ははは」這類聲音時，不翻成「砰」「哈哈」，也不顯示。\n"
-            "標準翻譯由模型判斷（實測約 85～90% 的音效會被略過，一般句子沒有被誤略過）；"
-            "快速翻譯沒有提示詞，只會濾掉「譯文全是擬聲用字」的結果（汪汪、砰、哈哈）。\n"
+            "由模型判斷（實測約 85～90% 的音效會被略過，一般句子沒有被誤略過），"
+            "再把「譯文全是擬聲用字」的結果（汪汪、砰、哈哈）也濾掉。\n"
             "日文原文要像音效（片假名、長音、促音、重複）才會略過，「またね」「はい」這類一般短句不受影響。"
         )
         self.chk_retry_non_chinese = QCheckBox("譯文不是中文時，重新翻譯一次（推薦）")
@@ -851,26 +850,26 @@ class SettingsDialog(QWidget):
             "開啟：偵測到時改用一般提示再翻一次，只採用沒有假名的結果；這幾句會多花一次模型運算的時間。\n"
             "關閉：每句只進模型一次，翻出什麼就輸出什麼，最快，但偶爾會看到夾雜日文的譯文。\n"
             "只在開了「上下文」或「歌詞模式」時，重翻才有機會翻得不一樣；兩者都沒開時第一次就是一般提示，重翻的結果相同，所以不會重翻。\n"
-            "只對「離線翻譯・標準」有效。"
+            "只對「離線翻譯」有效。"
         )
         self.chk_lyrics_mode = QCheckBox("歌詞模式：告訴模型這是歌詞，譯得較通順有詩意")
-        _llm_only = "只對「離線翻譯・標準」有效；「快速」與線上服務不支援。"
+        _llm_only = "只對「離線翻譯」有效；線上服務不支援。"
         self.chk_use_context.setToolTip("把最近翻好的句子（原文與譯文）當成前文交給模型，代名詞與語氣會前後一致。\n" + _llm_only)
         self.spin_context_size.setToolTip("最多記住前幾句，預設 2。句子越多每次翻譯越慢。")
         self.chk_lyrics_mode.setToolTip("歌詞常是片段、有意象，用歌詞的提示與示範讓模型意譯而不是逐字直譯。\n" + _llm_only)
         self.chk_use_context.toggled.connect(self.spin_context_size.setEnabled)
-        self.spin_timeout = QSpinBox()
+        self.spin_timeout = NoWheelSpinBox()
         self.spin_timeout.setRange(5, 300)
-        self.spin_retries = QSpinBox()
+        self.spin_retries = NoWheelSpinBox()
         self.spin_retries.setRange(0, 10)
-        self.spin_interval = QDoubleSpinBox()
+        self.spin_interval = NoWheelDoubleSpinBox()
         self.spin_interval.setRange(0.0, 30.0)
         self.spin_interval.setSingleStep(0.1)
 
         form.addRow("翻譯服務", self.combo_service)
         form.addRow("源語言", self.combo_source)
         form.addRow("目標語言", self.combo_target)
-        form.addRow("離線推論引擎", self.combo_infer_engine)
+        form.addRow("離線翻譯模型", self.combo_offline_model)
         form.addRow(self.chk_keep_original)
         form.addRow(self.chk_use_context)
         form.addRow("　記住前幾句", self.spin_context_size)
@@ -878,7 +877,23 @@ class SettingsDialog(QWidget):
         form.addRow(self.chk_skip_sounds)
         form.addRow(self.chk_retry_non_chinese)
         form.addRow("譯文最短保留", self.spin_min_hold)
-        form.addRow("翻譯快取", self.spin_cache_entries)
+        self.lbl_cache_count = QLabel()
+        self.lbl_cache_count.setObjectName("SettingsCardDescription")
+        self.btn_clear_cache = QPushButton("清除翻譯快取")
+        self.btn_clear_cache.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_clear_cache.setToolTip(
+            "刪除所有已儲存的翻譯（立刻生效，不必按儲存）。之後遇到同樣的原文會重新翻譯。\n"
+            "換不同的模型做比較時，先清除快取，才不會看到上一個模型留下的譯文。"
+        )
+        self.btn_clear_cache.clicked.connect(self._on_clear_cache)
+        cache_row = QHBoxLayout()
+        cache_row.setSpacing(10)
+        cache_row.addWidget(self.spin_cache_entries)
+        cache_row.addWidget(self.btn_clear_cache)
+        cache_row.addWidget(self.lbl_cache_count)
+        cache_row.addStretch(1)
+        form.addRow("翻譯快取", cache_row)
+        self._refresh_cache_count()
         form.addRow("超時（秒）", self.spin_timeout)
         form.addRow("失敗重試次數", self.spin_retries)
         form.addRow("請求間隔（秒）", self.spin_interval)
@@ -955,9 +970,9 @@ class SettingsDialog(QWidget):
         self.combo_font = QComboBox()
         self.combo_font.addItem("預設字型（自動選擇，推薦）", "")
         self.combo_font.addItems(QFontDatabase.families())
-        self.spin_font_size = QSpinBox()
+        self.spin_font_size = NoWheelSpinBox()
         self.spin_font_size.setRange(6, 72)
-        self.spin_min_font = QSpinBox()
+        self.spin_min_font = NoWheelSpinBox()
         self.spin_min_font.setRange(4, 36)
         self.btn_text_color = QPushButton("選擇顏色")
         self.btn_text_color.setFixedWidth(120)
@@ -965,15 +980,15 @@ class SettingsDialog(QWidget):
         self.btn_bg_color = QPushButton("選擇顏色")
         self.btn_bg_color.setFixedWidth(120)
         self.chk_auto_bg = QCheckBox("背景顏色隨文字自動適配（推薦）")
-        self.slider_bg_alpha = QSlider(Qt.Orientation.Horizontal)
+        self.slider_bg_alpha = NoWheelSlider(Qt.Orientation.Horizontal)
         self.slider_bg_alpha.setRange(0, 255)
-        self.slider_panel_alpha = QSlider(Qt.Orientation.Horizontal)
+        self.slider_panel_alpha = NoWheelSlider(Qt.Orientation.Horizontal)
         self.slider_panel_alpha.setRange(0, 255)
         self.slider_panel_alpha.setToolTip("數值越大底色越不透明（255 = 完全不透明）。")
         self.slider_bg_alpha.setToolTip("數值越大底色越不透明（255 = 完全不透明）。只有關閉「背景顏色隨文字自動適配」時才使用。")
-        self.spin_padding = QSpinBox()
+        self.spin_padding = NoWheelSpinBox()
         self.spin_padding.setRange(0, 32)
-        self.spin_radius = QSpinBox()
+        self.spin_radius = NoWheelSpinBox()
         self.spin_radius.setRange(0, 32)
         self.chk_show_border = QCheckBox("顯示文本框邊框")
 
@@ -1122,7 +1137,7 @@ class SettingsDialog(QWidget):
         self.spin_context_size.setValue(int(cfg.get("translation.context_size", 2)))
         self.spin_context_size.setEnabled(self.chk_use_context.isChecked())
         self.chk_lyrics_mode.setChecked(bool(cfg.get("translation.lyrics_mode", False)))
-        self._load_infer_engine(cfg)
+        self._load_offline_model(cfg)
         self.chk_skip_sounds.setChecked(bool(cfg.get("translation.skip_sounds", True)))
         self.chk_retry_non_chinese.setChecked(bool(cfg.get("translation.retry_non_chinese", True)))
         self.spin_min_hold.setValue(float(cfg.get("overlay.min_hold_seconds", 0.5)))
@@ -1251,7 +1266,6 @@ class SettingsDialog(QWidget):
             cfg.set("ocr.lang", self.combo_lang.currentData() or "auto")
             cfg.set("monitor.auto_start", self.chk_auto_monitor.isChecked())
             cfg.set("monitor.interval_ms", int(round(self.spin_scan_interval.value() * 1000)))
-            cfg.set("monitor.interval_migrated", True)  # 使用者選的間隔，不再被舊預設的遷移蓋掉
             cfg.set("monitor.hide_after_no_text_seconds", self.spin_hide_no_text.value())
             cfg.set("monitor.confirm_rounds", self.spin_confirm_rounds.value())
             cfg.set("monitor.max_wait_seconds", self.spin_max_wait.value())
@@ -1266,7 +1280,7 @@ class SettingsDialog(QWidget):
             cfg.set("translation.use_context", self.chk_use_context.isChecked())
             cfg.set("translation.context_size", self.spin_context_size.value())
             cfg.set("translation.lyrics_mode", self.chk_lyrics_mode.isChecked())
-            self._save_infer_engine(cfg)
+            self._save_offline_model(cfg)
             cfg.set("translation.skip_sounds", self.chk_skip_sounds.isChecked())
             cfg.set("translation.retry_non_chinese", self.chk_retry_non_chinese.isChecked())
             cfg.set("overlay.min_hold_seconds", self.spin_min_hold.value())
@@ -1438,36 +1452,58 @@ class SettingsDialog(QWidget):
             control.setToolTip("" if enabled else reason)
         self._refresh_overlay_preview()
 
-    def _load_infer_engine(self, cfg) -> None:
-        """依設定選好引擎；缺少套件或模型檔的選項停用（並說明原因）。"""
+    def _load_offline_model(self, cfg) -> None:
+        """依設定選好模型；缺少模型檔的選項停用（並說明怎麼補）。"""
         model_dir = str(cfg.get("translation.offline.model_dir", "") or "")
-        for index, (_label, engine, model) in enumerate(INFERENCE_ENGINES):
-            item = self.combo_infer_engine.model().item(index)
-            usable = engine != "llama.cpp" or llama_model_available(model, model_dir)
+        for index, (_label, name) in enumerate(OFFLINE_MODEL_CHOICES):
+            item = self.combo_offline_model.model().item(index)
+            usable = name == "auto" or llama_model_available(name, model_dir)
             item.setEnabled(usable)
-            self.combo_infer_engine.setItemData(
+            self.combo_offline_model.setItemData(
                 index,
-                "" if usable else f"找不到 llama-cpp-python 或模型檔：請安裝 llama-cpp-python，並執行 scripts/fetch_translation_models.py --model {model}",
+                "" if usable else f"找不到 llama-cpp-python 或模型檔：請執行 scripts/fetch_translation_models.py --model {name}",
                 Qt.ItemDataRole.ToolTipRole,
             )
-        engine = str(cfg.get("translation.offline.engine", "ctranslate2") or "ctranslate2")
-        model = str(cfg.get("translation.offline.model_name", "auto") or "auto")
-        chosen = 0  # 其他情況（自訂的 CTranslate2 模型名稱等）一律顯示成 CTranslate2
-        for index, (_label, item_engine, item_model) in enumerate(INFERENCE_ENGINES):
-            if item_engine == "llama.cpp" and model == item_model:  # GGUF 模型名稱本身就決定了用 llama.cpp
+        saved = str(cfg.get("translation.offline.model_name", "auto") or "auto")
+        chosen = 0  # 自訂的模型名稱等其他情況一律顯示成「自動」
+        for index, (_label, name) in enumerate(OFFLINE_MODEL_CHOICES):
+            if name == saved:
                 chosen = index
-        if engine == "llama.cpp" and chosen == 0:  # 只選了引擎、沒指定模型：用預設的 Q4_K_M
-            chosen = 1
-        self.combo_infer_engine.setCurrentIndex(chosen)
-        self._loaded_infer_engine = chosen
+        self.combo_offline_model.setCurrentIndex(chosen)
+        self._loaded_offline_model = chosen
 
-    def _save_infer_engine(self, cfg) -> None:
+    def _save_offline_model(self, cfg) -> None:
         """使用者沒動過這個選單就不寫入，避免把自訂的模型名稱蓋掉。"""
-        if self.combo_infer_engine.currentIndex() == self._loaded_infer_engine:
+        if self.combo_offline_model.currentIndex() == self._loaded_offline_model:
             return
-        engine, model = self.combo_infer_engine.currentData()
-        cfg.set("translation.offline.engine", engine)
-        cfg.set("translation.offline.model_name", model)
+        cfg.set("translation.offline.model_name", self.combo_offline_model.currentData())
+
+    def _refresh_cache_count(self) -> None:
+        if self._cache_actions is None:
+            self.btn_clear_cache.setEnabled(False)
+            self.lbl_cache_count.setText("")
+            return
+        count = int(self._cache_actions[0]())
+        self.lbl_cache_count.setText(f"目前存了 {count} 句")
+        self.btn_clear_cache.setEnabled(count > 0)
+
+    def _on_clear_cache(self) -> None:
+        """刪除所有已儲存的翻譯：先確認，因為刪掉就回不來（只是之後要重新翻）。"""
+        if self._cache_actions is None:
+            return
+        count = int(self._cache_actions[0]())
+        answer = QMessageBox.question(
+            self,
+            "清除翻譯快取",
+            f"要刪除目前儲存的 {count} 句翻譯嗎？\n之後遇到同樣的原文會重新翻譯（換模型比較時很有用）。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        removed = int(self._cache_actions[1]())
+        self._refresh_cache_count()
+        self.lbl_cache_count.setText(f"已清除 {removed} 句")
 
     def _refresh_scan_rate(self, *_args) -> None:
         interval = max(self.spin_scan_interval.value(), stability.MIN_INTERVAL_MS / 1000)

@@ -1,8 +1,0 @@
-# Optional: llama.cpp inference engine (Settings > Translation > offline inference engine).
-# The default CTranslate2 engine works without it.
-# PyPI only has the source (needs a C++ compiler and CMake). Prebuilt CPU wheels live on the
-# project's own index, so point pip at it and accept wheels only.
-#   python -m pip install -r requirements-llama.txt
---extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
---only-binary=llama-cpp-python
-llama-cpp-python>=0.3,<0.4

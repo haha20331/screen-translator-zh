@@ -1,18 +1,14 @@
-"""取得離線翻譯模型，放到 ``models/translation/<名稱>/``（不進版控）。
+"""取得離線翻譯模型（llama.cpp 用的 GGUF），放到 ``models/translation/<名稱>/``（不進版控）。
 
-兩種來源：
-- CTranslate2 模型：下載官方權重並轉成 int8（一次性的開發步驟，需要「轉換環境」，見下）。
-- llama.cpp 模型（名稱含 ``gguf``）：直接下載官方釋出的 GGUF 檔，不需要轉換，也不需要 PyTorch，
-  只要 ``huggingface_hub``（轉換環境或開發環境都有）。
+模型是官方釋出的 GGUF，**不需要轉換、也不需要 PyTorch**，只要 ``huggingface_hub``
+（``pip install huggingface_hub``，開發環境已有）::
 
-轉換環境（PyTorch + transformers，約 1 GB，不屬於執行環境）::
+    python scripts/fetch_translation_models.py --list
+    python scripts/fetch_translation_models.py                                  # 預設模型（Qwen2.5-1.5B Q4_K_M）
+    python scripts/fetch_translation_models.py --model qwen2.5-7b-instruct-gguf-q4_k_m qwen2.5-0.5b-instruct-gguf-q8_0
 
-    bash scripts/setup_convert_env.sh                 # 建立 ~/.venvs/ocr-convert
-    ~/.venvs/ocr-convert/bin/python scripts/fetch_translation_models.py
-    ~/.venvs/ocr-convert/bin/python scripts/fetch_translation_models.py --list
-
-來源版本固定在 ``MODELS`` 的 ``revision``，轉換結果附上 ``manifest.json``（來源、授權、SHA-256），
-並隨附原模型的授權檔。公司網路若攔截 Hugging Face 的 HTTPS，設定 ``HTTPS_PROXY`` 指向公司代理，
+來源版本固定在 ``MODELS`` 的 ``revision``，每個模型資料夾附上 ``manifest.json``（來源、授權、SHA-256）
+與原模型的授權檔。公司網路若攔截 Hugging Face 的 HTTPS，設定 ``HTTPS_PROXY`` 指向公司代理，
 並設定 ``HF_HUB_DISABLE_XET=1``（Xet 傳輸不走代理）。
 """
 
@@ -21,58 +17,53 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import shutil
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MODEL = "qwen2.5-1.5b-instruct-ct2-int8"
+DEFAULT_MODEL = "qwen2.5-1.5b-instruct-gguf-q4_k_m"
 
+# 同一個 Qwen2.5-Instruct 系列，大小與量化不同：越大越準也越慢、越吃記憶體。
+# ``files`` 有多個時是官方分片（llama.cpp 讀第一片就會自動找到其餘的）。
 MODELS = {
-    "qwen2.5-1.5b-instruct-ct2-int8": {
-        "repo": "Qwen/Qwen2.5-1.5B-Instruct",
-        "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "qwen2.5-0.5b-instruct-gguf-q8_0": {
+        "repo": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+        "revision": "9217f5db79a29953eb74d5343926648285ec7e67",
+        "files": ["qwen2.5-0.5b-instruct-q8_0.gguf"],
         "license": "Apache-2.0",
-        "note": "離線翻譯・標準（預設）。CPU 約 0.5 秒/句（6 執行緒、固定前綴快取）。",
+        "note": "最小最快（約 0.7 GB），日文品質明顯較差，適合當速度上限的參考。",
     },
-    "qwen2.5-7b-instruct-ct2-int8": {
-        "repo": "Qwen/Qwen2.5-7B-Instruct",
-        "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
-        "license": "Apache-2.0",
-        "note": "離線翻譯・標準的大模型：有 NVIDIA GPU（約 8 GB 顯示卡記憶體）時 auto 模式會自動優先使用，準確度明顯較高；"
-                "CPU 約 2–3 秒/句。轉換時需約 16 GB 記憶體。尚未在實機驗證。",
-    },
-    # llama.cpp 用的 GGUF（官方釋出、Apache-2.0，不需要轉換）：同一個 Qwen2.5-1.5B-Instruct，量化方式不同
     "qwen2.5-1.5b-instruct-gguf-q4_k_m": {
-        "format": "gguf",
         "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
         "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
-        "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "files": ["qwen2.5-1.5b-instruct-q4_k_m.gguf"],
         "license": "Apache-2.0",
-        "note": "llama.cpp 引擎，4 位元量化（約 1.1 GB），速度優先。",
+        "note": "預設。4 位元量化（約 1.1 GB），速度與品質的平衡。",
     },
     "qwen2.5-1.5b-instruct-gguf-q8_0": {
-        "format": "gguf",
         "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
         "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
-        "file": "qwen2.5-1.5b-instruct-q8_0.gguf",
+        "files": ["qwen2.5-1.5b-instruct-q8_0.gguf"],
         "license": "Apache-2.0",
-        "note": "llama.cpp 引擎，8 位元量化（約 1.9 GB），品質最接近 CTranslate2 int8。",
+        "note": "8 位元量化（約 1.9 GB），比 Q4_K_M 慢約 1.4 倍，較少字元層級的小錯。",
     },
-    "nllb-200-distilled-600m-ct2-int8": {
-        "repo": "facebook/nllb-200-distilled-600M",
-        "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d",
-        "license": "CC-BY-NC-4.0（僅限非商用）",
-        "note": "離線翻譯・快速。CPU 批次約 50 ms/句，品質較低。",
-        "weights": "*.bin",  # 這個 repo 只有 pytorch_model.bin，沒有 safetensors
+    "qwen2.5-3b-instruct-gguf-q4_k_m": {
+        "repo": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+        "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe",
+        "files": ["qwen2.5-3b-instruct-q4_k_m.gguf"],
+        "license": "Qwen Research License（僅限非商用）",
+        "note": "較大（約 2.1 GB），比 1.5B 準、約慢 2 倍。授權不是 Apache-2.0，散布前請閱讀隨附的 LICENSE。",
+    },
+    "qwen2.5-7b-instruct-gguf-q4_k_m": {
+        "repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+        "revision": "bb5d59e06d9551d752d08b292a50eb208b07ab1f",
+        "files": [
+            "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+            "qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf",
+        ],
+        "license": "Apache-2.0",
+        "note": "最大（約 4.7 GB，需要約 6 GB 可用記憶體）。準確度最高，CPU 上每句要好幾倍時間；有 GPU 版的 llama.cpp 時才建議常用。",
     },
 }
-_COPY_FILES = ["tokenizer.json", "tokenizer_config.json"]
-
-
-def _allow_patterns(info: dict) -> list[str]:
-    """只下載轉換需要的檔案（避免同時抓 .bin 與 .safetensors）。"""
-    return ["*.json", info.get("weights", "*.safetensors"), "merges.txt", "vocab.json", "LICENSE*"]
 
 
 def _sha256(path: Path) -> str:
@@ -83,18 +74,23 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _fetch_gguf(name: str, info: dict, output: Path, force: bool) -> None:
-    """直接下載官方 GGUF 檔（固定版本），附上授權檔與 manifest（來源、授權、SHA-256）。"""
-    target = output / info["file"]
-    if target.exists() and not force:
-        raise SystemExit(f"{target} 已存在（加 --force 覆寫）")
+def fetch(name: str, out_root: Path, force: bool) -> Path:
+    """下載一個模型（固定版本）到 ``out_root/<名稱>/``，附上授權檔與 manifest（來源、授權、SHA-256）。"""
+    info = MODELS[name]
+    output = out_root / name
+    if all((output / filename).exists() for filename in info["files"]) and not force:
+        print(f"{name} 已存在：{output}（加 --force 重新下載）")
+        return output
     try:
         from huggingface_hub import hf_hub_download
     except ImportError as exc:
-        raise SystemExit(f"缺少套件（{exc.name}）：請用轉換環境或開發環境的 python 執行本腳本（需要 huggingface_hub）。")
-    print(f"下載 {info['repo']} / {info['file']} @ {info['revision'][:8]} …")
+        raise SystemExit(f"缺少套件（{exc.name}）：請先 pip install huggingface_hub。")
+
     output.mkdir(parents=True, exist_ok=True)
-    downloaded = Path(hf_hub_download(info["repo"], info["file"], revision=info["revision"], local_dir=str(output)))
+    downloaded: list[Path] = []
+    for filename in info["files"]:
+        print(f"下載 {info['repo']} / {filename} @ {info['revision'][:8]} …", flush=True)
+        downloaded.append(Path(hf_hub_download(info["repo"], filename, revision=info["revision"], local_dir=str(output))))
     try:
         hf_hub_download(info["repo"], "LICENSE", revision=info["revision"], local_dir=str(output))  # 直接放進模型資料夾
     except Exception as exc:  # 授權檔下載失敗不該讓模型白下載，但要提醒補上
@@ -105,62 +101,27 @@ def _fetch_gguf(name: str, info: dict, output: Path, force: bool) -> None:
         "source_repo": info["repo"],
         "source_revision": info["revision"],
         "license": info["license"],
-        "files": {downloaded.name: _sha256(downloaded)},
+        "files": {path.name: _sha256(path) for path in downloaded},
     }
     (output / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"完成：{downloaded}")
+    print(f"完成：{output}")
+    return output
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", default=DEFAULT_MODEL, choices=sorted(MODELS))
+    parser.add_argument("--model", nargs="+", default=[DEFAULT_MODEL], choices=sorted(MODELS), help="要取得的模型（可以多個）")
     parser.add_argument("--out", type=Path, default=ROOT / "models" / "translation")
-    parser.add_argument("--list", action="store_true", help="列出可轉換的模型")
-    parser.add_argument("--force", action="store_true", help="輸出資料夾已存在時覆寫")
+    parser.add_argument("--list", action="store_true", help="列出可取得的模型")
+    parser.add_argument("--force", action="store_true", help="已存在時重新下載")
     args = parser.parse_args()
 
     if args.list:
         for name, info in MODELS.items():
             print(f"{name}\n  來源 {info['repo']}  授權 {info['license']}\n  {info['note']}")
         return
-
-    info = MODELS[args.model]
-    if not info["revision"]:
-        raise SystemExit(f"{args.model} 尚未固定來源版本：請先到 https://huggingface.co/{info['repo']} 查 commit sha，填入 MODELS。")
-    output = args.out / args.model
-    if info.get("format") == "gguf":
-        _fetch_gguf(args.model, info, output, args.force)
-        return
-    if (output / "model.bin").exists() and not args.force:
-        raise SystemExit(f"{output} 已存在（加 --force 覆寫）")
-
-    try:
-        import ctranslate2
-        import transformers
-        from ctranslate2.converters import TransformersConverter
-        from huggingface_hub import snapshot_download
-    except ImportError as exc:
-        raise SystemExit(f"缺少轉換環境的套件（{exc.name}）：請先執行 bash scripts/setup_convert_env.sh，並用該環境的 python 執行本腳本。")
-
-    print(f"下載 {info['repo']} @ {info['revision'][:8]} …")
-    source = Path(snapshot_download(info["repo"], revision=info["revision"], allow_patterns=_allow_patterns(info)))
-    print(f"轉換為 CTranslate2 int8 → {output}")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    TransformersConverter(str(source), copy_files=_COPY_FILES).convert(str(output), quantization="int8", force=True)
-
-    for license_file in source.glob("LICENSE*"):
-        shutil.copy2(license_file, output / license_file.name)
-    manifest = {
-        "name": args.model,
-        "source_repo": info["repo"],
-        "source_revision": info["revision"],
-        "license": info["license"],
-        "quantization": "int8",
-        "tools": {"ctranslate2": ctranslate2.__version__, "transformers": transformers.__version__, "python": sys.version.split()[0]},
-        "files": {name: _sha256(output / name) for name in ("model.bin", "tokenizer.json", "vocabulary.json") if (output / name).exists()},
-    }
-    (output / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"完成：{output}")
+    for name in args.model:
+        fetch(name, args.out, args.force)
 
 
 if __name__ == "__main__":
