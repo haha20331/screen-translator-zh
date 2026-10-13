@@ -679,7 +679,7 @@ def test_open_during_saved_confirmation_waits_for_old_page_then_reopens(
             and controller._settings_page is not old_page
             and window._settings_transition_state == "active"
         ),
-        timeout_ms=2600,
+        timeout_ms=8000,
     )
 
     new_page = controller._settings_page

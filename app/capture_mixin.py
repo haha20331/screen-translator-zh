@@ -25,7 +25,13 @@ log = get_logger("application")
 class CaptureMixin:
     """截图捕获调度：区域/全屏/窗口框选、窗口高亮、捕获会话与回滚。"""
 
+    def _stop_monitor_for_new_capture(self) -> None:
+        """即時監控進行中又開始新的擷取：新的擷取取代目前的監控（翻譯完成後會再自動進入監控）。"""
+        if self._monitor_active:
+            self.stop_monitor("已停止即時監控（開始新的擷取）")
+
     def start_region_capture(self) -> None:
+        self._stop_monitor_for_new_capture()
         if self._busy or self.window is None or self.overlay_manager is None:
             return
         self._begin_capture_session("region", self._after_region_departure)
@@ -95,6 +101,8 @@ class CaptureMixin:
         self._abort_capture("已取消框選")
 
     def start_capture(self, mode: str) -> None:
+        if mode in {"fullscreen", "window"}:
+            self._stop_monitor_for_new_capture()
         if self._busy or self.window is None or self.overlay_manager is None:
             return
         if mode not in {"fullscreen", "window"}:
@@ -287,6 +295,9 @@ class CaptureMixin:
         if self._last_capture is None:
             self.set_status("還沒有截圖，先截一張再說")
             return
+        if self._monitor_active:
+            self._refresh_monitor()
+            return
         if self._busy:
             return
         mode = self._last_capture.mode
@@ -322,6 +333,7 @@ class CaptureMixin:
     def run_capture_rect(
         self, bbox: tuple[int, int, int, int], mode: str, existing: CaptureInfo | None = None
     ) -> None:
+        self._stop_monitor_for_new_capture()
         if self._busy:
             return
         if self.window is None or self.overlay_manager is None:

@@ -25,6 +25,17 @@ class MonitorMixin:
         else:
             self.start_monitor()
 
+    def _auto_start_monitor(self) -> None:
+        """一次翻譯成功後，預設接著進入即時監控（monitor.auto_start）；失敗的翻譯不會自動開始。"""
+        if (
+            self.config.get("monitor.auto_start", True)
+            and self.config.get("monitor.enabled", True)
+            and not self._monitor_active
+            and not self._shutting_down
+            and self._last_capture is not None
+        ):
+            self.start_monitor()
+
     def start_monitor(self) -> None:
         if self._monitor_active:
             return
@@ -59,7 +70,6 @@ class MonitorMixin:
         self._monitor_idle_hash = ""
         self._monitor_stabilizer = TextStabilizer()
         self._configure_stabilizer()
-        self._set_busy(True)
         self.set_status("即時監控已開啟，頁面一動就會自動重譯")
         if self.window is not None:
             self.window.set_monitor_checked(True)
@@ -85,7 +95,6 @@ class MonitorMixin:
         if self.overlay_manager is not None:
             self.overlay_manager.clear_all()
             self._sync_overlay_state(False)
-        self._set_busy(False)
         if self.window is not None:
             self.window.set_monitor_checked(False)
         if self.tray is not None:
@@ -149,6 +158,19 @@ class MonitorMixin:
         self._pipeline_succeeded = False
         self._pipeline_error = ""
         self._start_pipeline(capture)
+
+    def _refresh_monitor(self) -> None:
+        """「重新整理」：監控中就忘掉目前顯示的內容，立刻重新辨識、翻譯、顯示。"""
+        if not self._monitor_active:
+            return
+        if self._monitor_stabilizer is not None:
+            self._monitor_stabilizer.reset()
+        self._monitor_signature = ""
+        self._monitor_frame_hash = ""
+        self._monitor_idle_hash = ""
+        self.set_status("重新整理中…")
+        self._monitor_timer.stop()
+        self._monitor_timer.start(0)
 
     def _configure_stabilizer(self) -> None:
         """依設定決定要連續辨識到相同結果幾次才顯示（1 = 快速、2 = 穩定，使用者可自訂）。"""

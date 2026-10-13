@@ -51,6 +51,7 @@ from ui.appearance import (
     current_tokens,
 )
 from ui.motion import BASE, ENTER_EASING, EXIT_EASING, MOVE_EASING, SLOW, motion_duration
+from ui.overlay_preview import OverlayPreview
 from ui.personalization import AppearancePreview, PersonalizationChoiceRow
 from utils import stability
 from utils.language_utils import LANGUAGES
@@ -543,7 +544,13 @@ class SettingsDialog(QWidget):
         preset_row.addWidget(self.btn_preset_fast)
         preset_row.addWidget(self.btn_preset_stable)
         preset_row.addStretch(1)
+        self.chk_auto_monitor = QCheckBox("框選（或全螢幕、視窗）翻譯完成後，自動進入即時監控（推薦）")
+        self.chk_auto_monitor.setToolTip(
+            "開啟時，翻譯完成後會接著持續監控，畫面上的字幕一變就自動重譯；關閉即時監控或開始新的擷取即可停止。\n"
+            "關閉這個選項則只翻譯一次，要監控請手動按「即時監控」或用快捷鍵。"
+        )
         monitor_form = self._new_form()
+        monitor_form.addRow(self.chk_auto_monitor)
         monitor_form.addRow("確認次數", self.spin_confirm_rounds)
         monitor_form.addRow("最久等待", self.spin_max_wait)
         monitor_form.addRow(preset_row)
@@ -557,7 +564,7 @@ class SettingsDialog(QWidget):
         explanation.setObjectName("SettingsCardDescription")
         explanation.setWordWrap(True)
         monitor_form.addRow(explanation)
-        layout.addWidget(self._card("即時監控", "新字幕連續辨識到相同結果幾次才翻譯並顯示（確認次數）。", monitor_form))
+        layout.addWidget(self._card("即時監控", "翻譯完成後是否自動持續監控，以及新字幕要連續辨識到相同結果幾次才翻譯並顯示（確認次數）。", monitor_form))
 
         self.history_dir = QLineEdit()
         pick = QPushButton("選擇目錄")
@@ -869,6 +876,10 @@ class SettingsDialog(QWidget):
         self.chk_auto_bg = QCheckBox("背景顏色隨文字自動適配（推薦）")
         self.slider_bg_alpha = QSlider(Qt.Orientation.Horizontal)
         self.slider_bg_alpha.setRange(0, 255)
+        self.slider_panel_alpha = QSlider(Qt.Orientation.Horizontal)
+        self.slider_panel_alpha.setRange(0, 255)
+        self.slider_panel_alpha.setToolTip("數值越大底色越不透明（255 = 完全不透明）。")
+        self.slider_bg_alpha.setToolTip("數值越大底色越不透明（255 = 完全不透明）。只有關閉「背景顏色隨文字自動適配」時才使用。")
         self.spin_padding = QSpinBox()
         self.spin_padding.setRange(0, 32)
         self.spin_radius = QSpinBox()
@@ -888,8 +899,29 @@ class SettingsDialog(QWidget):
         color_form.addRow(self.chk_auto_color)
         color_form.addRow("背景顏色", self.btn_bg_color)
         color_form.addRow(self.chk_auto_bg)
-        color_form.addRow("背景透明度", self.slider_bg_alpha)
-        layout.addWidget(self._card("顏色與背景", "自動模式會按螢幕內容選擇對比度。", color_form))
+        color_form.addRow("面板不透明度", self.slider_panel_alpha)
+        color_form.addRow("背景不透明度", self.slider_bg_alpha)
+        self.overlay_preview = OverlayPreview(self.config)
+        preview_title = QLabel("目前設定的範例")
+        preview_title.setObjectName("SettingsCardDescription")
+        preview_column = QVBoxLayout()
+        preview_column.setContentsMargins(0, 0, 0, 0)
+        preview_column.setSpacing(6)
+        preview_column.addWidget(preview_title)
+        preview_column.addWidget(self.overlay_preview)
+        preview_column.addStretch(1)
+        color_body = QHBoxLayout()
+        color_body.setContentsMargins(0, 0, 0, 0)
+        color_body.setSpacing(18)
+        color_body.addLayout(color_form, 1)
+        color_body.addLayout(preview_column)
+        layout.addWidget(
+            self._card(
+                "顏色與背景",
+                "右邊的範例會隨設定即時改變。框下方的面板用固定的文字與背景顏色；蓋在原文上時，自動模式會按螢幕內容選擇對比度。",
+                color_body,
+            )
+        )
 
         shape_form = self._new_form()
         shape_form.addRow("內邊距", self.spin_padding)
@@ -979,6 +1011,7 @@ class SettingsDialog(QWidget):
 
         self._set_combo(self.combo_engine, cfg.get("ocr.engine", "windows"))
         self._set_combo(self.combo_lang, cfg.get("ocr.lang", "auto"))
+        self.chk_auto_monitor.setChecked(bool(cfg.get("monitor.auto_start", True)))
         self.spin_confirm_rounds.setValue(int(cfg.get("monitor.confirm_rounds", stability.RECOMMENDED_FAST_ROUNDS)))
         self.spin_max_wait.setValue(float(cfg.get("monitor.max_wait_seconds", stability.RECOMMENDED_MAX_WAIT)))
         self.spin_confidence.setValue(float(cfg.get("ocr.min_confidence", 0.6)))
@@ -1019,6 +1052,7 @@ class SettingsDialog(QWidget):
         self.chk_auto_color.setChecked(bool(cfg.get("overlay.use_auto_text_color", True)))
         self.chk_auto_bg.setChecked(bool(cfg.get("overlay.auto_background", True)))
         self.slider_bg_alpha.setValue(int(cfg.get("overlay.background_alpha", 160)))
+        self.slider_panel_alpha.setValue(int(cfg.get("overlay.panel_alpha", 215)))
         self.spin_padding.setValue(int(cfg.get("overlay.padding", 4)))
         self.spin_radius.setValue(int(cfg.get("overlay.border_radius", 4)))
         self.chk_show_border.setChecked(bool(cfg.get("overlay.show_border", True)))
@@ -1028,6 +1062,21 @@ class SettingsDialog(QWidget):
                 self._hotkey_sequence(str(cfg.get(f"hotkeys.{action}", "")))
             )
 
+        for signal in (
+            self.combo_font.currentIndexChanged,
+            self.combo_placement.currentIndexChanged,
+            self.spin_font_size.valueChanged,
+            self.spin_min_font.valueChanged,
+            self.chk_auto_color.toggled,
+            self.chk_auto_bg.toggled,
+            self.slider_bg_alpha.valueChanged,
+            self.slider_panel_alpha.valueChanged,
+            self.spin_padding.valueChanged,
+            self.spin_radius.valueChanged,
+            self.chk_show_border.toggled,
+        ):
+            signal.connect(self._sync_overlay_controls)
+        self._sync_overlay_controls()
         self.btn_text_color.clicked.connect(lambda: self._pick_color("text"))
         self.btn_bg_color.clicked.connect(lambda: self._pick_color("bg"))
 
@@ -1099,6 +1148,7 @@ class SettingsDialog(QWidget):
 
             cfg.set("ocr.engine", self.combo_engine.currentData() or "windows")
             cfg.set("ocr.lang", self.combo_lang.currentData() or "auto")
+            cfg.set("monitor.auto_start", self.chk_auto_monitor.isChecked())
             cfg.set("monitor.confirm_rounds", self.spin_confirm_rounds.value())
             cfg.set("monitor.max_wait_seconds", self.spin_max_wait.value())
             cfg.set("ocr.min_confidence", self.spin_confidence.value())
@@ -1136,6 +1186,7 @@ class SettingsDialog(QWidget):
             cfg.set("overlay.background_color", self._bg_color.name())
             cfg.set("overlay.auto_background", self.chk_auto_bg.isChecked())
             cfg.set("overlay.background_alpha", self.slider_bg_alpha.value())
+            cfg.set("overlay.panel_alpha", self.slider_panel_alpha.value())
             cfg.set("overlay.padding", self.spin_padding.value())
             cfg.set("overlay.border_radius", self.spin_radius.value())
             cfg.set("overlay.show_border", self.chk_show_border.isChecked())
@@ -1217,6 +1268,7 @@ class SettingsDialog(QWidget):
             if color.isValid():
                 self._bg_color = color
         self._update_color_buttons()
+        self._refresh_overlay_preview()
 
     def _update_color_buttons(self) -> None:
         for button, color in (
@@ -1227,9 +1279,55 @@ class SettingsDialog(QWidget):
             foreground = "#292D2A" if color.lightnessF() > 0.58 else "#FFFFFF"
             button.setText(f"●  {value}")
             button.setStyleSheet(
-                f"color: {foreground}; background: {value}; border: 1px solid {value};"
-                "border-radius: 8px; padding: 6px 10px;"
+                f"QPushButton {{ color: {foreground}; background: {value}; border: 1px solid {value};"
+                "border-radius: 8px; padding: 6px 10px; }"
+                # 用不到時（自動模式）把色塊淡掉，才看得出這個顏色目前沒有作用
+                "QPushButton:disabled { color: #B8B8B1; background: #F5F4F1; border: 1px solid #E8E6E0; }"
             )
+
+    def _overlay_preview_options(self) -> dict:
+        """目前控制項上的數值（還沒儲存），範例用它來畫。"""
+        return {
+            "overlay.placement": self.combo_placement.currentData() or "below",
+            "overlay.font_family": self.combo_font.currentData() or "",
+            "overlay.font_size": self.spin_font_size.value(),
+            "overlay.min_font_size": self.spin_min_font.value(),
+            "overlay.text_color": self._text_color.name(),
+            "overlay.use_auto_text_color": self.chk_auto_color.isChecked(),
+            "overlay.background_color": self._bg_color.name(),
+            "overlay.auto_background": self.chk_auto_bg.isChecked(),
+            "overlay.background_alpha": self.slider_bg_alpha.value(),
+            "overlay.panel_alpha": self.slider_panel_alpha.value(),
+            "overlay.padding": self.spin_padding.value(),
+            "overlay.border_radius": self.spin_radius.value(),
+            "overlay.show_border": self.chk_show_border.isChecked(),
+        }
+
+    def _refresh_overlay_preview(self, *_args) -> None:
+        if hasattr(self, "overlay_preview") and hasattr(self, "_text_color"):
+            self.overlay_preview.set_options(self._overlay_preview_options())
+
+    def _sync_overlay_controls(self, *_args) -> None:
+        """只啟用目前譯文位置真的會用到的控制項，其餘停用並說明原因。"""
+        below = self.combo_placement.currentData() != "in_place"
+        covering_only = "只在「蓋在原文上方」時使用；框下方的面板用固定的顏色。"
+        panel_only = "只在「框的下方」顯示時使用。"
+        rows = (
+            (self.chk_auto_color, not below, covering_only),
+            (self.chk_auto_bg, not below, covering_only),
+            (self.spin_padding, not below, covering_only),
+            (self.chk_show_border, not below, covering_only),
+            (self.spin_min_font, not below, covering_only),
+            (self.slider_panel_alpha, below, panel_only),
+            # 顏色按鈕、背景不透明度：蓋在原文上且開了自動模式時用不到
+            (self.btn_text_color, below or not self.chk_auto_color.isChecked(), "已開啟「自動識別文字顏色」，這裡的顏色用不到。"),
+            (self.btn_bg_color, below or not self.chk_auto_bg.isChecked(), "已開啟「背景顏色隨文字自動適配」，這裡的顏色用不到。"),
+            (self.slider_bg_alpha, not below and not self.chk_auto_bg.isChecked(), "只在「蓋在原文上方」且關閉自動背景時使用。"),
+        )
+        for control, enabled, reason in rows:
+            control.setEnabled(enabled)
+            control.setToolTip("" if enabled else reason)
+        self._refresh_overlay_preview()
 
     def _apply_stability_preset(self, rounds: int) -> None:
         """套用系統推薦：確認次數依快速／穩定，最久等待用推薦值。"""

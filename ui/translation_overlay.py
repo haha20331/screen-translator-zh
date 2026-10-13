@@ -136,6 +136,19 @@ class TranslationOverlayWindow(QWidget):
             self._start_reveal()
         self.update()
 
+    def set_blocks_static(self, blocks: list[Block]) -> None:
+        """不播放任何動畫，直接以最終狀態畫出（設定畫面的預覽用）。"""
+        self._reveal_animation.stop()
+        self._blocks = blocks
+        self._font_cache = {}
+        self._compute_size_groups()
+        self._compute_reveal_order()
+        self._previous_blocks = blocks
+        self._block_animating = [False] * len(blocks)
+        self._anim_progress = 1.0
+        self._reveal_progress = 1.0
+        self.update()
+
     def _classify_blocks(self, new_blocks: list[Block]) -> list[str]:
         """对比上一轮，给每个块打 new / changed / unchanged 标签。"""
         states: list[str] = []

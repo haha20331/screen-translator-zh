@@ -153,6 +153,12 @@ QProgressBar {
 QProgressBar::chunk { background: #2878E8; border: none; border-radius: 3px; }
 QGroupBox { border: 1px solid #E1DFD9; border-radius: 11px; margin-top: 12px; padding: 14px 12px 10px; color: #30322F; font-weight: 600; }
 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
+QCheckBox:disabled { color: #B8B8B1; }
+QCheckBox::indicator:disabled { background: #F5F4F1; border-color: #E8E6E0; }
+QCheckBox::indicator:checked:disabled { background: #B8B8B1; border-color: #B8B8B1; }
+QSlider::sub-page:horizontal:disabled { background: #E1DFD9; }
+QSlider::handle:horizontal:disabled { background: #B8B8B1; }
+QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { color: #B8B8B1; background: #F5F4F1; }
 QDialogButtonBox QPushButton { min-width: 86px; }
 QColorDialog, QFileDialog { background: #F7F5F1; }
 QMessageBox { background: #F7F5F1; }

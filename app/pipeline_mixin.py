@@ -127,6 +127,7 @@ class PipelineMixin:
                 self.window.finish_capture(session.mode)
             self._set_busy(False)
             self.floating_status.hide_fade(delay_ms=STATUS_HOLD)
+            self._auto_start_monitor()
             return
         message = self._pipeline_error or "處理已取消"
         show_dialog = bool(self._pipeline_error)
