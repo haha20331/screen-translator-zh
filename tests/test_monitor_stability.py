@@ -16,6 +16,7 @@ from app.application import Application
 from app.config import DEFAULTS, AppConfig
 from app.models import CaptureInfo, TextRegion
 from services.ocr.base import OCRLine
+from ui.main_window import MainWindow
 from ui.settings_dialog import SettingsDialog
 from ui.style import apply_style
 from utils.image_utils import frame_fingerprint
@@ -302,6 +303,10 @@ def test_stability_setting_picks_the_number_of_rounds(controller):
     controller._configure_stabilizer()
     assert controller._monitor_stabilizer.rounds == 2
 
+    controller.config.set("monitor.stability", "fast")  # 監控中途切換，下一輪就生效
+    controller._configure_stabilizer()
+    assert controller._monitor_stabilizer.rounds == 1
+
 
 # ----------------------------------------------------------------------------- 監控每一輪的畫面門控
 class _Screens:
@@ -365,29 +370,86 @@ def test_an_identical_frame_with_no_text_is_not_recognised_again(cycling):
 
 
 # ----------------------------------------------------------------------------- 設定
-def test_defaults_to_the_stable_mode():
-    assert DEFAULTS["monitor"]["stability"] == "stable"
+def test_defaults_to_the_fast_mode():
+    assert DEFAULTS["monitor"]["stability"] == "fast"
     assert DEFAULTS["monitor"]["stable_rounds"] == 2
 
 
-def test_an_invalid_stability_value_falls_back_to_stable(tmp_path):
+def test_an_invalid_stability_value_falls_back_to_fast(tmp_path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"monitor": {"stability": "turbo"}}), encoding="utf-8")
 
-    assert AppConfig(path).get("monitor.stability") == "stable"
+    assert AppConfig(path).get("monitor.stability") == "fast"
 
 
-def test_settings_dialog_explains_and_saves_the_stability_mode(tmp_path):
+def test_an_old_config_without_the_setting_gets_the_fast_mode(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"monitor": {"interval_ms": 400}}), encoding="utf-8")
+
+    assert AppConfig(path).get("monitor.stability") == "fast"
+
+
+@pytest.fixture
+def qapp():
     app = QApplication.instance() or QApplication([])
     apply_style(app)
+    return app
+
+
+def test_settings_dialog_explains_and_saves_the_stability_mode_on_the_general_page(qapp, tmp_path):
     config = AppConfig(tmp_path / "config.json")
     dialog = SettingsDialog(config)
-    assert dialog.combo_stability.currentData() == "stable"
+    assert dialog.combo_stability.currentData() == "fast"
     assert "穩定" in dialog.combo_stability.toolTip() and "快速" in dialog.combo_stability.toolTip()
+    assert dialog.pages.widget(0).widget().isAncestorOf(dialog.combo_stability)  # 第一頁「通用」，不用往下捲
 
-    dialog.combo_stability.setCurrentIndex(dialog.combo_stability.findData("fast"))
+    dialog.combo_stability.setCurrentIndex(dialog.combo_stability.findData("stable"))
     dialog._commit_accept(dialog._validated_hotkeys())
     dialog._save_close_timer.stop()
 
-    assert AppConfig(tmp_path / "config.json").get("monitor.stability") == "fast"
+    assert AppConfig(tmp_path / "config.json").get("monitor.stability") == "stable"
     dialog.deleteLater()
+
+
+class _Controller:
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+
+    def __getattr__(self, _name):
+        return lambda *args, **kwargs: None
+
+
+def test_main_window_has_a_stable_display_checkbox_that_is_off_by_default(qapp, tmp_path):
+    window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
+
+    assert window.check_stable.text() == "穩定顯示"
+    assert not window.check_stable.isChecked()
+    assert "快速" in window.check_stable.toolTip()
+    window.deleteLater()
+
+
+def test_main_window_checkbox_switches_the_mode_immediately(qapp, tmp_path):
+    window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
+
+    window.check_stable.setChecked(True)
+    assert AppConfig(tmp_path / "config.json").get("monitor.stability") == "stable"
+    window.check_stable.setChecked(False)
+    assert AppConfig(tmp_path / "config.json").get("monitor.stability") == "fast"
+    window.deleteLater()
+
+
+def test_main_window_checkbox_follows_the_saved_setting_and_stays_usable_while_monitoring(qapp, tmp_path):
+    config = AppConfig(tmp_path / "config.json")
+    config.set("monitor.stability", "stable")
+    config.save()
+    window = MainWindow(_Controller(config))
+    assert window.check_stable.isChecked()
+
+    window.set_busy(True)
+
+    assert window.check_stable.isEnabled()  # 即時監控中也能切換
+    config.set("monitor.stability", "fast")
+    window.reload_values()
+    assert not window.check_stable.isChecked()
+    assert AppConfig(tmp_path / "config.json").get("monitor.stability") == "stable"  # 同步介面不會反過來寫設定檔
+    window.deleteLater()

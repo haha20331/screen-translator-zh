@@ -145,10 +145,10 @@ class MonitorMixin:
         self._start_pipeline(capture)
 
     def _configure_stabilizer(self) -> None:
-        """依設定決定要穩定幾輪：穩定 = 同一組文字連續兩輪才顯示；快速 = 辨識到就顯示。"""
+        """依設定決定要穩定幾輪：快速 = 辨識到就顯示；穩定 = 同一組文字連續兩輪才顯示。"""
         if self._monitor_stabilizer is None:
             return
-        fast = str(self.config.get("monitor.stability", "stable")) == "fast"
+        fast = str(self.config.get("monitor.stability", "fast")) != "stable"
         rounds = 1 if fast else max(2, int(self.config.get("monitor.stable_rounds", 2)))
         self._monitor_stabilizer.configure(rounds, float(self.config.get("monitor.max_wait_seconds", 2.5)))
 

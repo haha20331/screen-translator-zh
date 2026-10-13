@@ -168,10 +168,10 @@ DEFAULTS: dict[str, Any] = {
         "max_consecutive_errors": 3,
         # 把上一轮译文写回缓存：内容没变过的文本块直接命中缓存，几乎瞬时
         "skip_unchanged": True,
-        # 字幕顯示方式。stable（預設）：同一組辨識結果連續 stable_rounds 輪相同才翻譯並顯示，
-        # 過渡畫面（淡入淡出）的殘缺句子不會被翻譯；fast：辨識到就立刻翻譯顯示。
+        # 字幕顯示方式。fast（預設）：辨識到就立刻翻譯並顯示；stable：同一組辨識結果連續 stable_rounds 輪
+        # 相同才翻譯並顯示，過渡畫面（淡入淡出）的殘缺句子不會被翻譯，但換字幕約慢 0.5～1 秒。
         # 與已顯示的相同時，兩種模式都不再翻譯。
-        "stability": "stable",
+        "stability": "fast",
         "stable_rounds": 2,
         # 新文字一直在變（辨識抖動）時，最久等幾秒就放行最新的一組
         "max_wait_seconds": 2.5,
