@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QRect, QRectF
+import time
+from dataclasses import dataclass
+
+from PySide6.QtCore import QObject, QRect, QRectF, QTimer
 from PySide6.QtGui import QColor
 
 from app.config import AppConfig
@@ -15,6 +18,17 @@ from utils.layout_utils import translation_lines, uses_translation_panel
 
 log = get_logger("overlay.manager")
 
+_MAX_PANEL_ENTRIES = 4  # 字幕翻很快時，面板上最多同時疊幾句
+
+
+@dataclass
+class _PanelEntry:
+    """面板上的一句（一組）譯文：何時開始顯示、是不是目前這一句（目前這一句會一直留到被取代）。"""
+
+    lines: list[str]
+    shown_at: float
+    current: bool = True
+
 
 class OverlayManager(QObject):
     def __init__(self, config: AppConfig, parent: QObject | None = None) -> None:
@@ -25,7 +39,13 @@ class OverlayManager(QObject):
         # 框選區域時，譯文放在框的下方（原文保持可見）：每個顯示器至多一個面板
         self._panels: dict[int, TranslationPanelWindow] = {}
         self._panel_lines: list[str] = []
+        self._panel_entries: list[_PanelEntry] = []
         self._panel_bbox: tuple[int, int, int, int] | None = None
+        self._clock = time.monotonic
+        # 被新字幕取代、但還沒顯示夠最短保留秒數的舊譯文，時間到了就把它拿掉
+        self._hold_timer = QTimer(self)
+        self._hold_timer.setSingleShot(True)
+        self._hold_timer.timeout.connect(self._expire_panel_entries)
         self._visible = True
         self._edit_mode = False
 
@@ -100,19 +120,62 @@ class OverlayManager(QObject):
         return shown
 
     # ------------------------------------------------------------- panel below the selection
+    def _min_hold(self) -> float:
+        try:
+            return max(0.0, float(self._config.get("overlay.min_hold_seconds", 0.5)))
+        except (TypeError, ValueError):
+            return 0.5
+
     def _show_panel(self, capture: CaptureInfo, regions: list[TextRegion]) -> bool:
         for window in self._windows.values():  # 先前以「蓋在原文上」顯示的內容不應殘留
             window.clear()
             window.hide()
         lines = translation_lines(regions)
-        if not lines:
+        now = self._clock()
+        hold = self._min_hold()
+        newest = self._panel_entries[-1] if self._panel_entries else None
+        if lines and newest is not None and newest.current and newest.lines == lines:
+            # 與目前這一句相同（平常已被穩定化擋掉，這裡是保險）：不新增
+            entries = [e for e in self._panel_entries if e.current or now - e.shown_at < hold]
+        else:
+            # 字幕翻得很快、新的一句已經出來時，舊的一句至少還要留「最短保留秒數」：疊在上面，新的接在它下面
+            held = [e for e in self._panel_entries if now - e.shown_at < hold]
+            for entry in held:
+                entry.current = False
+            entries = held + ([_PanelEntry(list(lines), now)] if lines else [])
+        self._panel_entries = entries[-_MAX_PANEL_ENTRIES:]
+        self._panel_bbox = tuple(capture.bbox)
+        return self._refresh_panel()
+
+    def _refresh_panel(self) -> bool:
+        """依目前留著的幾句重畫面板；一句都不剩就清掉。"""
+        self._panel_lines = [line for entry in self._panel_entries for line in entry.lines]
+        self._schedule_expiry()
+        if not self._panel_lines:
             self._clear_panels()
             self._visible = False
             return False
-        self._panel_lines = lines
-        self._panel_bbox = tuple(capture.bbox)
         self._visible = self._place_panel()
         return self._visible
+
+    def _schedule_expiry(self) -> None:
+        """排下一個「舊譯文留夠了」的時間點。"""
+        self._hold_timer.stop()
+        hold = self._min_hold()
+        now = self._clock()
+        waits = [entry.shown_at + hold - now for entry in self._panel_entries if not entry.current]
+        if waits:
+            self._hold_timer.start(max(1, int(round(max(0.0, min(waits)) * 1000))))
+
+    def _expire_panel_entries(self) -> None:
+        now = self._clock()
+        hold = self._min_hold()
+        self._panel_entries = [e for e in self._panel_entries if e.current or now - e.shown_at < hold]
+        if self._visible:
+            self._refresh_panel()
+        else:  # 使用者暫時隱藏了譯文：只更新內容，不要因為計時器又把面板顯示出來
+            self._panel_lines = [line for entry in self._panel_entries for line in entry.lines]
+            self._schedule_expiry()
 
     def _place_panel(self) -> bool:
         """把面板（重新）放到目前的框下方；框換了螢幕就換那個螢幕的面板。"""
@@ -152,9 +215,11 @@ class OverlayManager(QObject):
         self._place_panel()
 
     def _clear_panels(self) -> None:
+        self._hold_timer.stop()
         for panel in self._panels.values():
             panel.clear()
         self._panel_lines = []
+        self._panel_entries = []
         self._panel_bbox = None
 
     def _on_overlay_close_requested(self) -> None:

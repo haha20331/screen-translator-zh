@@ -31,9 +31,11 @@ from typing import Any, NamedTuple
 from app.logger import get_logger
 from services.translation.base import TranslationError, register_translator
 from services.translation.ct2_common import (
+    SKIP_MARKER,
     ChineseTargetTranslator,
     default_threads,
     find_model_dir,
+    is_skip_output,
     model_search_paths,
     resolve_device,
 )
@@ -50,10 +52,17 @@ _BATCH_SIZE = 8
 _MAX_HISTORY = 10
 _PLACEHOLDER_RE = re.compile(r"__ST_KEEP_\d+__")
 
-_SYSTEM_PROMPT = (
+# 防呆：只有音效、擬聲詞、笑聲、嘆息的句子沒有可翻的內容，硬翻只會得到亂寫的句子
+_SKIP_RULE = (
+    f" If the text is only a sound effect, onomatopoeia, laughter, sigh, scream or other meaningless "
+    f"vocalization (for example ドン, ガシャーン, ワンワン, ははは, Boom, Woof, Haha), do not turn it into Chinese "
+    f"sound words such as 砰 or 汪汪; output exactly {SKIP_MARKER} instead."
+)
+_BASE_SYSTEM_PROMPT = (
     "You are a professional translator. Translate the user's text into Traditional Chinese "
     "as used in Taiwan. Output only the translation, with no explanations."
 )
+_SYSTEM_PROMPT = _BASE_SYSTEM_PROMPT + _SKIP_RULE
 _LANGUAGE_NAMES = {"ja": "Japanese", "en": "English"}
 # 示範能大幅降低小模型回傳原文、加註解的機率；內容刻意涵蓋介面、遊戲、對白三類。
 _SHOTS: dict[str, list[tuple[str, str]]] = {
@@ -61,45 +70,65 @@ _SHOTS: dict[str, list[tuple[str, str]]] = {
         ("今日はいい天気ですね。", "今天天氣真好呢。"),
         ("ファイルを保存しますか？", "要儲存檔案嗎？"),
         ("HPが50回復した！", "恢復了 50 點 HP！"),
+        ("ドーン！ガシャーン！", SKIP_MARKER),
+        # 短而且只有假名的句子也可能是真的話（問候、告白）：用對照的示範避免被誤判成音效
+        ("おかえり", "歡迎回來"),
+        ("ワンワン", SKIP_MARKER),
+        ("好きだよ", "我喜歡你"),
+        ("ふふっ", SKIP_MARKER),
     ],
     "en": [
         ("Press any key to continue", "按任意鍵繼續"),
         ("You found a rusty key.", "你找到了一把生鏽的鑰匙。"),
         ("Save changes before closing?", "關閉前要儲存變更嗎？"),
+        ("Boom! Crash!", SKIP_MARKER),
+        ("See you soon", "待會見"),
+        ("Woof woof", SKIP_MARKER),
+        ("Haha", SKIP_MARKER),
     ],
 }
 
 
-_LYRICS_SYSTEM_PROMPT = (
+_BASE_LYRICS_SYSTEM_PROMPT = (
     "You are a professional translator of song lyrics. The user's text is one line from a song. "
     "Translate it into natural, poetic Traditional Chinese as used in Taiwan, keeping the meaning, "
     "emotion and imagery instead of translating word by word. The line may be a fragment. "
     "Output only the translation, with no explanations."
 )
+_LYRICS_SYSTEM_PROMPT = _BASE_LYRICS_SYSTEM_PROMPT + _SKIP_RULE
 # 歌詞的示範：片段式、有意象的句子，讓模型知道可以意譯、不必補完整句
 _LYRICS_SHOTS: dict[str, list[tuple[str, str]]] = {
     "ja": [
         ("君の声が聞こえる", "我聽見了你的聲音"),
         ("星空の下で踊ろう", "讓我們在星空下共舞吧"),
         ("明日になれば忘れてしまうの？", "到了明天，就會忘記了嗎？"),
+        ("ラララ…", SKIP_MARKER),
+        ("ふふふっ", SKIP_MARKER),
     ],
     "en": [
         ("I will always love you", "我會永遠愛著你"),
         ("Hold me close and never let go", "緊緊抱住我，永遠不要放手"),
         ("We are dancing in the moonlight", "我們在月光下翩翩起舞"),
+        ("Na na na na", SKIP_MARKER),
     ],
 }
 
 
-def static_prompt(language: str, lyrics: bool = False) -> str:
+def static_prompt(language: str, lyrics: bool = False, skip_sounds: bool = True) -> str:
     """固定前綴（system + 示範），每次翻譯都一樣；結尾剛好在 ``<|im_end|>\\n`` 的分詞邊界上。
 
     交給 CTranslate2 的 ``static_prompt``，這段的注意力快取只算一次（實測每句快約 40%）。
-    ``lyrics`` 為真時換成歌詞用的系統提示與示範。
+    ``lyrics`` 為真時換成歌詞用的系統提示與示範；``skip_sounds`` 為假時拿掉「只有擬聲詞就回報略過」的規則與示範。
     """
     name = _LANGUAGE_NAMES[language]
-    parts = [f"<|im_start|>system\n{_LYRICS_SYSTEM_PROMPT if lyrics else _SYSTEM_PROMPT}<|im_end|>\n"]
+    if lyrics:
+        system = _LYRICS_SYSTEM_PROMPT if skip_sounds else _BASE_LYRICS_SYSTEM_PROMPT
+    else:
+        system = _SYSTEM_PROMPT if skip_sounds else _BASE_SYSTEM_PROMPT
+    parts = [f"<|im_start|>system\n{system}<|im_end|>\n"]
     for source, target in (_LYRICS_SHOTS if lyrics else _SHOTS)[language]:
+        if target == SKIP_MARKER and not skip_sounds:
+            continue
         parts.append(f"<|im_start|>user\nTranslate this {name} text:\n{source}<|im_end|>\n")
         parts.append(f"<|im_start|>assistant\n{target}<|im_end|>\n")
     return "".join(parts)
@@ -132,9 +161,11 @@ def history_prompt(entries: list[ContextEntry]) -> str:
     return "".join(parts)
 
 
-def build_prompt(text: str, language: str, history: list[ContextEntry] | None = None, lyrics: bool = False) -> str:
+def build_prompt(
+    text: str, language: str, history: list[ContextEntry] | None = None, lyrics: bool = False, skip_sounds: bool = True
+) -> str:
     """完整的 Qwen ChatML 提示詞（固定前綴 + 前文 + 待翻譯文字）。"""
-    return static_prompt(language, lyrics) + history_prompt(history or []) + user_prompt(text, language)
+    return static_prompt(language, lyrics, skip_sounds) + history_prompt(history or []) + user_prompt(text, language)
 
 
 def clean_output(text: str) -> str:
@@ -161,7 +192,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         self._model_lock = threading.Lock()
         self._generator: Any = None
         self._tokenizer: Any = None
-        self._static_tokens: dict[tuple[str, bool], list[str]] = {}
+        self._static_tokens: dict[tuple[str, bool, bool], list[str]] = {}
         # 最近翻好的句子（上下文功能）。保留比 context_size 多一些，調大設定時馬上有前文可用
         self._history: deque[ContextEntry] = deque(maxlen=_MAX_HISTORY)
         self._history_lock = threading.Lock()
@@ -234,8 +265,16 @@ class OfflineTranslator(ChineseTargetTranslator):
         return max(1, min(_MAX_HISTORY, size))
 
     def cache_namespace(self, source: str | None) -> str | None:
-        """歌詞模式、上下文會改變譯文，快取要分開放，否則切換設定後看到的還是舊譯文。"""
-        tags = [tag for tag, on in (("lyrics", self.lyrics_enabled()), ("ctx", self.context_enabled())) if on]
+        """歌詞模式、上下文、擬聲詞略過都會改變譯文，快取要分開放，否則切換設定後看到的還是舊譯文。"""
+        tags = [
+            tag
+            for tag, on in (
+                ("lyrics", self.lyrics_enabled()),
+                ("ctx", self.context_enabled()),
+                ("nosound", not self.sound_skip_enabled()),
+            )
+            if on
+        ]
         return "|".join([source or "", *tags]) if tags else source
 
     def reset_context(self) -> None:
@@ -321,24 +360,39 @@ class OfflineTranslator(ChineseTargetTranslator):
         with self._model_lock:
             self._load()
             lyrics = self.lyrics_enabled()
+            skip = self.sound_skip_enabled()
             contexts = [self._context_for(text) for text in texts]
-            outputs = self._run(texts, language, lyrics, contexts)
+            outputs = self._run(texts, language, lyrics, contexts, skip)
+            if skip:
+                # 模型回報「只有擬聲詞」但原文看起來是一般的話（またね、ただいま）：改用沒有略過規則的提示重翻
+                vetoed = [
+                    index
+                    for index, output in enumerate(outputs)
+                    if is_skip_output(output) and not self.sound_skip_allowed(texts[index], language)
+                ]
+                if vetoed:
+                    redone = self._run([texts[i] for i in vetoed], language, lyrics, [contexts[i] for i in vetoed], False)
+                    for index, output in zip(vetoed, redone):
+                        outputs[index] = output
             if lyrics or any(contexts):
                 # 歌詞提示或前文偶爾讓小模型把日文原樣留在譯文裡（「強さ」「進むと」）；
                 # 這幾句改用一般提示重翻，重翻的結果沒有假名才採用。
                 leaked = [index for index, output in enumerate(outputs) if has_kana(output)]
                 if leaked:
-                    plain = self._run([texts[index] for index in leaked], language, False, [[] for _ in leaked])
+                    plain = self._run([texts[index] for index in leaked], language, False, [[] for _ in leaked], skip)
                     for index, output in zip(leaked, plain):
                         if not has_kana(output):
                             outputs[index] = output
             return outputs
 
-    def _run(self, texts: list[str], language: str, lyrics: bool, contexts: list[list[ContextEntry]]) -> list[str]:
+    def _run(
+        self, texts: list[str], language: str, lyrics: bool, contexts: list[list[ContextEntry]], skip: bool = True
+    ) -> list[str]:
         settings = self._settings()
-        if (language, lyrics) not in self._static_tokens:
-            self._static_tokens[(language, lyrics)] = self._tokenizer.encode(
-                static_prompt(language, lyrics), add_special_tokens=False
+        key = (language, lyrics, skip)
+        if key not in self._static_tokens:
+            self._static_tokens[key] = self._tokenizer.encode(
+                static_prompt(language, lyrics, skip), add_special_tokens=False
             ).tokens
         batches = [
             self._tokenizer.encode(history_prompt(context) + user_prompt(text, language), add_special_tokens=False).tokens
@@ -346,7 +400,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         ]
         results = self._generator.generate_batch(
             batches,
-            static_prompt=self._static_tokens[(language, lyrics)],
+            static_prompt=self._static_tokens[key],
             max_length=int(settings.get("max_new_tokens", 160)),
             max_batch_size=_BATCH_SIZE,
             beam_size=max(1, int(settings.get("beam_size", 1))),

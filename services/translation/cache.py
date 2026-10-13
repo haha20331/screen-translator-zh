@@ -42,6 +42,8 @@ class TranslationCache:
             if time.time() - entry.get("ts", 0) > self.ttl_seconds:
                 self._data.pop(key, None)
                 return None
+            # 用到就算「最近用過」：筆數超過上限時先淘汰最久沒用的，歌詞副歌這種反覆出現的句子不會被擠掉
+            entry["ts"] = time.time()
             return entry.get("translated")
 
     def set(self, source: str | None, target: str, text: str, translated: str) -> None:

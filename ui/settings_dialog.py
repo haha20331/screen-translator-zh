@@ -767,6 +767,32 @@ class SettingsDialog(QWidget):
         self.spin_context_size = QSpinBox()
         self.spin_context_size.setRange(1, 10)
         self.spin_context_size.setSuffix(" 句")
+        self.spin_min_hold = QDoubleSpinBox()
+        self.spin_min_hold.setRange(0.0, 10.0)
+        self.spin_min_hold.setSingleStep(0.1)
+        self.spin_min_hold.setDecimals(1)
+        self.spin_min_hold.setSuffix(" 秒")
+        self.spin_min_hold.setToolTip(
+            "字幕換得很快、第 N 句剛翻好畫面就跳到第 N+1 句時，第 N 句的譯文至少還要留這麼久；"
+            "第 N+1 句也翻好後，接在第 N 句的下方一起顯示，同樣至少留這麼久。預設 0.5 秒，0 = 立刻換掉。\n"
+            "只適用於「顯示在框下方」的譯文面板（框選區域）。"
+        )
+        self.spin_cache_entries = QSpinBox()
+        self.spin_cache_entries.setRange(50, 20000)
+        self.spin_cache_entries.setSingleStep(50)
+        self.spin_cache_entries.setSuffix(" 句")
+        self.spin_cache_entries.setToolTip(
+            "記住最近翻過的原文與譯文；一模一樣的原文再出現時直接用，不再翻譯（也不必重新呼叫模型）。\n"
+            "每句約 0.2 KB，2000 句不到 1 MB，存在本機。超過上限時，先淘汰最久沒用到的。\n"
+            "建議 2000：只留 50 句太少，歌詞的副歌常在 50 句以外才再出現；影片重看一次也能直接用。"
+        )
+        self.chk_skip_sounds = QCheckBox("略過只有擬聲詞（音效、笑聲、狀聲詞）的句子，不翻譯也不顯示")
+        self.chk_skip_sounds.setToolTip(
+            "原文只是「ドン！」「ガシャーン」「Boom!」「ははは」這類聲音時，不翻成「砰」「哈哈」，也不顯示。\n"
+            "標準翻譯由模型判斷（實測約 85～90% 的音效會被略過，一般句子沒有被誤略過）；"
+            "快速翻譯沒有提示詞，只會濾掉「譯文全是擬聲用字」的結果（汪汪、砰、哈哈）。\n"
+            "日文原文要像音效（片假名、長音、促音、重複）才會略過，「またね」「はい」這類一般短句不受影響。"
+        )
         self.chk_lyrics_mode = QCheckBox("歌詞模式：告訴模型這是歌詞，譯得較通順有詩意")
         _llm_only = "只對「離線翻譯・標準」有效；「快速」與線上服務不支援。"
         self.chk_use_context.setToolTip("把最近翻好的句子（原文與譯文）當成前文交給模型，代名詞與語氣會前後一致。\n" + _llm_only)
@@ -788,6 +814,9 @@ class SettingsDialog(QWidget):
         form.addRow(self.chk_use_context)
         form.addRow("　記住前幾句", self.spin_context_size)
         form.addRow(self.chk_lyrics_mode)
+        form.addRow(self.chk_skip_sounds)
+        form.addRow("譯文最短保留", self.spin_min_hold)
+        form.addRow("翻譯快取", self.spin_cache_entries)
         form.addRow("超時（秒）", self.spin_timeout)
         form.addRow("失敗重試次數", self.spin_retries)
         form.addRow("請求間隔（秒）", self.spin_interval)
@@ -1026,6 +1055,9 @@ class SettingsDialog(QWidget):
         self.spin_context_size.setValue(int(cfg.get("translation.context_size", 2)))
         self.spin_context_size.setEnabled(self.chk_use_context.isChecked())
         self.chk_lyrics_mode.setChecked(bool(cfg.get("translation.lyrics_mode", False)))
+        self.chk_skip_sounds.setChecked(bool(cfg.get("translation.skip_sounds", True)))
+        self.spin_min_hold.setValue(float(cfg.get("overlay.min_hold_seconds", 0.5)))
+        self.spin_cache_entries.setValue(int(cfg.get("translation.cache_max_entries", 2000)))
         self.spin_timeout.setValue(int(cfg.get("translation.timeout_seconds", 30)))
         self.spin_retries.setValue(int(cfg.get("translation.max_retries", 3)))
         self.spin_interval.setValue(float(cfg.get("translation.request_interval_seconds", 0.0)))
@@ -1162,6 +1194,9 @@ class SettingsDialog(QWidget):
             cfg.set("translation.use_context", self.chk_use_context.isChecked())
             cfg.set("translation.context_size", self.spin_context_size.value())
             cfg.set("translation.lyrics_mode", self.chk_lyrics_mode.isChecked())
+            cfg.set("translation.skip_sounds", self.chk_skip_sounds.isChecked())
+            cfg.set("overlay.min_hold_seconds", self.spin_min_hold.value())
+            cfg.set("translation.cache_max_entries", self.spin_cache_entries.value())
             cfg.set("translation.timeout_seconds", self.spin_timeout.value())
             cfg.set("translation.max_retries", self.spin_retries.value())
             cfg.set("translation.request_interval_seconds", self.spin_interval.value())

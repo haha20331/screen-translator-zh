@@ -85,7 +85,8 @@ def test_lyrics_prompt_changes_system_text_and_examples_but_keeps_the_shape():
     assert "song lyrics" in lyrics and "song lyrics" not in plain
     assert lyrics != plain
     assert lyrics.startswith("<|im_start|>system\n") and lyrics.endswith("<|im_end|>\n")
-    assert lyrics.count("<|im_start|>assistant\n") == plain.count("<|im_start|>assistant\n")
+    assert lyrics.count("<|im_start|>assistant\n") == len(module._LYRICS_SHOTS["ja"])
+    assert plain.count("<|im_start|>assistant\n") == len(module._SHOTS["ja"])
     assert static_prompt("en", lyrics=True) != static_prompt("en")
 
 

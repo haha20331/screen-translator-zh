@@ -14,6 +14,7 @@ from services.translation.ct2_common import find_model_dir, model_search_paths
 from services.translation.offline_translator import (
     DEFAULT_MODEL_NAME,
     LARGE_MODEL_NAME,
+    _SHOTS,
     OfflineTranslator,
     build_prompt,
     clean_output,
@@ -40,8 +41,9 @@ def test_prompt_has_system_shots_and_target_text(language, name):
 
     assert prompt.startswith("<|im_start|>system\n")
     assert "Traditional Chinese as used in Taiwan" in prompt
-    assert prompt.count("<|im_start|>assistant\n") == 4  # 3 個示範 + 最後等待模型續寫的一個
-    assert prompt.count(f"Translate this {name} text:") == 4
+    shots = len(_SHOTS[language]) + 1  # 示範 + 最後等待模型續寫的一個
+    assert prompt.count("<|im_start|>assistant\n") == shots
+    assert prompt.count(f"Translate this {name} text:") == shots
     assert prompt.endswith(f"Translate this {name} text:\n待翻譯<|im_end|>\n<|im_start|>assistant\n")
 
 

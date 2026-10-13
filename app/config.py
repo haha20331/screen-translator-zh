@@ -75,6 +75,8 @@ DEFAULTS: dict[str, Any] = {
         "context_ttl_seconds": 120,
         # 歌詞模式：提示模型這是歌詞，用較自然、有詩意的方式意譯
         "lyrics_mode": False,
+        # 只有擬聲詞（音效、笑聲、狀聲詞）的句子不翻譯也不顯示（標準翻譯靠提示詞判斷，快速翻譯只過濾中文擬聲詞譯文）
+        "skip_sounds": True,
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_delay_seconds": 1.0,
@@ -159,6 +161,8 @@ DEFAULTS: dict[str, Any] = {
         "placement": "below",
         # 譯文面板（below 模式）的底色不透明度 0–255
         "panel_alpha": 215,
+        # 字幕翻得很快、新的一句已經出來時，舊的一句譯文至少還要留幾秒（疊在上面，新的接在它下面）；0 = 立刻換掉
+        "min_hold_seconds": 0.5,
     },
     "monitor": {
         "enabled": True,
@@ -256,6 +260,11 @@ def _normalize_translation(data: dict[str, Any]) -> None:
 
 def _normalize_overlay(data: dict[str, Any]) -> None:
     overlay = data.setdefault("overlay", {})
+    try:
+        hold = float(overlay.get("min_hold_seconds", DEFAULTS["overlay"]["min_hold_seconds"]))
+    except (TypeError, ValueError):
+        hold = DEFAULTS["overlay"]["min_hold_seconds"]
+    overlay["min_hold_seconds"] = max(0.0, min(10.0, hold))
     if overlay.get("placement") not in {"below", "in_place"}:
         overlay["placement"] = DEFAULTS["overlay"]["placement"]
 

@@ -99,6 +99,7 @@ def app():
 def _manager(tmp_path, placement="below") -> OverlayManager:
     config = AppConfig(tmp_path / "config.json")
     config.set("overlay.placement", placement)
+    config.set("overlay.min_hold_seconds", 0)  # 這個檔案測的是位置與跟隨；保留秒數另有測試
     manager = OverlayManager(config)
     manager.set_monitor_map([MonitorInfo(0, (0, 0, 1000, 600), (0, 0), 1.0)])
     return manager

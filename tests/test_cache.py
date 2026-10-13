@@ -45,3 +45,27 @@ def test_cache_corrupt_file(tmp_path):
     cache = TranslationCache(path)
     cache.set("en", "zh", "a", "b")
     assert cache.get("en", "zh", "a") == "b"
+
+
+def test_cache_hit_counts_as_recent_use(tmp_path):
+    """筆數超過上限時淘汰最久沒用的：反覆出現的句子（歌詞副歌）不會因為最早翻譯就被擠掉。"""
+    cache = TranslationCache(tmp_path / "cache.json", ttl_days=30, max_entries=3)
+    cache.set("ja", "zh", "副歌", "chorus")
+    time.sleep(0.01)
+    cache.set("ja", "zh", "a", "A")
+    time.sleep(0.01)
+    cache.set("ja", "zh", "b", "B")
+    time.sleep(0.01)
+    assert cache.get("ja", "zh", "副歌") == "chorus"  # 副歌又出現了
+    time.sleep(0.01)
+
+    cache.set("ja", "zh", "c", "C")  # 超過上限：該淘汰的是最久沒用的 a，不是剛用過的副歌
+
+    assert cache.get("ja", "zh", "副歌") == "chorus"
+    assert cache.get("ja", "zh", "a") is None
+
+
+def test_default_cache_limit_is_large_enough_to_keep_a_whole_song():
+    from app.config import DEFAULTS
+
+    assert DEFAULTS["translation"]["cache_max_entries"] >= 1000

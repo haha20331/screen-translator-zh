@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,58 @@ def default_threads(setting: int = 0) -> int:
     return setting if setting > 0 else min(DEFAULT_MAX_THREADS, os.cpu_count() or 1)
 
 
+# ----------------------------------------------------------------------------- 擬聲詞防呆
+# 提示詞要求模型：原文只是音效、擬聲詞、笑聲、嘆息這類沒有實際詞義的聲音時，不要翻譯，只回這個標記。
+SKIP_MARKER = "[SKIP]"
+# 有括號的標記（[SKIP]、【skip】）不分大小寫；沒括號時只認全大寫的 SKIP，
+# 因為小寫的 skip 可能是模型把「スキ」翻成英文的失敗結果，那要算翻譯失敗而不是略過。
+_SKIP_BRACKETED_RE = re.compile(r"^[\[【(（<]\s*skip\s*[\]】)）>]$", re.IGNORECASE)
+_SKIP_BARE_RE = re.compile(r"^SKIP$")
+
+
+def is_skip_output(output: str) -> bool:
+    """模型是否回報「這句只有擬聲詞，不翻」。"""
+    value = re.sub(r"[.。!！\s]+$", "", (output or "").strip())
+    return bool(_SKIP_BRACKETED_RE.match(value) or _SKIP_BARE_RE.match(value))
+
+
+# 譯文只剩狀聲詞：小模型常把音效「翻」成中文的擬聲詞（砰、汪汪、哈哈、滴答滴答），這種譯文沒有資訊量。
+# 只收擬聲用字；單獨一個「嗯」「啊」「哦」這類應答、感嘆詞是真的有意思（うん＝嗯），不在其中。
+_SOUND_CHARS = frozenset(
+    "汪喵砰啪咚噹叮滴答嘎咕嚕轟隆喀嚓哐啷嗖咻嘟嘀嗶啵咔叭咩哞吱喳啾嗡呸哧嗷吼噗嘩啦哈呵嘻嘿哼嗚呼噠唰沙嘰咯呱嘯鈴"
+)
+_NON_WORD_RE = re.compile(r"[\W_]+", re.UNICODE)
+_REPEATED_CHAR_RE = re.compile(r"(.)\1{2,}")
+
+
+def is_onomatopoeia_output(output: str) -> bool:
+    """譯文是不是只有擬聲詞：去掉標點後空白、全是擬聲用字，或同一個字連續三次以上（啊啊啊啊）。"""
+    letters = _NON_WORD_RE.sub("", output or "")
+    if not output or not output.strip():
+        return False
+    if not letters:
+        return True  # 只剩標點（原文只是「Ughh...」這類聲音）
+    return all(char in _SOUND_CHARS for char in letters) or bool(_REPEATED_CHAR_RE.fullmatch(letters))
+
+
+_JA_PUNCT_RE = re.compile(r"[\s!?！？、。，,.「」『』（）()]+")
+_JA_SOUND_MARKS = frozenset("ーッっ〜～…ぁぃぅぇぉゃゅょァィゥェォャュョ")
+_JA_REPEAT_RE = re.compile(r"(.{1,3})\1")
+
+
+def looks_like_sound_ja(text: str) -> bool:
+    """日文原文的長相像不像音效：不含漢字，而且有長音／促音／小假名／刪節號，或有重複（ドキドキ、ははは），
+    或全是片假名。「またね」「ただいま」「愛してる」這類真正的話不符合，模型就算回報「只有擬聲詞」也不採信。"""
+    value = _JA_PUNCT_RE.sub("", text or "")
+    if not value:
+        return True
+    if has_han(value):
+        return False
+    if any(char in _JA_SOUND_MARKS for char in value) or _JA_REPEAT_RE.search(value):
+        return True
+    return all("\u30a0" <= char <= "\u30ff" for char in value)
+
+
 # ----------------------------------------------------------------------------- 譯文檢查
 def looks_untranslated(source: str, output: str) -> bool:
     """日文來源的輸出不像中文：仍以假名為主（抄回原文），或完全沒有漢字（例如把「スキ」譯成英文 skip）。"""
@@ -110,6 +163,19 @@ class ChineseTargetTranslator(Translator):
     def output_looks_untranslated(self, source: str, output: str) -> bool:
         return looks_untranslated(source, output) or chinese.has_runaway_repetition(output, source)
 
+    # ----------------------------------------------------------- 擬聲詞防呆
+    def sound_skip_enabled(self) -> bool:
+        """設定 ``skip_sounds``（預設開）：只有擬聲詞（音效、笑聲、狀聲詞）的句子不翻譯也不顯示。"""
+        return bool(self.config.get("skip_sounds", True))
+
+    @staticmethod
+    def sound_skip_allowed(text: str, language: str) -> bool:
+        """這句原文長得像音效才允許略過；日文的一般短句（またね、はい）即使被模型誤判也照翻。"""
+        return language != "ja" or looks_like_sound_ja(text)
+
+    def cache_namespace(self, source: str | None) -> str | None:
+        return source if self.sound_skip_enabled() else f"{source or ''}|nosound"
+
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:
         if not (target_language or "").lower().startswith("zh"):
             raise TranslationError("離線翻譯目前只支援翻成中文（目標語言請選「繁體中文」）")
@@ -127,6 +193,16 @@ class ChineseTargetTranslator(Translator):
         for language, indices in groups.items():
             outputs = self._generate([texts[i] for i in indices], language)
             for index, output in zip(indices, outputs):
+                if (
+                    self.sound_skip_enabled()
+                    and self.sound_skip_allowed(texts[index], language)
+                    and (is_skip_output(output) or is_onomatopoeia_output(output))
+                ):
+                    # 只有擬聲詞的句子：原文原樣保留、不算失敗；譯文等於原文，所以不會顯示，也不會寫進上下文
+                    continue
+                if is_skip_output(output):  # 不該略過卻回了標記：不能把「[SKIP]」當譯文顯示
+                    failed.add(index)
+                    continue
                 # 空輸出或只是把日文抄回來：保留原文，讓基底類別把它當作翻譯失敗（不寫入快取）
                 if output and not self.output_looks_untranslated(texts[index], output):
                     results[index] = self._to_target_script(chinese.normalize_punctuation(output), target_language)
