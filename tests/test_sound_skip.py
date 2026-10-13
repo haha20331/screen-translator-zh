@@ -149,6 +149,15 @@ def test_an_ordinary_phrase_wrongly_reported_as_a_sound_is_translated_again_with
     assert SKIP_MARKER not in "".join(generator.calls[1]["static_prompt"])
 
 
+def test_with_the_retry_off_an_ordinary_phrase_reported_as_a_sound_is_not_run_again():
+    instance, generator = _translator(retry_non_chinese=False)
+
+    out = instance.translate(["またね"], "auto", "zh-hant")
+
+    assert len(generator.calls) == 1  # 只進模型一次
+    assert out == ["またね"] and instance.last_failed_count == 1  # 不顯示「[SKIP]」，原文保留、算失敗
+
+
 def test_turning_the_option_off_translates_everything_and_separates_the_cache():
     instance, generator = _translator(skip_sounds=False)
 

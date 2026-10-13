@@ -248,6 +248,46 @@ def test_japanese_left_in_the_output_is_retried_with_the_plain_prompt():
     assert "song lyrics" not in "".join(generator.calls[-1]["static_prompt"])
 
 
+def test_retry_when_the_output_is_not_chinese_is_on_by_default():
+    assert DEFAULTS["translation"]["retry_non_chinese"] is True
+    assert _translator()[0].retry_enabled()
+
+
+def test_with_the_retry_off_the_model_runs_once_and_the_output_is_used_as_is():
+    instance, generator = _translator(lyrics_mode=True, retry_non_chinese=False)
+
+    out = instance.translate(["進む"], "auto", "zh-hant")
+
+    assert out == ["進むと"]  # 殘留假名也照輸出
+    assert len(generator.calls) == 1
+    assert instance.last_failed_count == 0
+
+
+def test_with_the_retry_off_a_non_chinese_answer_is_still_shown_but_a_pure_echo_is_not():
+    off, _ = _translator(retry_non_chinese=False)
+    on, _ = _translator()
+
+    off._generate = on._generate = lambda texts, language: ["こんばんは" for _ in texts]  # 全是假名、但不是抄回原文
+    assert off.translate(["こんにちは"], "auto", "zh-hant") == ["こんばんは"]
+    assert on.translate(["こんにちは"], "auto", "zh-hant") == ["こんにちは"]  # 開著重翻時維持原本的把關：算失敗、保留原文
+
+    off._generate = lambda texts, language: list(texts)  # 原樣抄回原文：顯示出來只是重複
+    assert off.translate(["こんにちは"], "auto", "zh-hant") == ["こんにちは"] and off.last_failed_count == 1
+
+
+def test_the_retry_switch_takes_effect_while_running_and_does_not_mix_up_the_cache(tmp_path):
+    instance, generator = _translator(lyrics_mode=True)
+    instance.cache = TranslationCache(tmp_path / "cache.json")
+
+    instance.config["retry_non_chinese"] = False
+    assert instance.translate(["進む"], "auto", "zh-hant") == ["進むと"]
+    assert len(generator.calls) == 1
+
+    instance.config["retry_non_chinese"] = True  # 重新打開：不會拿到沒重翻過的舊結果
+    assert instance.translate(["進む"], "auto", "zh-hant") == ["前進"]
+    assert len(generator.calls) == 3  # 第一次進模型 + 重翻（命中快取的沒有再算）
+
+
 def test_no_retry_when_the_output_is_clean():
     instance, generator = _translator(lyrics_mode=True)
 
@@ -264,6 +304,9 @@ def test_no_retry_when_the_output_is_clean():
         ({"lyrics_mode": True}, "auto|lyrics"),
         ({"use_context": True}, "auto|ctx"),
         ({"lyrics_mode": True, "use_context": True}, "auto|lyrics|ctx"),
+        ({"retry_non_chinese": True}, "auto"),  # 預設就是開，不另外分流
+        ({"retry_non_chinese": False}, "auto|noretry"),
+        ({"lyrics_mode": True, "retry_non_chinese": False}, "auto|lyrics|noretry"),
     ],
 )
 def test_cache_namespace_separates_translation_styles(section, expected):
@@ -343,6 +386,22 @@ def test_settings_dialog_round_trips_the_two_options(qapp, tmp_path):
     assert saved.get("translation.context_size") == 4
     assert saved.get("translation.lyrics_mode") is True
     dialog.deleteLater()
+
+
+def test_settings_dialog_has_the_retry_switch_on_by_default_and_saves_it(qapp, tmp_path):
+    dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
+    assert dialog.chk_retry_non_chinese.isChecked()
+    assert dialog.pages.widget(3).widget().isAncestorOf(dialog.chk_retry_non_chinese)  # 「翻譯」頁
+
+    dialog.chk_retry_non_chinese.setChecked(False)
+    dialog._commit_accept(dialog._validated_hotkeys())
+    dialog._save_close_timer.stop()
+
+    assert AppConfig(tmp_path / "config.json").get("translation.retry_non_chinese") is False
+    reopened = SettingsDialog(AppConfig(tmp_path / "config.json"))
+    assert not reopened.chk_retry_non_chinese.isChecked()
+    dialog.deleteLater()
+    reopened.deleteLater()
 
 
 def test_main_window_lyrics_toggle_writes_the_config_immediately(qapp, tmp_path):

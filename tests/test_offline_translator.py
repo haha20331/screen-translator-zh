@@ -264,8 +264,11 @@ def test_device_resolution(setting, fake, expected):
 def test_availability_reason_reports_missing_dependency(monkeypatch):
     import importlib.util
 
+    from services.translation import llama_backend
+
     real = importlib.util.find_spec
     monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a, **k: None if name == "ctranslate2" else real(name, *a, **k))
+    monkeypatch.setattr(llama_backend, "available", lambda: False)  # 開發機有裝 llama.cpp 時，CTranslate2 缺了也不算不可用
 
     assert "ctranslate2" in OfflineTranslator.availability_reason()
 

@@ -17,6 +17,7 @@
 | rapidocr | Apache-2.0 | |
 | onnxruntime | MIT | |
 | ctranslate2 | MIT | |
+| llama-cpp-python（含 llama.cpp / ggml，選用的 llama.cpp 推論引擎） | MIT | 預編譯 wheel 內含 llama.cpp 與 ggml 的動態函式庫；`requirements-llama.txt` |
 | tokenizers | Apache-2.0 | |
 | OpenCC | Apache-2.0 | 簡繁轉換與台灣用語詞典 |
 
@@ -28,6 +29,7 @@
 | Qwen2.5-1.5B-Instruct（轉成 CTranslate2 int8） | Apache-2.0 | `Qwen/Qwen2.5-1.5B-Instruct` @ `989aa7980e4cf806f80c7fef2b1adb7bc71aa306`；轉換紀錄見模型資料夾內 `manifest.json`，授權檔 `LICENSE` 隨附 |
 
 | NLLB-200-distilled-600M（轉成 CTranslate2 int8，「離線翻譯・快速」使用） | **CC-BY-NC-4.0（僅限非商用，需標示來源）** | `facebook/nllb-200-distilled-600M` @ `f8d333a098d19b4fd9a8b18f94170487ad3f821d`；轉換紀錄見模型資料夾內 `manifest.json` |
+| Qwen2.5-1.5B-Instruct GGUF（Q4_K_M / Q8_0，選用的 llama.cpp 引擎使用） | Apache-2.0 | `Qwen/Qwen2.5-1.5B-Instruct-GGUF` @ `91cad51170dc346986eccefdc2dd33a9da36ead9`（官方釋出，未轉換）；SHA-256 見模型資料夾內 `manifest.json`，授權檔 `LICENSE` 隨附 |
 | Qwen2.5-7B-Instruct（選用，有 NVIDIA GPU 時自動使用） | Apache-2.0 | `Qwen/Qwen2.5-7B-Instruct` @ `a09a35458c702b33eeacc393d103063234e8bc28`；尚未在實機驗證 |
 
 評估過但**未採用**的模型（不隨附）：NLLB-200 1.3B、Helsinki-NLP opus-mt（Apache-2.0）、Qwen2.5-3B、Qwen3-1.7B。

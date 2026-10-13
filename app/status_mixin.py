@@ -56,8 +56,6 @@ class StatusMixin:
         self._overlay_visible = bool(visible)
         if self.tray is not None:
             self.tray.set_overlay_checked(self._overlay_visible)
-        if self.window is not None:
-            self.window.set_overlay_checked(self._overlay_visible)
 
     def set_edit_mode(self, enabled: bool) -> None:
         if self.overlay_manager is None or self._busy:

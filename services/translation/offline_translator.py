@@ -13,6 +13,13 @@
 - ``use_context``：記住最近 ``context_size`` 句（預設 2）已翻好的原文與譯文，放在提示詞裡當前文，
   讓代名詞、省略的主語、同一首歌的語氣前後一致。
 - ``lyrics_mode``：告訴模型這是歌詞，改用歌詞的系統提示與示範（較自然、有詩意，不逐字直譯）。
+- ``retry_non_chinese``（預設開）：譯文不是中文（殘留日文假名、不該略過的句子被回報略過）時，
+  改用一般提示再翻一次；關閉就只進模型一次，翻出什麼就輸出什麼（較快）。
+
+推論引擎（``engine``，兩者用同一份提示詞與後處理，只差在怎麼把提示詞變成譯文）：
+- ``ctranslate2``（預設）：CTranslate2 int8，有 NVIDIA GPU 時可用 CUDA 與 7B 模型。
+- ``llama.cpp``：llama-cpp-python 載入官方 GGUF（Q4_K_M／Q8_0），見 ``llama_backend.py``。
+  ``model_name`` 設成 GGUF 模型名稱（含 ``gguf``）時自動使用這個引擎。
 
 流程：依文字判斷來源語言（假名→日文、拉丁字母→英文）→ 分組批次交給模型 →
 整理輸出 → 以 OpenCC ``s2twp`` 轉成台灣繁體（目標為簡體 ``zh`` 時則轉簡體）。
@@ -29,6 +36,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from app.logger import get_logger
+from services.translation import llama_backend
 from services.translation.base import TranslationError, register_translator
 from services.translation.ct2_common import (
     SKIP_MARKER,
@@ -46,6 +54,11 @@ log = get_logger("translation.offline")
 
 DEFAULT_MODEL_NAME = "qwen2.5-1.5b-instruct-ct2-int8"
 LARGE_MODEL_NAME = "qwen2.5-7b-instruct-ct2-int8"
+# llama.cpp 用的 GGUF 模型（同一個 Qwen2.5-1.5B-Instruct，不同量化）
+LLAMA_MODEL_NAMES = ("qwen2.5-1.5b-instruct-gguf-q4_k_m", "qwen2.5-1.5b-instruct-gguf-q8_0")
+DEFAULT_LLAMA_MODEL_NAME = LLAMA_MODEL_NAMES[0]
+ENGINE_CTRANSLATE2 = "ctranslate2"
+ENGINE_LLAMA = "llama.cpp"
 # auto 模式的候選：(模型名稱, 是否需要 CUDA)。依序嘗試，載入失敗就換下一個。
 MODEL_TIERS: list[tuple[str, bool]] = [(LARGE_MODEL_NAME, True), (DEFAULT_MODEL_NAME, False)]
 _BATCH_SIZE = 8
@@ -140,6 +153,13 @@ def user_prompt(text: str, language: str) -> str:
     return f"<|im_start|>user\nTranslate this {name} text:\n{text}<|im_end|>\n<|im_start|>assistant\n"
 
 
+def llama_model_available(name: str, model_dir: str = "") -> bool:
+    """llama.cpp 與這個 GGUF 模型都在（設定畫面用來決定選項能不能選）。"""
+    return llama_backend.available() and any(
+        llama_backend.find_gguf(directory) is not None for directory in model_search_paths(name, model_dir)
+    )
+
+
 class ContextEntry(NamedTuple):
     source: str
     translation: str
@@ -192,6 +212,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         self._model_lock = threading.Lock()
         self._generator: Any = None
         self._tokenizer: Any = None
+        self._llama: llama_backend.LlamaCppEngine | None = None
         self._static_tokens: dict[tuple[str, bool, bool], list[str]] = {}
         # 最近翻好的句子（上下文功能）。保留比 context_size 多一些，調大設定時馬上有前文可用
         self._history: deque[ContextEntry] = deque(maxlen=_MAX_HISTORY)
@@ -202,7 +223,11 @@ class OfflineTranslator(ChineseTargetTranslator):
     # ------------------------------------------------------------- availability
     @classmethod
     def availability_reason(cls) -> str | None:
-        for module, package in (("ctranslate2", "ctranslate2"), ("tokenizers", "tokenizers"), ("opencc", "opencc")):
+        if importlib.util.find_spec("opencc") is None:
+            return "離線翻譯依賴不可用：請安裝 opencc（pip install opencc）"
+        if llama_backend.available():  # 有 llama.cpp 時，CTranslate2 不是必要的（選了 CTranslate2 才會在載入時報缺少）
+            return None
+        for module, package in (("ctranslate2", "ctranslate2"), ("tokenizers", "tokenizers")):
             if importlib.util.find_spec(module) is None:
                 return f"離線翻譯依賴不可用：請安裝 {package}（pip install {package}）"
         return None
@@ -250,12 +275,55 @@ class OfflineTranslator(ChineseTargetTranslator):
             return setting
         return "int8_float16" if device == "cuda" else "int8"
 
+    # ------------------------------------------------------------- 推論引擎
+    def engine(self) -> str:
+        """目前選用的推論引擎：``ctranslate2``（預設）或 ``llama.cpp``。
+
+        ``model_name`` 是 GGUF 模型（名稱含 gguf）時一定用 llama.cpp；``engine`` 設成 ``llama.cpp`` 也會用。
+        """
+        settings = self._settings()
+        name = str(settings.get("model_name") or "auto").lower()
+        choice = str(settings.get("engine") or ENGINE_CTRANSLATE2).lower()
+        if "gguf" in name or choice in (ENGINE_LLAMA, "llama", "llamacpp", "llama-cpp"):
+            return ENGINE_LLAMA
+        return ENGINE_CTRANSLATE2
+
+    def llama_model_name(self) -> str:
+        name = str(self._settings().get("model_name") or "auto")
+        return name if "gguf" in name.lower() else DEFAULT_LLAMA_MODEL_NAME
+
+    def llama_model_path(self) -> Path:
+        """GGUF 檔的位置；找不到就丟 TranslationError，並列出找過的資料夾與下載指令。"""
+        name = self.llama_model_name()
+        model_dir = str(self._settings().get("model_dir") or "")
+        searched = model_search_paths(name, model_dir)
+        for directory in searched:
+            found = llama_backend.find_gguf(directory)
+            if found is not None:
+                return found
+        listing = "\n".join(f"  {path}" for path in searched)
+        raise TranslationError(
+            f"找不到 llama.cpp 模型「{name}」。請執行 scripts/fetch_translation_models.py --model {name}，"
+            f"或把 .gguf 檔放到下列任一資料夾：\n{listing}"
+        )
+
     # ------------------------------------------------------------- 上下文與歌詞模式
     def context_enabled(self) -> bool:
         return bool(self.config.get("use_context", False))
 
     def lyrics_enabled(self) -> bool:
         return bool(self.config.get("lyrics_mode", False))
+
+    def retry_enabled(self) -> bool:
+        """設定 ``retry_non_chinese``（預設開）：譯文不是中文時重翻一次。"""
+        return bool(self.config.get("retry_non_chinese", True))
+
+    def output_looks_untranslated(self, source: str, output: str) -> bool:
+        if self.retry_enabled():
+            return super().output_looks_untranslated(source, output)
+        # 只進模型一次、翻出什麼就輸出什麼：不是中文也照顯示，只擋「原樣抄回原文」與失控重複
+        echoed = has_kana(source) and output.strip() == source.strip()
+        return echoed or chinese.has_runaway_repetition(output, source)
 
     def context_size(self) -> int:
         try:
@@ -265,16 +333,19 @@ class OfflineTranslator(ChineseTargetTranslator):
         return max(1, min(_MAX_HISTORY, size))
 
     def cache_namespace(self, source: str | None) -> str | None:
-        """歌詞模式、上下文、擬聲詞略過都會改變譯文，快取要分開放，否則切換設定後看到的還是舊譯文。"""
+        """歌詞模式、上下文、擬聲詞略過、不重翻都會改變譯文，快取要分開放，否則切換設定後看到的還是舊譯文。"""
         tags = [
             tag
             for tag, on in (
                 ("lyrics", self.lyrics_enabled()),
                 ("ctx", self.context_enabled()),
                 ("nosound", not self.sound_skip_enabled()),
+                ("noretry", not self.retry_enabled()),
             )
             if on
         ]
+        if self.engine() == ENGINE_LLAMA:  # 不同引擎、不同量化的譯文不同，快取分開放
+            tags.append("llama-" + self.llama_model_name().rsplit("gguf-", 1)[-1])
         return "|".join([source or "", *tags]) if tags else source
 
     def reset_context(self) -> None:
@@ -313,14 +384,29 @@ class OfflineTranslator(ChineseTargetTranslator):
         return results
 
     # ------------------------------------------------------------- model loading
+    def _load_llama(self) -> None:
+        if not llama_backend.available():
+            raise TranslationError("缺少 llama-cpp-python：請安裝（pip install llama-cpp-python），或把推論引擎改回 CTranslate2")
+        path = self.llama_model_path()
+        threads = default_threads(int(self._settings().get("threads", 0)))
+        log.info("載入離線翻譯模型 %s（引擎=llama.cpp, threads=%d）", path, threads)
+        try:
+            self._llama = llama_backend.LlamaCppEngine(path, threads)
+        except Exception as exc:  # 檔案損毀、記憶體不足等
+            raise TranslationError(f"llama.cpp 載入 {path.name} 失敗：{exc}") from exc
+        self.device, self.model_name = "cpu", path.parent.name
+
     def _load(self) -> None:
-        if self._generator is not None:
+        if self._generator is not None or self._llama is not None:
+            return
+        if not chinese.available():  # 繁體是必要需求，沒有 OpenCC 時不應該悄悄輸出簡體
+            raise TranslationError("缺少 OpenCC，無法輸出繁體中文：請安裝 opencc（pip install opencc）")
+        if self.engine() == ENGINE_LLAMA:
+            self._load_llama()
             return
         reason = self.availability_reason()
         if reason is not None:
             raise TranslationError(reason)
-        if not chinese.available():  # 繁體是必要需求，沒有 OpenCC 時不應該悄悄輸出簡體
-            raise TranslationError("缺少 OpenCC，無法輸出繁體中文：請安裝 opencc（pip install opencc）")
 
         import ctranslate2
         from tokenizers import Tokenizer
@@ -363,6 +449,8 @@ class OfflineTranslator(ChineseTargetTranslator):
             skip = self.sound_skip_enabled()
             contexts = [self._context_for(text) for text in texts]
             outputs = self._run(texts, language, lyrics, contexts, skip)
+            if not self.retry_enabled():
+                return outputs  # 只進模型一次：翻出什麼就輸出什麼
             if skip:
                 # 模型回報「只有擬聲詞」但原文看起來是一般的話（またね、ただいま）：改用沒有略過規則的提示重翻
                 vetoed = [
@@ -389,6 +477,13 @@ class OfflineTranslator(ChineseTargetTranslator):
         self, texts: list[str], language: str, lyrics: bool, contexts: list[list[ContextEntry]], skip: bool = True
     ) -> list[str]:
         settings = self._settings()
+        if self._llama is not None:
+            max_tokens = int(settings.get("max_new_tokens", 160))
+            prefix = static_prompt(language, lyrics, skip)
+            return [
+                clean_output(self._llama.complete(prefix + history_prompt(context) + user_prompt(text, language), max_tokens, prefix))
+                for text, context in zip(texts, contexts)
+            ]
         key = (language, lyrics, skip)
         if key not in self._static_tokens:
             self._static_tokens[key] = self._tokenizer.encode(

@@ -77,12 +77,18 @@ DEFAULTS: dict[str, Any] = {
         "lyrics_mode": False,
         # 只有擬聲詞（音效、笑聲、狀聲詞）的句子不翻譯也不顯示（標準翻譯靠提示詞判斷，快速翻譯只過濾中文擬聲詞譯文）
         "skip_sounds": True,
+        # 譯文不是中文（殘留日文假名、不該略過的句子被回報略過）時，改用一般提示重翻一次（預設開）；
+        # 關閉就只進模型一次，翻出什麼就輸出什麼，每句少一次模型運算
+        "retry_non_chinese": True,
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_delay_seconds": 1.0,
         "request_interval_seconds": 0.0,
-        # 離線翻譯（Qwen2.5-Instruct + CTranslate2）；model_dir 留空 = 自動尋找 models/translation/
+        # 離線翻譯（Qwen2.5-Instruct）；model_dir 留空 = 自動尋找 models/translation/
         "offline": {
+            # 推論引擎：ctranslate2（CTranslate2 int8，有 NVIDIA GPU 時可用 CUDA 與 7B）或 llama.cpp（GGUF）。
+            # model_name 設成 GGUF 模型名稱（含 gguf）時自動使用 llama.cpp
+            "engine": "ctranslate2",
             # auto：有 NVIDIA GPU 時優先用 7B 模型（載入失敗退回 1.5B），沒有 GPU 用 CPU 的 1.5B
             "model_name": "auto",
             "model_dir": "",
@@ -181,6 +187,8 @@ DEFAULTS: dict[str, Any] = {
         "confirm_rounds": 1,
         # 新文字一直在變（辨識抖動）時，最久等幾秒就放行最新的一組（推薦 2.5 秒）
         "max_wait_seconds": 2.5,
+        # 監控中 OCR 連續這麼多秒都抓不到字幕，就自動關閉譯文（推薦 1 秒，0 = 不自動關閉）
+        "hide_after_no_text_seconds": 1.0,
     },
     "hotkeys": {
         "capture_region": "ctrl+shift+a",
@@ -294,13 +302,28 @@ def _normalize_monitor_stability(data: dict[str, Any], loaded: dict[str, Any]) -
 
 
 def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
-    """舊預設的輪詢間隔 1200 ms 太慢（每輪結束後固定多等 1.2 秒）；沒被使用者改過就換成新預設。
+    """辨識間隔：舊預設 1200 ms 太慢，沒被使用者改過就換成新預設；其餘限制在合理範圍。
 
     畫面沒變時會直接跳過 OCR 與翻譯，所以縮短間隔不會增加無謂的運算。
+    使用者現在可以在設定裡自己選間隔（包括剛好 1.2 秒），所以舊預設只在檔案裡還沒有
+    ``interval_migrated`` 標記時換掉；換過（或使用者存過設定）之後就照使用者的值。
     """
+    monitor = data.setdefault("monitor", {})
     loaded_monitor = loaded.get("monitor") if isinstance(loaded.get("monitor"), dict) else {}
-    if loaded_monitor.get("interval_ms") == _LEGACY_MONITOR_INTERVAL_MS:
-        data.setdefault("monitor", {})["interval_ms"] = DEFAULTS["monitor"]["interval_ms"]
+    default = DEFAULTS["monitor"]["interval_ms"]
+    if loaded_monitor.get("interval_ms") == _LEGACY_MONITOR_INTERVAL_MS and not loaded_monitor.get("interval_migrated"):
+        monitor["interval_ms"] = default
+    monitor["interval_migrated"] = True
+    try:
+        interval = int(monitor.get("interval_ms", default))
+    except (TypeError, ValueError):
+        interval = default
+    monitor["interval_ms"] = max(200, min(10_000, interval))
+    try:
+        hide_after = float(monitor.get("hide_after_no_text_seconds", DEFAULTS["monitor"]["hide_after_no_text_seconds"]))
+    except (TypeError, ValueError):
+        hide_after = DEFAULTS["monitor"]["hide_after_no_text_seconds"]
+    monitor["hide_after_no_text_seconds"] = max(0.0, min(30.0, hide_after))
 
 
 def _normalize_ocr(data: dict[str, Any], loaded: dict[str, Any]) -> None:

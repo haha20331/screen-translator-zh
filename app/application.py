@@ -148,6 +148,10 @@ class Application(
         self._monitor_timer = QTimer(self)
         self._monitor_timer.setSingleShot(True)
         self._monitor_timer.timeout.connect(self._monitor_cycle)
+        # OCR 連續抓不到字幕一段時間後自動關閉譯文（monitor.hide_after_no_text_seconds）
+        self._no_text_timer = QTimer(self)
+        self._no_text_timer.setSingleShot(True)
+        self._no_text_timer.timeout.connect(self._close_translation_after_no_text)
         self._monitor_known: dict[str, str] = {}
         self._monitor_signature = ""
         self._monitor_frame_hash = ""
@@ -225,6 +229,7 @@ class Application(
         self._capture_timer.stop()
         self._selection_timer.stop()
         self._monitor_timer.stop()
+        self._no_text_timer.stop()
         self._monitor_active = False
         self._dispose_monitor_region()
         self._dispose_selection()

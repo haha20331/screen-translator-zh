@@ -1,0 +1,138 @@
+"""llama.cpp 推論後端：載入 GGUF 模型，對同一份 ChatML 提示詞做貪婪解碼。
+
+離線翻譯（標準）原本用 CTranslate2（``offline_translator.py``）；這裡提供另一個可選的引擎。
+兩者共用同一份提示詞（系統提示、示範、前文、待翻句）與後處理，差別只在「怎麼把提示詞變成譯文」：
+
+- CTranslate2：自己做分詞，批次輸入，固定前綴用 ``static_prompt`` 快取。
+- llama.cpp：直接吃文字（特殊記號 ``<|im_start|>`` 由它自己解析），一次一句；
+  llama-cpp-python 會自動重用與「上一次」提示詞相同的前綴（KV cache）。固定前綴（系統提示 + 示範）
+  換語言或歌詞模式時就不同了、要重算約 1 秒，所以每種固定前綴的 KV 快取各存一份（``prepare``），換回來只要毫秒。
+
+模型是官方釋出的 GGUF（``scripts/fetch_translation_models.py --model qwen2.5-1.5b-instruct-gguf-q4_k_m``）。
+"""
+
+from __future__ import annotations
+
+import ctypes
+import importlib.util
+from collections import OrderedDict
+from pathlib import Path
+
+from app.logger import get_logger
+
+log = get_logger("translation.llama")
+
+END_TOKEN = "<|im_end|>"
+# 提示詞（固定前綴約 300 個 token）+ 前文 + 待翻句 + 最多 160 個新 token，2048 綽綽有餘
+DEFAULT_CONTEXT_TOKENS = 2048
+# 最多存幾種固定前綴的 KV 快取（語言 ×歌詞模式 ×擬聲詞略過，實際常用的只有 1～3 種；每份約 9 MB）
+MAX_PREFIX_STATES = 6
+
+
+def available() -> bool:
+    """有沒有安裝 llama-cpp-python（pip install llama-cpp-python）。"""
+    return importlib.util.find_spec("llama_cpp") is not None
+
+
+def find_gguf(directory: Path) -> Path | None:
+    """模型資料夾裡的 GGUF 檔（一個資料夾放一個模型；有多個時取檔名排序第一個，結果才穩定）。"""
+    if not directory.is_dir():
+        return None
+    files = sorted(directory.glob("*.gguf"))
+    return files[0] if files else None
+
+
+class LlamaCppEngine:
+    """載入一個 GGUF 模型，``complete(prompt, max_tokens)`` 回傳貪婪解碼的文字。"""
+
+    def __init__(self, model_path: Path, threads: int, context_tokens: int = DEFAULT_CONTEXT_TOKENS) -> None:
+        from llama_cpp import Llama
+
+        self.model_path = Path(model_path)
+        self._llama = Llama(
+            model_path=str(self.model_path),
+            n_ctx=context_tokens,
+            n_threads=threads,
+            n_threads_batch=threads,
+            n_batch=512,
+            use_mmap=True,
+            verbose=False,
+        )
+        # 固定前綴（系統提示 + 示範，約 300 個 token）的 KV 快取：前綴 → 序列狀態位元組。
+        # llama.cpp 只記得「上一次」的提示詞，日文換英文（或換歌詞模式）時前綴不同，要重算約 1 秒；
+        # 存起來之後換回來只要毫秒。出任何錯就停用這個加速，照函式庫原本的行為（只重用上一次的前綴）。
+        self._prefix_states: OrderedDict[str, bytes] = OrderedDict()
+        self._prefix_cache_ok = True
+
+    # ------------------------------------------------------------- 固定前綴的 KV 快取
+    def _capture_kv(self) -> bytes:
+        import llama_cpp
+
+        context = self._llama._ctx.ctx
+        size = llama_cpp.llama_state_seq_get_size(context, 0)
+        buffer = (ctypes.c_uint8 * size)()
+        written = llama_cpp.llama_state_seq_get_data(context, ctypes.cast(buffer, ctypes.POINTER(ctypes.c_uint8)), size, 0)
+        if written != size:
+            raise RuntimeError(f"KV 快取只存了 {written}/{size} 位元組")
+        return bytes(buffer)
+
+    def _restore_kv(self, state: bytes) -> None:
+        import llama_cpp
+
+        context = self._llama._ctx.ctx
+        self._llama._ctx.kv_cache_clear()
+        buffer = (ctypes.c_uint8 * len(state)).from_buffer_copy(state)
+        if llama_cpp.llama_state_seq_set_data(context, ctypes.cast(buffer, ctypes.POINTER(ctypes.c_uint8)), len(state), 0) == 0:
+            raise RuntimeError("還原 KV 快取失敗")
+
+    def prepare(self, prefix: str) -> None:
+        """讓 KV 快取停在這個固定前綴上，之後的提示詞（前綴 + 前文 + 待翻句）只需要算後面的部分。
+
+        已經在這個前綴上就什麼都不做；存過這個前綴就還原；都沒有才重算一次並存起來。
+        """
+        if not self._prefix_cache_ok or not prefix:
+            return
+        llama = self._llama
+        try:
+            tokens = llama.tokenize(prefix.encode("utf-8"), add_bos=False, special=True)
+            count = len(tokens)
+            if llama.n_tokens >= count and llama.input_ids[:count].tolist() == tokens:
+                return
+            saved = self._prefix_states.get(prefix)
+            if saved is not None:
+                self._prefix_states.move_to_end(prefix)
+                self._restore_kv(saved)
+                llama.input_ids[:count] = tokens
+                llama.n_tokens = count
+                return
+            llama.reset()
+            llama._ctx.kv_cache_clear()
+            llama.eval(tokens)
+            self._prefix_states[prefix] = self._capture_kv()
+            while len(self._prefix_states) > MAX_PREFIX_STATES:
+                self._prefix_states.popitem(last=False)
+        except Exception as exc:  # 函式庫內部介面變了、記憶體不足等：改回只重用上一次前綴的原本行為
+            log.warning("llama.cpp 固定前綴快取停用：%s", exc)
+            self._prefix_cache_ok = False
+            self._prefix_states.clear()
+            llama.reset()
+
+    def complete(self, prompt: str, max_tokens: int, prefix: str = "") -> str:
+        """``prefix`` 是 ``prompt`` 開頭那段固定不變的部分（提供就先讓 KV 快取停在它上面）。"""
+        if prefix and prompt.startswith(prefix):
+            self.prepare(prefix)
+        result = self._llama.create_completion(
+            prompt,
+            max_tokens=max_tokens,
+            temperature=0.0,
+            top_k=1,
+            stop=[END_TOKEN],
+            echo=False,
+        )
+        return str(result["choices"][0]["text"])
+
+    def close(self) -> None:
+        close = getattr(self._llama, "close", None)
+        if callable(close):
+            close()
+        self._llama = None

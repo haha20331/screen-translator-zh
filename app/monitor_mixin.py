@@ -6,10 +6,15 @@ from __future__ import annotations
 from app import application as _application
 from app.logger import get_logger
 from utils.stability import (
+    MAX_INTERVAL_MS,
+    MAX_NO_TEXT_SECONDS,
     MAX_ROUNDS,
+    MIN_INTERVAL_MS,
     MIN_ROUNDS,
     RECOMMENDED_FAST_ROUNDS,
+    RECOMMENDED_INTERVAL_MS,
     RECOMMENDED_MAX_WAIT,
+    RECOMMENDED_NO_TEXT_SECONDS,
     TextStabilizer,
 )
 
@@ -62,6 +67,7 @@ class MonitorMixin:
             self._create_monitor_region_selector()
         self._reset_translation_context()
         self._monitor_active = True
+        self._no_text_timer.stop()
         self._monitor_errors = 0
         self._monitor_no_text = False
         self._monitor_known = {}
@@ -83,6 +89,7 @@ class MonitorMixin:
         self._monitor_active = False
         self._reset_translation_context()
         self._monitor_timer.stop()
+        self._no_text_timer.stop()
         self._monitor_request = None
         self._monitor_known = {}
         self._monitor_signature = ""
@@ -183,12 +190,54 @@ class MonitorMixin:
             rounds, max_wait = RECOMMENDED_FAST_ROUNDS, RECOMMENDED_MAX_WAIT
         self._monitor_stabilizer.configure(max(MIN_ROUNDS, min(MAX_ROUNDS, rounds)), max_wait)
 
+    def _monitor_interval_ms(self) -> int:
+        """設定的辨識間隔（毫秒），壞掉的值用推薦值，並限制在允許範圍內。"""
+        try:
+            interval = int(self.config.get("monitor.interval_ms", RECOMMENDED_INTERVAL_MS))
+        except (TypeError, ValueError):
+            interval = RECOMMENDED_INTERVAL_MS
+        return max(MIN_INTERVAL_MS, min(MAX_INTERVAL_MS, interval))
+
     def _monitor_schedule_next(self) -> None:
         if not self._monitor_active:
             return
-        interval = int(self.config.get("monitor.interval_ms", 1200))
         self._monitor_timer.stop()
-        self._monitor_timer.start(max(200, interval))
+        self._monitor_timer.start(self._monitor_interval_ms())
+
+    def _arm_no_text_timer(self) -> None:
+        """這一輪 OCR 沒抓到任何文字：開始計時，連續這麼久都沒有字幕就把譯文關掉。
+        已經在計時（連續好幾輪都沒字）就不重新開始，才是「連續」一段時間；0 = 不自動關閉。"""
+        try:
+            seconds = float(self.config.get("monitor.hide_after_no_text_seconds", RECOMMENDED_NO_TEXT_SECONDS))
+        except (TypeError, ValueError):
+            seconds = RECOMMENDED_NO_TEXT_SECONDS
+        seconds = max(0.0, min(MAX_NO_TEXT_SECONDS, seconds))
+        if seconds <= 0 or not self._monitor_active or self._no_text_timer.isActive():
+            return
+        self._no_text_timer.start(int(round(seconds * 1000)))
+
+    def _cancel_no_text_timer(self) -> None:
+        """OCR 又抓到字了（不論是新字幕、相同字幕或還在等穩定）：不用關譯文。"""
+        self._no_text_timer.stop()
+
+    def _close_translation_after_no_text(self) -> None:
+        if not self._monitor_active or self._shutting_down:
+            return
+        if self.overlay_manager is not None:
+            self.overlay_manager.clear_all()
+            self._sync_overlay_state(False)
+        # 忘掉目前顯示的內容：同一句字幕之後再出現，才會重新顯示（而不是被當成「已顯示過」）
+        if self._monitor_stabilizer is not None:
+            self._monitor_stabilizer.reset()
+        self._monitor_signature = ""
+        self._monitor_known = {}
+        self.set_status("監控中：畫面沒有字幕，已關閉譯文")
+
+    def _reschedule_monitor_after_settings(self) -> None:
+        """設定改了間隔：正在等下一輪的計時器立刻照新間隔重算（不然要等完舊間隔才生效）。
+        正在辨識／翻譯的那一輪不動，它結束時自然會用新間隔排下一輪。"""
+        if self._monitor_active and self._monitor_timer.isActive():
+            self._monitor_schedule_next()
 
     def _create_monitor_region_selector(self) -> None:
         self._dispose_monitor_region()

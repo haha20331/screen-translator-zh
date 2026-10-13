@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import QAbstractAnimation, QPropertyAnimation, Qt, QTimer, QVariantAnimation
-from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPen, QShortcut
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -348,14 +348,30 @@ class CaptureActionCard(QPushButton):
             )
             painter.drawLine(line_x, rect.bottom() - 10, line_x + line_width, rect.bottom() - 10)
 
+MIN_WINDOW_SIZE = (900, 540)
+# 預設尺寸：寬 980；高度是舊預設（580）的 1.3 倍，放得下更多內容、不必一開就捲動或擠在一起
+DEFAULT_WINDOW_WIDTH = 980
+DEFAULT_WINDOW_HEIGHT = round(580 * 1.3)
+_SCREEN_MARGIN = 80  # 留給工作列與視窗標題列
+
+
+def default_window_size(available_height: int | None = None) -> tuple[int, int]:
+    """主視窗開啟時的預設尺寸；螢幕可用高度放不下就縮小，但不會小於最小尺寸。"""
+    height = DEFAULT_WINDOW_HEIGHT
+    if available_height:
+        height = min(height, max(MIN_WINDOW_SIZE[1], int(available_height) - _SCREEN_MARGIN))
+    return DEFAULT_WINDOW_WIDTH, height
+
+
 class MainWindow(QWidget):
     def __init__(self, controller, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.controller = controller
         self.setObjectName("Root")
         self.setWindowTitle("螢幕翻譯")
-        self.setMinimumSize(900, 540)
-        self.resize(980, 580)
+        self.setMinimumSize(*MIN_WINDOW_SIZE)
+        screen = QGuiApplication.primaryScreen()
+        self.resize(*default_window_size(screen.availableGeometry().height() if screen is not None else None))
         self._faded_in = False
         self._window_capture_available = True
         self._capture_departure_callback: Callable[[], None] | None = None
@@ -489,9 +505,6 @@ class MainWindow(QWidget):
         self.check_keep_original = QCheckBox("保留原文")
         self.check_lyrics = QCheckBox("歌詞")
         self.check_lyrics.setToolTip("告訴模型這是歌詞，譯得較通順有詩意。只對「離線翻譯・標準」有效。")
-        self.btn_toggle = QPushButton("隱藏譯文")
-        self.btn_toggle.setCheckable(True)
-        self.btn_toggle.setObjectName("ToggleButton")
         self.btn_edit = QPushButton("編輯模式")
         self.btn_edit.setCheckable(True)
         self.btn_edit.setObjectName("ToggleButton")
@@ -500,12 +513,11 @@ class MainWindow(QWidget):
         self.btn_monitor = QPushButton("即時監控")
         self.btn_monitor.setObjectName("MonitorButton")
         self.btn_monitor.setCheckable(True)
-        for button in (self.btn_toggle, self.btn_edit, self.btn_refresh, self.btn_monitor):
+        for button in (self.btn_edit, self.btn_refresh, self.btn_monitor):
             button.setMinimumHeight(42)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
         bottom_row.addWidget(self.check_lyrics)
         bottom_row.addWidget(self.check_keep_original)
-        bottom_row.addWidget(self.btn_toggle)
         bottom_row.addWidget(self.btn_edit)
         bottom_row.addWidget(self.btn_refresh)
         bottom_row.addWidget(self.btn_monitor)
@@ -515,7 +527,6 @@ class MainWindow(QWidget):
         self.btn_fullscreen.clicked.connect(lambda: self.controller.start_capture("fullscreen"))
         self.btn_window.clicked.connect(lambda: self.controller.start_capture("window"))
         self.btn_settings.clicked.connect(self.controller.open_settings)
-        self.btn_toggle.toggled.connect(self._on_toggle_overlay)
         self.btn_edit.toggled.connect(self.controller.set_edit_mode)
         self.btn_refresh.clicked.connect(self.controller.refresh)
         self.btn_monitor.clicked.connect(self.controller.toggle_monitor)
@@ -573,7 +584,7 @@ class MainWindow(QWidget):
         for combo in (self.combo_source, self.combo_target, self.combo_ocr, self.combo_service):
             combo.setMinimumHeight(combo_height)
             combo.setMaximumHeight(combo_height)
-        for button in (self.btn_toggle, self.btn_edit, self.btn_refresh):
+        for button in (self.btn_edit, self.btn_refresh):
             button.setMinimumHeight(button_height)
             button.setMaximumHeight(button_height)
         for card in (self.btn_region, self.btn_fullscreen, self.btn_window):
@@ -773,7 +784,6 @@ class MainWindow(QWidget):
             self.combo_ocr,
             self.combo_service,
             self.check_keep_original,
-            self.btn_toggle,
             self.btn_edit,
         ):
             control.setEnabled(not busy)
@@ -885,12 +895,6 @@ class MainWindow(QWidget):
             self.setWindowOpacity(1.0)
         self._visibility_action = ""
 
-    def set_overlay_checked(self, visible: bool) -> None:
-        self._block_signals = True
-        self.btn_toggle.setChecked(not visible)
-        self.btn_toggle.setText("隱藏譯文" if visible else "顯示譯文")
-        self._block_signals = False
-
     def set_monitor_checked(self, active: bool) -> None:
         self._block_signals = True
         self.btn_monitor.setChecked(active)
@@ -901,10 +905,6 @@ class MainWindow(QWidget):
         self._block_signals = True
         self.btn_edit.setChecked(enabled)
         self._block_signals = False
-
-    def _on_toggle_overlay(self, _checked: bool) -> None:
-        if not getattr(self, "_block_signals", False):
-            self.controller.toggle_overlay()
 
     def _on_translation_flag(self, key: str, checked: bool) -> None:
         """上下文、歌詞模式：勾選立即生效（翻譯器每次翻譯都讀設定），不必重新載入模型。"""

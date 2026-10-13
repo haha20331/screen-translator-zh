@@ -1,6 +1,11 @@
-"""下載官方權重並轉成 CTranslate2 int8，放到 ``models/translation/<名稱>/``（不進版控）。
+"""取得離線翻譯模型，放到 ``models/translation/<名稱>/``（不進版控）。
 
-這是一次性的開發步驟，需要「轉換環境」（PyTorch + transformers，約 1 GB，不屬於執行環境）::
+兩種來源：
+- CTranslate2 模型：下載官方權重並轉成 int8（一次性的開發步驟，需要「轉換環境」，見下）。
+- llama.cpp 模型（名稱含 ``gguf``）：直接下載官方釋出的 GGUF 檔，不需要轉換，也不需要 PyTorch，
+  只要 ``huggingface_hub``（轉換環境或開發環境都有）。
+
+轉換環境（PyTorch + transformers，約 1 GB，不屬於執行環境）::
 
     bash scripts/setup_convert_env.sh                 # 建立 ~/.venvs/ocr-convert
     ~/.venvs/ocr-convert/bin/python scripts/fetch_translation_models.py
@@ -37,6 +42,23 @@ MODELS = {
         "note": "離線翻譯・標準的大模型：有 NVIDIA GPU（約 8 GB 顯示卡記憶體）時 auto 模式會自動優先使用，準確度明顯較高；"
                 "CPU 約 2–3 秒/句。轉換時需約 16 GB 記憶體。尚未在實機驗證。",
     },
+    # llama.cpp 用的 GGUF（官方釋出、Apache-2.0，不需要轉換）：同一個 Qwen2.5-1.5B-Instruct，量化方式不同
+    "qwen2.5-1.5b-instruct-gguf-q4_k_m": {
+        "format": "gguf",
+        "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
+        "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "license": "Apache-2.0",
+        "note": "llama.cpp 引擎，4 位元量化（約 1.1 GB），速度優先。",
+    },
+    "qwen2.5-1.5b-instruct-gguf-q8_0": {
+        "format": "gguf",
+        "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
+        "file": "qwen2.5-1.5b-instruct-q8_0.gguf",
+        "license": "Apache-2.0",
+        "note": "llama.cpp 引擎，8 位元量化（約 1.9 GB），品質最接近 CTranslate2 int8。",
+    },
     "nllb-200-distilled-600m-ct2-int8": {
         "repo": "facebook/nllb-200-distilled-600M",
         "revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d",
@@ -61,6 +83,34 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _fetch_gguf(name: str, info: dict, output: Path, force: bool) -> None:
+    """直接下載官方 GGUF 檔（固定版本），附上授權檔與 manifest（來源、授權、SHA-256）。"""
+    target = output / info["file"]
+    if target.exists() and not force:
+        raise SystemExit(f"{target} 已存在（加 --force 覆寫）")
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as exc:
+        raise SystemExit(f"缺少套件（{exc.name}）：請用轉換環境或開發環境的 python 執行本腳本（需要 huggingface_hub）。")
+    print(f"下載 {info['repo']} / {info['file']} @ {info['revision'][:8]} …")
+    output.mkdir(parents=True, exist_ok=True)
+    downloaded = Path(hf_hub_download(info["repo"], info["file"], revision=info["revision"], local_dir=str(output)))
+    try:
+        hf_hub_download(info["repo"], "LICENSE", revision=info["revision"], local_dir=str(output))  # 直接放進模型資料夾
+    except Exception as exc:  # 授權檔下載失敗不該讓模型白下載，但要提醒補上
+        print(f"提醒：沒有取得 LICENSE（{exc}），散布前請補上原模型的授權檔。")
+    manifest = {
+        "name": name,
+        "format": "gguf",
+        "source_repo": info["repo"],
+        "source_revision": info["revision"],
+        "license": info["license"],
+        "files": {downloaded.name: _sha256(downloaded)},
+    }
+    (output / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"完成：{downloaded}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", default=DEFAULT_MODEL, choices=sorted(MODELS))
@@ -78,6 +128,9 @@ def main() -> None:
     if not info["revision"]:
         raise SystemExit(f"{args.model} 尚未固定來源版本：請先到 https://huggingface.co/{info['repo']} 查 commit sha，填入 MODELS。")
     output = args.out / args.model
+    if info.get("format") == "gguf":
+        _fetch_gguf(args.model, info, output, args.force)
+        return
     if (output / "model.bin").exists() and not args.force:
         raise SystemExit(f"{output} 已存在（加 --force 覆寫）")
 

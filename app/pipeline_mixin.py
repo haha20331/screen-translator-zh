@@ -88,6 +88,7 @@ class PipelineMixin:
             if message.startswith("沒有識別到文字"):
                 self._monitor_no_text = True
                 self._monitor_idle_hash = self._monitor_frame_hash
+                self._arm_no_text_timer()
                 self.set_status("監控中：當前畫面沒有可翻譯的文字")
             else:
                 self._pipeline_error = message
@@ -160,6 +161,7 @@ class PipelineMixin:
             return
         capture: CaptureInfo = payload["capture"]
         verdict = payload.get("verdict", CONFIRMED)
+        self._cancel_no_text_timer()  # 這一輪抓到文字了：不用因為「沒有字幕」關掉譯文
         if verdict != CONFIRMED:
             # 穩定化：文字與已顯示的相同（不必再翻譯），或是新文字還沒穩定。畫面維持原樣，也不算失敗。
             self._pipeline_succeeded = True
