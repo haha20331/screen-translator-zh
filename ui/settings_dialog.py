@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 import copy
+import queue
 import sys
+import threading
 import time
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPropertyAnimation, QRect, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontDatabase, QKeySequence, QPainter, QPen, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QDesktopServices,
+    QFont,
+    QFontDatabase,
+    QKeySequence,
+    QPainter,
+    QPalette,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QCheckBox,
     QColorDialog,
@@ -18,6 +31,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QKeySequenceEdit,
     QLabel,
     QLayout,
@@ -27,6 +41,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -40,7 +56,18 @@ from services.ocr.base import list_ocr_engines
 from services.transcript import resolve_directory
 from services.translation.base import list_translators
 from services.translation.factory import service_display_name
-from services.translation.offline_translator import OFFLINE_MODELS, llama_model_available
+from services.translation.offline_translator import OFFLINE_MODELS, OfflineTranslator, llama_model_available
+from services.translation.speed_test import (
+    SPEED_TEST_SENTENCES,
+    STATUS_ERROR,
+    STATUS_MEMORY,
+    STATUS_MISSING,
+    STATUS_OK,
+    SpeedTestStore,
+    describe_machine,
+    run_speed_test,
+    short_label,
+)
 from ui.appearance import (
     ACCENT_PRESETS,
     DENSITY_PRESETS,
@@ -99,15 +126,56 @@ OFFLINE_MODEL_CHOICES = (
 )
 
 
+
+def _speed_test_thread(section: dict, models: list, cancel: threading.Event, messages: queue.Queue, store: SpeedTestStore) -> None:
+    """背景執行緒：跑速度測試，進度與結果丟進佇列給畫面，每個模型測完就存檔。不碰任何介面物件，設定頁關掉也能安全跑完。"""
+    machine = describe_machine()
+
+    def saved(result: dict) -> None:
+        store.save_result(result, machine)
+        messages.put(("result", result))
+
+    try:
+        run_speed_test(
+            section,
+            models,
+            progress=lambda text: messages.put(("progress", text)),
+            on_start=lambda name: messages.put(("start", name)),
+            on_result=saved,
+            cancelled=cancel.is_set,
+        )
+    except Exception as exc:  # 預期外的錯誤：告訴使用者，而不是讓畫面永遠停在「測試中」
+        log.exception("速度測試中斷")
+        messages.put(("error", str(exc)))
+    finally:
+        messages.put(("done", cancel.is_set()))
+
 class SettingsDialog(QWidget):
     accepted = Signal()
     exit_requested = Signal(int)
     finished = Signal(int)
-    def __init__(self, config: AppConfig, parent=None, cache_actions=None) -> None:
+    def __init__(
+        self, config: AppConfig, parent=None, cache_actions=None, speed_test_guard=None, speed_test_hooks=None
+    ) -> None:
         super().__init__(parent)
         self.config = config
         # (數量, 清除) 兩個函式，由應用程式提供；沒有時（例如單獨開設定視窗）「清除翻譯快取」不能用
         self._cache_actions = cache_actions
+        # 速度測試前先問應用程式現在能不能測：回傳不是空字串就是「不能測」的原因（例如即時監控中，會搶 CPU 讓數字不準）
+        self._speed_guard = speed_test_guard
+        # (開始前, 結束後) 兩個函式：測試要載入好幾個模型，開始前先請應用程式把自己載入的翻譯模型放掉（騰出記憶體），結束後再載回來
+        self._speed_hooks = speed_test_hooks
+        self._speed_store = SpeedTestStore(Path(config.path.parent) / "speed_test.json")
+        self._speed_results: dict[str, dict] = self._speed_store.load()["models"]  # 上次（以及更早）測的結果，開設定就看得到
+        self._speed_thread: threading.Thread | None = None
+        self._speed_cancel = threading.Event()
+        self._speed_messages: queue.Queue = queue.Queue()
+        self._speed_running: str = ""  # 正在測的模型名稱
+        self._speed_testing = False
+        self.destroyed.connect(self._speed_cancel.set)  # 設定頁被關掉：測試做完手上這個模型就停（結果照樣存檔）
+        self._speed_timer = QTimer(self)
+        self._speed_timer.setInterval(150)
+        self._speed_timer.timeout.connect(self._poll_speed_test)
         self.setObjectName("SettingsDialog")
         self.setWindowTitle("設定")
         self.setMinimumSize(900, 610)
@@ -839,7 +907,8 @@ class SettingsDialog(QWidget):
             "「離線翻譯」用哪個模型（同一個 Qwen2.5 系列，越大越準也越慢、越吃記憶體）。\n"
             "0.5B 最快但日文品質差；1.5B 是速度與品質的平衡；3B、7B 較準，在 CPU 上明顯變慢。\n"
             "灰色的選項代表缺少模型檔，請執行 scripts/fetch_translation_models.py --model <名稱> 下載。\n"
-            "改了之後下次翻譯會重新載入模型。換模型比較時，建議順便按旁邊的「清除翻譯快取」。"
+            "改了之後下次翻譯會重新載入模型；換了模型，翻譯快取會自動清空。\n"
+            "不確定這台電腦跑得動哪個，按下面的「測試速度」，會用 3 句測資量每個已下載模型的翻譯時間。"
         )
         self.chk_keep_original = QCheckBox("譯文上方同時保留原文")
         self.chk_use_context = QCheckBox("使用上下文：記住前面的句子，協助翻譯這一句")
@@ -898,6 +967,7 @@ class SettingsDialog(QWidget):
         form.addRow("源語言", self.combo_source)
         form.addRow("目標語言", self.combo_target)
         form.addRow("離線翻譯模型", self.combo_offline_model)
+        form.addRow("　速度測試", self._build_speed_test_row())
         form.addRow(self.chk_keep_original)
         form.addRow(self.chk_use_context)
         form.addRow("　記住前幾句", self.spin_context_size)
@@ -1529,6 +1599,234 @@ class SettingsDialog(QWidget):
         if self.combo_offline_model.currentIndex() == self._loaded_offline_model:
             return
         cfg.set("translation.offline.model_name", self.combo_offline_model.currentData())
+
+    # ------------------------------------------------------------- 速度測試
+    def _build_speed_test_row(self) -> QHBoxLayout:
+        """離線翻譯模型下面的「測試速度」：左邊按鈕與狀態，右邊是每個模型的結果表（存檔，下次開設定還在）。"""
+        self.btn_speed_test = QPushButton("測試速度")
+        self.btn_speed_test.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_speed_test.setToolTip(
+            "用 3 句測資（日文一般、日文歌詞、英文），依序載入每個已下載的模型，量這台電腦翻一句要多久。\n"
+            "只算「熱機之後」的推論時間：先預熱（載入、算好固定前綴），再翻一輪不計時，之後計時三輪取中位數。\n"
+            "測試時會載入各模型（0.5B 到 7B），電腦會比較忙，請先停止即時監控；結果會存起來。"
+        )
+        self.btn_speed_test.clicked.connect(self._on_speed_test)
+        self.lbl_speed_test = QLabel()
+        self.lbl_speed_test.setObjectName("SettingsCardDescription")
+        self.lbl_speed_test.setWordWrap(True)
+        left = QWidget()
+        left.setFixedWidth(138)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+        left_layout.addWidget(self.btn_speed_test)
+        left_layout.addWidget(self.lbl_speed_test)
+        left_layout.addStretch(1)
+
+        self.lbl_speed_caption = QLabel("每句翻譯時間（毫秒，熱機後、不含載入與固定前綴）。★ 是目前使用的模型")
+        self.lbl_speed_caption.setObjectName("SettingsCardDescription")
+        self.lbl_speed_caption.setWordWrap(True)
+        columns = ["模型", *(name for name, _text in SPEED_TEST_SENTENCES), "平均", "載入（秒）"]
+        self._speed_columns = columns
+        self.table_speed = QTableWidget(len(OFFLINE_MODELS), len(columns))
+        self.table_speed.setObjectName("SpeedTable")
+        self.table_speed.setHorizontalHeaderLabels(columns)
+        self.table_speed.verticalHeader().setVisible(False)
+        self.table_speed.verticalHeader().setDefaultSectionSize(28)
+        self.table_speed.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table_speed.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.table_speed.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table_speed.setShowGrid(False)
+        self.table_speed.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table_speed.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = self.table_speed.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column in range(1, len(columns)):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setHighlightSections(False)
+        self.table_speed.setFixedHeight(header.height() + 28 * len(OFFLINE_MODELS) + 8)
+        self.table_speed.setMinimumWidth(420)
+        for index, (name, text) in enumerate(SPEED_TEST_SENTENCES, start=1):
+            self.table_speed.horizontalHeaderItem(index).setToolTip(text)
+
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
+        right_layout.addWidget(self.lbl_speed_caption)
+        right_layout.addWidget(self.table_speed)
+        row = QHBoxLayout()
+        row.setSpacing(14)
+        row.addWidget(left, 0, Qt.AlignmentFlag.AlignTop)
+        row.addLayout(right_layout, 1)
+        self._refresh_speed_table()
+        return row
+
+    def _current_offline_model(self) -> str:
+        """設定裡實際使用的離線模型（「自動」會解析成實際的那個）。"""
+        saved = str(self.config.get("translation.offline.model_name", "auto") or "auto")
+        try:
+            return OfflineTranslator({"offline": {"model_name": saved}}).resolved_model_name()
+        except Exception:
+            return saved
+
+    def _speed_cell(self, text: str, *, bold: bool = False, muted: bool = False, tip: str = "") -> QTableWidgetItem:
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if bold:
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+        if muted:
+            item.setForeground(self.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text))
+        if tip:
+            item.setToolTip(tip)
+        return item
+
+    def _refresh_speed_table(self) -> None:
+        """依存檔的結果重畫表格；沒下載的模型標「未下載」，正在測的標「測試中」。"""
+        current = self._current_offline_model()
+        span_width = len(self._speed_columns) - 1
+        for row, model in enumerate(OFFLINE_MODELS):
+            name = model.name
+            result = self._speed_results.get(name)
+            available = llama_model_available(name)
+            title = ("★ " if name == current else "") + short_label(name)
+            label = self._speed_cell(title, bold=name == current, tip=model.label)
+            label.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            self.table_speed.setItem(row, 0, label)
+            for column in range(1, len(self._speed_columns)):
+                if self.table_speed.columnSpan(row, column) > 1:  # 上一次是整列的訊息（未下載、測試中…）：還原成一格一格
+                    self.table_speed.setSpan(row, column, 1, 1)
+                self.table_speed.setItem(row, column, QTableWidgetItem(""))
+            message, muted = "", True
+            if self._speed_testing and name == self._speed_running:
+                message, muted = "測試中…", False
+            elif result is None or result.get("status") == STATUS_MISSING:
+                message = ("等待測試" if self._speed_testing else "尚未測試") if available else "未下載"
+            elif result.get("status") == STATUS_MEMORY:
+                message = "記憶體不足，略過" + (f"（{result['message']}）" if result.get("message") else "")
+            elif result.get("status") == STATUS_ERROR:
+                message = "測試失敗"
+            if message:
+                tip = (result or {}).get("message", "") if result else ""
+                self.table_speed.setSpan(row, 1, 1, span_width)
+                self.table_speed.setItem(row, 1, self._speed_cell(message, muted=muted, tip=tip))
+                continue
+            if result.get("status") == STATUS_OK:
+                times = result.get("ms", {})
+                when = str(result.get("tested_at", "")).replace("T", " ")
+                tip = f"{when}，{result.get('threads', '?')} 執行緒"
+                for index, (group, _text) in enumerate(SPEED_TEST_SENTENCES, start=1):
+                    value = times.get(group)
+                    self.table_speed.setItem(row, index, self._speed_cell("" if value is None else f"{value:,}", tip=tip))
+                self.table_speed.setItem(row, len(SPEED_TEST_SENTENCES) + 1, self._speed_cell(f"{result.get('avg_ms', 0):,}", bold=True, tip=tip))
+                self.table_speed.setItem(row, len(SPEED_TEST_SENTENCES) + 2, self._speed_cell(f"{result.get('load_s', 0):.1f}", tip=tip))
+        self._refresh_speed_label()
+
+    def _refresh_speed_label(self) -> None:
+        if self._speed_testing:
+            return
+        stamps = [str(entry.get("tested_at", "")) for entry in self._speed_results.values() if entry.get("tested_at")]
+        self.lbl_speed_test.setText(f"上次測試：\n{max(stamps).replace('T', ' ')}" if stamps else "尚未測試過")
+
+    def _call_speed_hook(self, index: int) -> None:
+        if self._speed_hooks is None:
+            return
+        try:
+            self._speed_hooks[index]()
+        except Exception:
+            log.exception("速度測試的前置／善後動作失敗")
+
+    def _set_speed_testing(self, testing: bool) -> None:
+        self._speed_testing = testing
+        self.btn_speed_test.setText("停止測試" if testing else "測試速度")
+        self.btn_speed_test.setEnabled(True)
+        if testing:
+            self._speed_timer.start()
+        else:
+            self._speed_timer.stop()
+            self._speed_running = ""
+
+    def _on_speed_test(self) -> None:
+        if self._speed_testing:
+            self._speed_cancel.set()
+            self.btn_speed_test.setEnabled(False)
+            self.lbl_speed_test.setText("停止中…\n（等目前這個模型測完）")
+            return
+        reason = OfflineTranslator.availability_reason()
+        if reason is None and self._speed_guard is not None:
+            reason = self._speed_guard() or None
+        if reason is not None:
+            QMessageBox.information(self, "測試速度", reason)
+            return
+        models = [(model.name, short_label(model.name)) for model in OFFLINE_MODELS if llama_model_available(model.name)]
+        if not models:
+            QMessageBox.information(
+                self,
+                "測試速度",
+                "找不到任何已下載的模型。請先執行 scripts/fetch_translation_models.py 下載（見 DEVELOPMENT.md）。",
+            )
+            return
+        answer = QMessageBox.question(
+            self,
+            "測試速度",
+            f"要依序載入已下載的 {len(models)} 個模型，各翻 3 句來量這台電腦的翻譯時間嗎？\n"
+            "每個模型要載入並預熱數秒到半分鐘（7B 最久），整個測試約需幾分鐘，期間電腦會比較忙。\n"
+            "結果會存起來，下次開設定還看得到。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._speed_cancel = threading.Event()
+        self.destroyed.connect(self._speed_cancel.set)
+        self._speed_messages = queue.Queue()
+        self._call_speed_hook(0)
+        section = copy.deepcopy(self.config.section("translation"))
+        self._speed_thread = threading.Thread(
+            target=_speed_test_thread,
+            args=(section, models, self._speed_cancel, self._speed_messages, self._speed_store),
+            name="speed-test",
+            daemon=True,
+        )
+        self._set_speed_testing(True)
+        self.lbl_speed_test.setText("準備中…")
+        self._speed_thread.start()
+        self._refresh_speed_table()
+
+    def _poll_speed_test(self) -> None:
+        """把測試執行緒送來的進度與結果搬到畫面上（執行緒不直接碰介面）。"""
+        changed = False
+        finished = False
+        while True:
+            try:
+                kind, payload = self._speed_messages.get_nowait()
+            except queue.Empty:
+                break
+            if kind == "progress":
+                self.lbl_speed_test.setText(str(payload))
+            elif kind == "start":
+                self._speed_running = str(payload)
+                changed = True
+            elif kind == "result":
+                self._speed_results[payload["model"]] = payload
+                if self._speed_running == payload["model"]:
+                    self._speed_running = ""
+                changed = True
+            elif kind == "error":
+                QMessageBox.warning(self, "測試速度", f"速度測試中斷：{payload}")
+            elif kind == "done":
+                finished = True
+                stopped = bool(payload)
+        if finished:
+            self._set_speed_testing(False)
+            self._call_speed_hook(1)
+            self._refresh_speed_table()
+            if stopped:
+                self.lbl_speed_test.setText("已停止\n" + self.lbl_speed_test.text())
+            return
+        if changed:
+            self._refresh_speed_table()
 
     def _refresh_cache_count(self) -> None:
         if self._cache_actions is None:

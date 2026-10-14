@@ -392,6 +392,15 @@ class OfflineTranslator(ChineseTargetTranslator):
         self.device = "gpu" if self._llama.gpu_layers else "cpu"
         self.model_name = path.parent.name
 
+    def close(self) -> None:
+        """釋放模型佔用的記憶體（速度測試一個接一個載入不同的模型時需要）；之後再翻譯會重新載入。"""
+        with self._model_lock:
+            engine, self._llama = self._llama, None
+            if engine is not None:
+                close = getattr(engine, "close", None)
+                if callable(close):
+                    close()
+
     def warmup(self) -> None:
         """載入模型、分類詞彙表並翻一句，讓第一次真正翻譯不必等模型載入。"""
         with self._model_lock:

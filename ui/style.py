@@ -98,6 +98,14 @@ QFrame#SettingsCard {
 QFrame#SettingsCard:hover { border-color: #C8DAF3; background: #FDFEFF; }
 QLabel#SettingsCardTitle { color: #2B2F2C; font-size: 15px; font-weight: 700; }
 QLabel#SettingsCardDescription { color: #7A7973; font-size: 12px; }
+QTableWidget#SpeedTable {
+    background: #FFFEFC; color: #313330; border: 1px solid #E1DFD9; border-radius: 8px; font-size: 12px;
+}
+QTableWidget#SpeedTable QHeaderView::section {
+    background: #F5F4F1; color: #6E6D67; border: none; border-bottom: 1px solid #E1DFD9;
+    padding: 4px 6px; font-size: 12px;
+}
+QTableWidget#SpeedTable::item { padding: 2px 6px; border-bottom: 1px solid #F0EFEB; }
 QLabel#PersonalizationHint { color: #77766F; font-size: 12px; }
 QLabel#PersonalizationHint[dirty="true"] { color: #216FD6; }
 QPushButton#SettingsNavButton {

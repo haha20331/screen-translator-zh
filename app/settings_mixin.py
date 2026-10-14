@@ -69,6 +69,8 @@ class SettingsMixin:
             self.config,
             parent=self.window,
             cache_actions=(self.translation_cache_count, self.clear_translation_cache),
+            speed_test_guard=self._speed_test_blocker,
+            speed_test_hooks=(self._release_translation_model, self._reload_translation_model),
         )
         dialog.setWindowFlags(Qt.WindowType.Widget)
         dialog.setMinimumSize(0, 0)
@@ -81,6 +83,25 @@ class SettingsMixin:
             lambda result, page=dialog: self._close_settings_page(page, result)
         )
         self.window.show_settings_page(dialog)
+
+    def _speed_test_blocker(self) -> str:
+        """設定頁的「測試速度」能不能開始：回傳空字串 = 可以；否則是不能測的原因。"""
+        if self._monitor_active:
+            return "即時監控進行中，翻譯會和測試搶 CPU，量出來的數字不準。請先停止即時監控再測。"
+        if self._busy:
+            return "正在處理翻譯，請等它結束再測。"
+        return ""
+
+    def _release_translation_model(self) -> None:
+        """速度測試開始前：把應用程式自己載入的離線模型放掉，騰出記憶體給測試載入各個模型（下次翻譯會自動再載入）。"""
+        close = getattr(self.translator, "close", None)
+        if callable(close):
+            close()
+
+    def _reload_translation_model(self) -> None:
+        """速度測試結束後：背景把原本的模型載回來並預熱，下一句字幕才不必等。"""
+        if not self._shutting_down:
+            self._warmup()
 
     def _begin_settings_exit(self, page: SettingsDialog, result: int) -> None:
         if self._settings_page is not page:
