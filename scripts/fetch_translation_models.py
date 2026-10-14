@@ -62,7 +62,7 @@ MODELS = {
             "qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf",
         ],
         "license": "Apache-2.0",
-        "note": "最大（約 4.7 GB，需要約 6 GB 可用記憶體）。準確度最高，CPU 上每句要好幾倍時間；有 GPU 版的 llama.cpp 時才建議常用。",
+        "note": "最大（約 4.7 GB，需要約 6 GB 可用記憶體）。準確度最高，CPU 上每句要好幾倍時間；有獨立顯示卡時才建議常用。",
     },
 }
 

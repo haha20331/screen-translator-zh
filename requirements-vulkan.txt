@@ -1,0 +1,21 @@
+# Optional (Windows): run the offline translation model on the GPU through Vulkan.
+# Works on Intel, AMD and NVIDIA graphics (an Intel Iris Xe integrated GPU is enough). Not needed for the default CPU setup.
+#
+# Install it AFTER requirements-core.txt. It replaces the CPU build of llama-cpp-python with the Vulkan build
+# from the project's own wheel index (prebuilt, no compiler needed):
+#
+#     python -m pip install -r requirements-core.txt
+#     python -m pip install -r requirements-vulkan.txt
+#
+# With this build installed, translation.offline.gpu_layers = -1 (the default) offloads the whole model to the GPU
+# and falls back to the CPU if the GPU cannot load it. Set gpu_layers to 0 in config.json to stay on the CPU.
+#
+# Back to the CPU build (the CPU and Vulkan wheels have the same version number, so force the reinstall):
+#
+#     python -m pip install --force-reinstall --no-deps --index-url https://abetlen.github.io/llama-cpp-python/whl/cpu llama-cpp-python==0.3.36
+#
+# The version is pinned to the one that was tested; the Vulkan index can be behind the CPU index.
+--index-url https://abetlen.github.io/llama-cpp-python/whl/vulkan
+--extra-index-url https://pypi.org/simple
+--only-binary=llama-cpp-python
+llama-cpp-python==0.3.33

@@ -753,10 +753,10 @@ def test_a_gpu_run_does_not_look_at_the_system_memory(monkeypatch):
     asked = []
     monkeypatch.setattr(module, "_default_translator", lambda section, name, cpu_fallback=True: asked.append(cpu_fallback) or _DeviceTranslator(clock, "gpu"))
     results = run_speed_test(
-        {}, [("m", "m")], sizes=lambda name: 7_000_000_000, memory_available=lambda: 1_000_000_000, clock=clock, gpu=True,
+        {}, [("m", "m")], sizes=lambda name: 7_000_000_000, memory_available=lambda: 1_000_000_000, clock=clock, gpu=True, discrete=True,
     )
 
-    assert results[0]["status"] == STATUS_OK  # 模型放在顯示卡記憶體，系統記憶體只剩 1 GB 也不略過
+    assert results[0]["status"] == STATUS_OK  # 獨立顯示卡：模型放在顯示卡記憶體，系統記憶體只剩 1 GB 也不略過
     assert asked == [False]  # 但 GPU 載不進去的話，系統記憶體也載不進這個模型，就不要退回 CPU
 
 
@@ -764,9 +764,32 @@ def test_a_gpu_run_with_enough_system_memory_may_fall_back_to_the_cpu(monkeypatc
     clock = _Clock()
     asked = []
     monkeypatch.setattr(module, "_default_translator", lambda section, name, cpu_fallback=True: asked.append(cpu_fallback) or _DeviceTranslator(clock, "gpu"))
-    run_speed_test({}, [("m", "m")], sizes=lambda name: 2_000_000_000, memory_available=lambda: 16_000_000_000, clock=clock, gpu=True)
+    run_speed_test({}, [("m", "m")], sizes=lambda name: 2_000_000_000, memory_available=lambda: 16_000_000_000, clock=clock, gpu=True, discrete=True)
 
     assert asked == [True]
+
+
+def test_an_integrated_gpu_shares_the_system_memory_so_the_memory_check_still_applies(monkeypatch):
+    clock = _Clock()
+    made = []
+    monkeypatch.setattr(module, "_default_translator", lambda *a, **k: made.append(a))
+    results = run_speed_test(
+        {}, [("m", "m")], sizes=lambda name: 7_000_000_000, memory_available=lambda: 3_000_000_000, clock=clock, gpu=True, discrete=False,
+    )
+
+    assert results[0]["status"] == STATUS_MEMORY and made == []  # 內顯要載入的模型也是放在系統記憶體裡
+
+
+def test_the_discrete_gpu_is_looked_up_when_not_told(monkeypatch):
+    clock = _Clock()
+    monkeypatch.setattr(module, "_default_translator", lambda *a, **k: _DeviceTranslator(clock, "gpu"))
+    monkeypatch.setattr(module.llama_backend, "discrete_gpu_free_bytes", lambda: 8_000_000_000)
+
+    results = run_speed_test({}, [("m", "m")], sizes=lambda name: 7_000_000_000, memory_available=lambda: 1_000_000_000, clock=clock, gpu=True)
+    monkeypatch.setattr(module.llama_backend, "discrete_gpu_free_bytes", lambda: 0)
+    skipped = run_speed_test({}, [("m", "m")], sizes=lambda name: 7_000_000_000, memory_available=lambda: 1_000_000_000, clock=clock, gpu=True)
+
+    assert results[0]["status"] == STATUS_OK and skipped[0]["status"] == STATUS_MEMORY
 
 
 def test_a_cpu_run_still_skips_models_that_do_not_fit(monkeypatch):

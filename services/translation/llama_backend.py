@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import ctypes
 import importlib.util
+import os
 from collections import OrderedDict
 from pathlib import Path
 
@@ -45,6 +46,70 @@ def gpu_offload_supported() -> bool:
         return bool(llama_cpp.llama_supports_gpu_offload())
     except Exception:  # 函式庫版本太舊沒有這個函式、載入動態函式庫失敗等
         return False
+
+
+# ggml 的運算裝置種類：0 = CPU、1 = GPU（獨立顯示卡，有自己的顯示卡記憶體）、2 = IGPU（內顯，和 CPU 共用同一份記憶體）
+DEVICE_TYPE_GPU = 1
+DEVICE_TYPE_IGPU = 2
+
+
+def _query_devices() -> list[dict]:
+    """問 ggml 有哪些運算裝置：``[{"name", "description", "type", "free", "total"}]``（位元組）。
+    llama-cpp-python 沒有提供這個介面，所以直接呼叫它附帶的 ggml 動態函式庫（``ggml_backend_dev_*``）。"""
+    import llama_cpp
+
+    lib_dir = Path(llama_cpp.__file__).parent / "lib"
+    names = ("ggml.dll", "ggml-base.dll") if os.name == "nt" else ("libggml.so", "libggml-base.so", "libggml.dylib", "libggml-base.dylib")
+    libs = [ctypes.CDLL(str(lib_dir / name)) for name in names if (lib_dir / name).exists()]
+
+    def function(symbol: str):
+        for lib in libs:
+            try:
+                return getattr(lib, symbol)
+            except AttributeError:
+                continue
+        raise AttributeError(symbol)
+
+    count, get = function("ggml_backend_dev_count"), function("ggml_backend_dev_get")
+    kind, name, description, memory = (
+        function("ggml_backend_dev_type"), function("ggml_backend_dev_name"),
+        function("ggml_backend_dev_description"), function("ggml_backend_dev_memory"),
+    )
+    count.restype, get.restype, get.argtypes = ctypes.c_size_t, ctypes.c_void_p, [ctypes.c_size_t]
+    kind.restype, kind.argtypes = ctypes.c_int, [ctypes.c_void_p]
+    name.restype, name.argtypes = ctypes.c_char_p, [ctypes.c_void_p]
+    description.restype, description.argtypes = ctypes.c_char_p, [ctypes.c_void_p]
+    memory.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_size_t)]
+    devices = []
+    for index in range(count()):
+        device = get(index)
+        free, total = ctypes.c_size_t(), ctypes.c_size_t()
+        memory(device, ctypes.byref(free), ctypes.byref(total))
+        devices.append({
+            "name": (name(device) or b"").decode("utf-8", "replace"),
+            "description": (description(device) or b"").decode("utf-8", "replace"),
+            "type": int(kind(device)),
+            "free": int(free.value),
+            "total": int(total.value),
+        })
+    return devices
+
+
+def gpu_devices() -> list[dict]:
+    """目前可用的 GPU 裝置（不含 CPU）；沒有 GPU 版的 llama-cpp-python、或查不到就是空的。"""
+    if not gpu_offload_supported():
+        return []
+    try:
+        return [device for device in _query_devices() if device["type"] in (DEVICE_TYPE_GPU, DEVICE_TYPE_IGPU)]
+    except Exception:  # 函式庫版本沒有這些函式、載入失敗等：當成查不到
+        return []
+
+
+def discrete_gpu_free_bytes() -> int:
+    """獨立顯示卡目前可用的顯示卡記憶體（位元組）；沒有獨立顯示卡（只有內顯）或查不到回傳 0。
+
+    內顯和 CPU 共用系統記憶體，沒有「自己的」顯示卡記憶體可以放大模型，所以不算。"""
+    return max((device["free"] for device in gpu_devices() if device["type"] == DEVICE_TYPE_GPU), default=0)
 
 
 def find_gguf(directory: Path) -> Path | None:

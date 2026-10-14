@@ -121,7 +121,7 @@ class SettingsGlyph(QLabel):
 
 # 離線翻譯模型的選項：(顯示名稱, model_name)；auto 由翻譯器依硬體挑模型
 OFFLINE_MODEL_CHOICES = (
-    ("自動（預設 3B Q4_K_M，沒有下載就用 1.5B；有 GPU 版 llama.cpp 且放了 7B 時用 7B）", "auto"),
+    ("自動（預設 3B Q4_K_M，沒有下載就用 1.5B；有獨立顯示卡且放了 7B 時用 7B）", "auto"),
     *((model.label, model.name) for model in OFFLINE_MODELS),
 )
 

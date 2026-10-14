@@ -201,6 +201,7 @@ def run_speed_test(
     now: Callable[[], datetime.datetime] = datetime.datetime.now,
     rounds: int = TIMED_ROUNDS,
     gpu: bool | None = None,
+    discrete: bool | None = None,
 ) -> list[dict[str, Any]]:
     """依序測 ``models``（``(名稱, 顯示名稱)``）。開始測一個模型時呼叫 ``on_start``，測完（或略過、失敗）就呼叫 ``on_result``（讓畫面與存檔即時更新）；
     ``cancelled()`` 變 True 就在下一個模型（或下一句）之前停止。回傳已完成的結果（含略過與失敗的）。"""
@@ -208,6 +209,8 @@ def run_speed_test(
     fallback = {"ok": True}  # GPU 載入失敗時能不能改用 CPU（電腦的記憶體也載不進去就不能）
     factory = make_translator or (lambda name: _default_translator(translation_section, name, fallback["ok"]))
     use_gpu = gpu_requested(translation_section) if gpu is None else gpu
+    # 只有獨立顯示卡有自己的記憶體；內顯和 CPU 共用系統記憶體，載入模型一樣要吃系統記憶體，記憶體檢查照做
+    own_memory = use_gpu and ((llama_backend.discrete_gpu_free_bytes() > 0) if discrete is None else discrete)
     size_of = sizes or model_bytes
     results: list[dict[str, Any]] = []
     for name, label in models:
@@ -221,13 +224,13 @@ def run_speed_test(
             free = memory_available()
             need = memory_needed(size)
             fits = free is None or free >= need
-            if not fits and not use_gpu:
+            if not fits and not own_memory:
                 result.update(
                     status=STATUS_MEMORY,
                     message=f"可用 {free / 1e9:.1f} GB，需要約 {need / 1e9:.1f} GB",
                 )
             else:
-                # 用 GPU 時模型放在顯示卡記憶體，不看系統記憶體；但 GPU 載不進去、要退回 CPU 的話，系統記憶體不夠就不退了
+                # 獨立顯示卡：模型放在顯示卡記憶體，不看系統記憶體；但 GPU 載不進去、要退回 CPU 的話，系統記憶體不夠就不退了
                 fallback["ok"] = fits
                 if on_start is not None:
                     on_start(name)

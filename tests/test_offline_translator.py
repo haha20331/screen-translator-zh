@@ -16,6 +16,7 @@ from services.translation.offline_translator import (
     _SHOTS,
     DEFAULT_MODEL_NAME,
     FALLBACK_MODEL_NAME,
+    LARGE_MODEL_MIN_GPU_BYTES,
     LARGE_MODEL_NAME,
     OFFLINE_MODELS,
     OfflineTranslator,
@@ -157,18 +158,36 @@ def test_auto_uses_the_3b_default_then_falls_back_to_the_1_5b_that_can_ship_with
     assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 兩個都有：用預設的 3B
 
 
-def test_auto_uses_the_large_model_only_with_gpu_support_and_the_model_file(tmp_path, monkeypatch):
+def test_auto_uses_the_large_model_only_with_a_discrete_gpu_that_has_room_and_the_model_file(tmp_path, monkeypatch):
     models = _isolate(tmp_path, monkeypatch)
     monkeypatch.setattr(llama_backend, "available", lambda: True)
-    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda: 8_000_000_000)
     _make_gguf(models / DEFAULT_MODEL_NAME)
 
-    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 有 GPU 但沒放 7B：用預設的
+    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 有獨立顯示卡但沒放 7B：用預設的
     _make_gguf(models / LARGE_MODEL_NAME)
-    assert _translator().resolved_model_name() == LARGE_MODEL_NAME  # 有 GPU 且放了 7B：用 7B
+    assert _translator().resolved_model_name() == LARGE_MODEL_NAME  # 有獨立顯示卡且放了 7B：用 7B
 
-    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: False)
-    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 放了 7B 但只有 CPU 版：不自動用（太慢）
+    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda: 4_000_000_000)
+    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 顯示卡記憶體放不下 7B：不自動用
+    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda: LARGE_MODEL_MIN_GPU_BYTES)
+    assert _translator().resolved_model_name() == LARGE_MODEL_NAME  # 剛好夠
+    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda: 0)
+    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 只有 CPU 或內顯（內顯和 CPU 共用記憶體，7B 又吃記憶體又慢）：不自動用
+
+
+@pytest.mark.parametrize("supported", [True, False])
+def test_an_integrated_gpu_alone_never_makes_auto_pick_the_7b(tmp_path, monkeypatch, supported):
+    models = _isolate(tmp_path, monkeypatch)
+    _make_gguf(models / DEFAULT_MODEL_NAME)
+    _make_gguf(models / LARGE_MODEL_NAME)
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: supported)
+    monkeypatch.setattr(
+        llama_backend, "_query_devices",
+        lambda: [{"name": "Vulkan0", "description": "Intel(R) Iris(R) Xe Graphics", "type": 2, "free": 7_700_000_000, "total": 8_400_000_000}],
+    )
+
+    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 內顯回報了 7.7 GB 可用，但那是和 CPU 共用的系統記憶體
 
 
 @pytest.mark.parametrize("name", [model.name for model in OFFLINE_MODELS])

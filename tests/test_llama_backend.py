@@ -163,6 +163,100 @@ def test_a_gpu_build_offloads_all_layers_by_default(tmp_path, monkeypatch):
     assert created == [-1] and instance.device == "gpu"
 
 
+def _loaded_translator(tmp_path, monkeypatch, *, gpu_supported, engine_gpu_layers, section=None):
+    model = tmp_path / "m" / "qwen.gguf"
+    model.parent.mkdir()
+    model.write_bytes(b"x")
+
+    class FakeEngine:
+        def __init__(self, path, threads, gpu_layers=0, **kwargs):
+            self.gpu_layers = engine_gpu_layers
+
+    monkeypatch.setattr(llama_backend, "available", lambda: True)
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: gpu_supported)
+    monkeypatch.setattr(llama_backend, "LlamaCppEngine", FakeEngine)
+    instance = OfflineTranslator({"offline": {"model_dir": str(model.parent), **(section or {})}})
+    instance._load()
+    return instance
+
+
+def test_a_cpu_build_is_never_reported_as_running_on_the_gpu(tmp_path, monkeypatch):
+    instance = _loaded_translator(tmp_path, monkeypatch, gpu_supported=False, engine_gpu_layers=8, section={"gpu_layers": 8})
+
+    assert instance.device == "cpu"  # CPU 版收到 gpu_layers > 0 只是忽略，不能標成 GPU
+
+
+def test_the_log_says_which_device_the_model_really_loaded_on(tmp_path, monkeypatch, caplog):
+    import logging
+
+    messages = []
+    with caplog.at_level(logging.INFO, logger="screen_translator.translation.offline"):
+        for name, supported, layers in (("a", True, -1), ("b", True, 0), ("c", False, 0)):
+            (tmp_path / name).mkdir()
+            _loaded_translator(tmp_path / name, monkeypatch, gpu_supported=supported, engine_gpu_layers=layers)
+            messages.append(caplog.records[-1].getMessage())
+    gpu_message, fallback_message, cpu_message = messages
+
+    assert "裝置＝GPU" in gpu_message and "改用 CPU" not in gpu_message
+    assert "裝置＝CPU" in fallback_message and "已改用 CPU" in fallback_message  # 要求用 GPU 卻退回 CPU：要看得出來
+    assert "裝置＝CPU" in cpu_message and "改用 CPU" not in cpu_message
+
+
+def _device(kind, free, total, name="dev"):
+    return {"name": name, "description": name, "type": kind, "free": free, "total": total}
+
+
+def test_only_a_discrete_gpu_counts_as_having_gpu_memory_of_its_own(monkeypatch):
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+    monkeypatch.setattr(
+        llama_backend, "_query_devices",
+        lambda: [
+            _device(0, 5_000_000_000, 16_000_000_000, "CPU"),
+            _device(llama_backend.DEVICE_TYPE_IGPU, 7_700_000_000, 8_400_000_000, "Vulkan0"),
+            _device(llama_backend.DEVICE_TYPE_GPU, 6_000_000_000, 8_000_000_000, "CUDA0"),
+            _device(llama_backend.DEVICE_TYPE_GPU, 9_000_000_000, 12_000_000_000, "CUDA1"),
+        ],
+    )
+
+    assert [d["name"] for d in llama_backend.gpu_devices()] == ["Vulkan0", "CUDA0", "CUDA1"]  # CPU 不算
+    assert llama_backend.discrete_gpu_free_bytes() == 9_000_000_000  # 取記憶體最多的獨立顯示卡；內顯不算
+
+
+def test_an_integrated_gpu_only_machine_has_no_discrete_gpu_memory(monkeypatch):
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+    monkeypatch.setattr(llama_backend, "_query_devices", lambda: [_device(llama_backend.DEVICE_TYPE_IGPU, 7_700_000_000, 8_400_000_000)])
+
+    assert llama_backend.discrete_gpu_free_bytes() == 0
+
+
+def test_no_gpu_build_means_no_gpu_devices_without_even_asking(monkeypatch):
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: False)
+    monkeypatch.setattr(llama_backend, "_query_devices", lambda: pytest.fail("CPU 版不該去問裝置"))
+
+    assert llama_backend.gpu_devices() == [] and llama_backend.discrete_gpu_free_bytes() == 0
+
+
+def test_a_device_query_that_fails_is_treated_as_no_gpu(monkeypatch):
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+
+    def broken():
+        raise AttributeError("ggml_backend_dev_count")  # 這個版本的函式庫沒有這些函式
+
+    monkeypatch.setattr(llama_backend, "_query_devices", broken)
+
+    assert llama_backend.gpu_devices() == [] and llama_backend.discrete_gpu_free_bytes() == 0  # 查不到就保守：不自動升到 7B
+
+
+def test_the_real_device_query_reports_cpu_or_gpu_devices_or_fails_cleanly():
+    pytest.importorskip("llama_cpp")
+
+    devices = llama_backend.gpu_devices()  # 這台電腦裝的是 CPU 版：空的；GPU 版：每個都有名稱與記憶體
+
+    assert isinstance(devices, list)
+    assert all({"name", "type", "free", "total"} <= set(device) for device in devices)
+    assert llama_backend.discrete_gpu_free_bytes() >= 0
+
+
 def test_missing_llama_cpp_python_is_reported(monkeypatch):
     monkeypatch.setattr(llama_backend, "available", lambda: False)
     instance = OfflineTranslator({"offline": {}})

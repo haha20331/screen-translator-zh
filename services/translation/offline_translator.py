@@ -7,8 +7,8 @@
 
 引擎是 llama.cpp（``llama_backend.py``）：CPU 上每句約 0.3 秒（1.5B Q4_K_M）、0.55 秒（3B Q4_K_M），
 比先前的 CTranslate2 快 2～3 倍，品質沒有明顯差異（見 PLAN.md 9.2.7），所以只留這一個引擎。模型有大小之分
-（0.5B／1.5B／3B／7B，見 ``OFFLINE_MODELS``），``model_name`` 設成其中一個；預設 ``auto``：有 GPU 版的 llama.cpp
-且放了 7B 就用 7B，否則用 3B Q4_K_M（真實字幕上和 7B 差不多，只要一半的時間與記憶體），沒有下載 3B 時退回 1.5B Q4_K_M
+（0.5B／1.5B／3B／7B，見 ``OFFLINE_MODELS``），``model_name`` 設成其中一個；預設 ``auto``：有獨立顯示卡（可用顯示卡記憶體
+至少 5.5 GB）且放了 7B 就用 7B，否則用 3B Q4_K_M（真實字幕上和 7B 差不多，只要一半的時間與記憶體），沒有下載 3B 時退回 1.5B Q4_K_M
 （Apache-2.0，可以隨程式散布；3B 是 Qwen Research License，只能請使用者自己下載）。
 
 三個可勾選的輔助功能（設定在 ``translation`` 區段，即時生效、不必重新載入模型）：
@@ -62,7 +62,7 @@ OFFLINE_MODELS: tuple[OfflineModel, ...] = (
     OfflineModel("qwen2.5-1.5b-instruct-gguf-q4_k_m", "Qwen2.5 1.5B・Q4_K_M（最快的實用選擇，可隨程式散布）"),
     OfflineModel("qwen2.5-1.5b-instruct-gguf-q8_0", "Qwen2.5 1.5B・Q8_0（較準，約慢 1.4 倍）"),
     OfflineModel("qwen2.5-3b-instruct-gguf-q4_k_m", "Qwen2.5 3B・Q4_K_M（預設，較準，約慢 2 倍；非商用授權，需自行下載）"),
-    OfflineModel("qwen2.5-7b-instruct-gguf-q4_k_m", "Qwen2.5 7B・Q4_K_M（最準，CPU 上很慢，建議有 GPU 版 llama.cpp 時用）"),
+    OfflineModel("qwen2.5-7b-instruct-gguf-q4_k_m", "Qwen2.5 7B・Q4_K_M（最準，CPU 與內顯上很慢、要 7 GB 記憶體，建議有獨立顯示卡時用）"),
 )
 # 提示詞的版本：改了系統提示詞或示範，譯文就會不同；快取鍵帶著版本，舊提示詞留下的譯文不會被當成新的
 PROMPT_VERSION = 3  # 3：生成時擋掉外文、原文沒有的英文字母與字間空格（見 token_filter），譯文可能與 2 不同
@@ -71,6 +71,9 @@ DEFAULT_MODEL_NAME = "qwen2.5-3b-instruct-gguf-q4_k_m"
 # 備用：Apache-2.0，可以隨程式散布；沒有下載預設的 3B 時用它
 FALLBACK_MODEL_NAME = "qwen2.5-1.5b-instruct-gguf-q4_k_m"
 LARGE_MODEL_NAME = "qwen2.5-7b-instruct-gguf-q4_k_m"
+# auto 自動改用 7B 的條件之一：獨立顯示卡的可用顯示卡記憶體至少這麼多（7B Q4_K_M 約 4.7 GB，再加上快取與緩衝）。
+# 內顯與 CPU 共用系統記憶體，7B 要 6～7 GB、又不會變快，所以內顯不算
+LARGE_MODEL_MIN_GPU_BYTES = 5_500_000_000
 _MAX_HISTORY = 10
 _SKIP_MARKERS = ("[SKIP]", "SKIP")  # 擬聲詞略過的回報標記；沒有英文的原文要擋英文字母，這個標記要放行
 _SAMPLING_SEEDS = (1, 2)  # 重翻用的取樣種子：最多再翻兩次
@@ -251,7 +254,7 @@ class OfflineTranslator(ChineseTargetTranslator):
 
     # ------------------------------------------------------------- 模型選擇
     def resolved_model_name(self) -> str:
-        """實際要用的模型名稱。``auto``：有 GPU 版 llama.cpp 且放了 7B 就用 7B；否則用預設的 3B，
+        """實際要用的模型名稱。``auto``：有獨立顯示卡（可用顯示卡記憶體夠）且放了 7B 就用 7B；否則用預設的 3B，
         沒有 3B 就退回 1.5B；兩個都沒有時回傳預設的 3B（找不到模型的錯誤訊息才會指到推薦的那個）。"""
         if self._resolved_model is not None:
             return self._resolved_model
@@ -259,7 +262,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         name = str(settings.get("model_name") or "auto")
         if name == "auto":
             model_dir = str(settings.get("model_dir") or "")
-            if llama_backend.gpu_offload_supported() and llama_model_available(LARGE_MODEL_NAME, model_dir):
+            if llama_backend.discrete_gpu_free_bytes() >= LARGE_MODEL_MIN_GPU_BYTES and llama_model_available(LARGE_MODEL_NAME, model_dir):
                 name = LARGE_MODEL_NAME
             elif not llama_model_available(DEFAULT_MODEL_NAME, model_dir) and llama_model_available(FALLBACK_MODEL_NAME, model_dir):
                 name = FALLBACK_MODEL_NAME
@@ -390,8 +393,11 @@ class OfflineTranslator(ChineseTargetTranslator):
             self._llama = llama_backend.LlamaCppEngine(path, threads, gpu_layers=layers, **extra)
         except Exception as exc:  # 檔案損毀、記憶體不足等
             raise TranslationError(f"載入 {path.name} 失敗：{exc}") from exc
-        self.device = "gpu" if self._llama.gpu_layers else "cpu"
+        # 只有安裝的 llama-cpp-python 真的支援 GPU，才算在 GPU 上（CPU 版收到 gpu_layers > 0 只是忽略）
+        self.device = "gpu" if self._llama.gpu_layers and llama_backend.gpu_offload_supported() else "cpu"
         self.model_name = path.parent.name
+        fell_back = " （要求用 GPU 但載入失敗，已改用 CPU）" if layers and self.device == "cpu" and llama_backend.gpu_offload_supported() else ""
+        log.info("離線翻譯模型已載入：%s，裝置＝%s%s", path.name, "GPU" if self.device == "gpu" else "CPU", fell_back)
 
     def close(self) -> None:
         """釋放模型佔用的記憶體（速度測試一個接一個載入不同的模型時需要）；之後再翻譯會重新載入。"""
