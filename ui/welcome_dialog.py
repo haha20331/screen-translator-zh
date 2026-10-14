@@ -163,7 +163,7 @@ class WelcomeDialog(QDialog):
         v.setContentsMargins(36, 12, 36, 8)
         v.setSpacing(12)
         body = QLabel(
-            "在主介面頂部選好<strong>源語言</strong>與<strong>目標語言</strong>，"
+            "在主介面頂部選好<strong>輸入語言</strong>與<strong>目標語言</strong>，"
             "點任意截圖方式即可翻譯。\n\n"
             "預設使用內建詞典翻譯，<strong>開箱即用、無需任何配置</strong>；"
             "想要更地道的線上翻譯，可在「設定 → 翻譯」填入對應服務的 API Key，"

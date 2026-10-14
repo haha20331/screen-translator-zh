@@ -77,7 +77,7 @@ from ui.appearance import (
     current_tokens,
 )
 from ui.motion import BASE, ENTER_EASING, EXIT_EASING, MOVE_EASING, SLOW, motion_duration
-from ui.no_wheel import NoWheelDoubleSpinBox, NoWheelSlider, NoWheelSpinBox
+from ui.no_wheel import NoWheelComboBox, NoWheelDoubleSpinBox, NoWheelSlider, NoWheelSpinBox
 from ui.overlay_preview import OverlayPreview
 from ui.personalization import AppearancePreview, PersonalizationChoiceRow
 from utils import stability
@@ -852,10 +852,10 @@ class SettingsDialog(QWidget):
 
     def _build_ocr_tab(self) -> QWidget:
         tab, layout = self._new_page()
-        self.combo_engine = QComboBox()
+        self.combo_engine = NoWheelComboBox()
         for engine in list_ocr_engines():
             self.combo_engine.addItem(engine, engine)
-        self.combo_lang = QComboBox()
+        self.combo_lang = NoWheelComboBox()
         for code, name in LANGUAGES:
             self.combo_lang.addItem(name, code)
         self.spin_confidence = NoWheelDoubleSpinBox()
@@ -888,19 +888,19 @@ class SettingsDialog(QWidget):
     def _build_translation_tab(self) -> QWidget:
         tab, layout = self._new_page()
         form = self._new_form()
-        self.combo_service = QComboBox()
+        self.combo_service = NoWheelComboBox()
         for service in list_translators():
             self.combo_service.addItem(service_display_name(service), service)
         self.combo_service.setToolTip(
             "選擇翻譯服務商；預設 mymemory 為免費詞典翻譯，開箱即用，"
             "填入對應 Key 可獲得更準的線上翻譯。"
         )
-        self.combo_source = QComboBox()
-        self.combo_target = QComboBox()
+        self.combo_source = NoWheelComboBox()
+        self.combo_target = NoWheelComboBox()
         for code, name in LANGUAGES:
             self.combo_source.addItem(name, code)
             self.combo_target.addItem(name, code)
-        self.combo_offline_model = QComboBox()
+        self.combo_offline_model = NoWheelComboBox()
         for label, name in OFFLINE_MODEL_CHOICES:
             self.combo_offline_model.addItem(label, name)
         self.combo_offline_model.setToolTip(
@@ -964,7 +964,7 @@ class SettingsDialog(QWidget):
         self.spin_interval.setSingleStep(0.1)
 
         form.addRow("翻譯服務", self.combo_service)
-        form.addRow("源語言", self.combo_source)
+        form.addRow("輸入語言", self.combo_source)
         form.addRow("目標語言", self.combo_target)
         form.addRow("離線翻譯模型", self.combo_offline_model)
         form.addRow("　速度測試", self._build_speed_test_row())
@@ -1060,13 +1060,13 @@ class SettingsDialog(QWidget):
     def _build_overlay_tab(self) -> QWidget:
         tab, layout = self._new_page()
 
-        self.combo_placement = QComboBox()
+        self.combo_placement = NoWheelComboBox()
         self.combo_placement.addItem("框選區域時，顯示在框的下方（原文保持可見，推薦）", "below")
         self.combo_placement.addItem("蓋在原文上方（取代原文）", "in_place")
-        self.combo_display_mode = QComboBox()
+        self.combo_display_mode = NoWheelComboBox()
         self.combo_display_mode.addItem("僅顯示譯文", False)
         self.combo_display_mode.addItem("原文 + 譯文（兩行對照）", True)
-        self.combo_font = QComboBox()
+        self.combo_font = NoWheelComboBox()
         self.combo_font.addItem("預設字型（自動選擇，推薦）", "")
         self.combo_font.addItems(QFontDatabase.families())
         self.spin_font_size = NoWheelSpinBox()

@@ -33,6 +33,7 @@ from ui.motion import (
     RELEASE_EASING,
     motion_duration,
 )
+from ui.no_wheel import NoWheelComboBox
 from ui.settings_transition import SettingsTransitionGuard
 from utils.language_utils import LANGUAGES
 
@@ -351,7 +352,7 @@ class CaptureActionCard(QPushButton):
 MIN_WINDOW_SIZE = (900, 540)
 # 預設尺寸：寬 980；高度是舊預設（580）的 1.3 倍，放得下更多內容、不必一開就捲動或擠在一起
 DEFAULT_WINDOW_WIDTH = 980
-DEFAULT_WINDOW_HEIGHT = round(580 * 1.3)
+DEFAULT_WINDOW_HEIGHT = 580
 _SCREEN_MARGIN = 80  # 留給工作列與視窗標題列
 
 
@@ -453,15 +454,15 @@ class MainWindow(QWidget):
         option_grid.setContentsMargins(22, 18, 22, 20)
         option_grid.setHorizontalSpacing(18)
         option_grid.setVerticalSpacing(9)
-        labels = ("源語言", "目標語言", "OCR", "翻譯服務")
+        labels = ("輸入語言", "目標語言", "OCR", "翻譯服務")
         for col, label in enumerate(labels):
             caption = QLabel(label)
             caption.setObjectName("SectionLabel")
             option_grid.addWidget(caption, 0, col)
-        self.combo_source = QComboBox()
-        self.combo_target = QComboBox()
-        self.combo_ocr = QComboBox()
-        self.combo_service = QComboBox()
+        self.combo_source = NoWheelComboBox()
+        self.combo_target = NoWheelComboBox()
+        self.combo_ocr = NoWheelComboBox()
+        self.combo_service = NoWheelComboBox()
         for col, combo in enumerate((self.combo_source, self.combo_target, self.combo_ocr, self.combo_service)):
             combo.setMinimumHeight(48)
             option_grid.addWidget(combo, 1, col)
