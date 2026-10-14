@@ -7,8 +7,8 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPropertyAnimation, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QKeySequence, QPainter, QPen, QPixmap
+from PySide6.QtCore import QEvent, QPropertyAnimation, QRect, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontDatabase, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -37,6 +37,7 @@ from app.logger import app_data_dir, get_logger
 from app.version import __version__
 from services.diagnostics import DiagnosticsExportError, export_diagnostics
 from services.ocr.base import list_ocr_engines
+from services.transcript import resolve_directory
 from services.translation.base import list_translators
 from services.translation.factory import service_display_name
 from services.translation.offline_translator import OFFLINE_MODELS, llama_model_available
@@ -619,6 +620,33 @@ class SettingsDialog(QWidget):
         history_form.addRow("歷史目錄", row)
         layout.addWidget(self._card("本地記錄", "歷史記錄只儲存在你選擇的本機目錄。", history_form))
 
+        self.chk_output = QCheckBox("把字幕與譯文寫進 txt 檔（一句字幕一行）")
+        self.chk_output.setToolTip(
+            "每句字幕結束（被下一句取代、消失、停止監控、離開程式）時，寫一行：開始與結束時間、原文、譯文、狀態、"
+            "翻譯用的模型、四角點座標（螢幕絕對座標，物理像素）。一天一個檔案，附加寫入，寫在背景，不會拖慢翻譯。"
+        )
+        self.output_dir = QLineEdit()
+        self.output_dir.setPlaceholderText(str(self._default_output_dir()))
+        pick_output = QPushButton("選擇目錄")
+        pick_output.clicked.connect(self._pick_output_dir)
+        self.btn_open_output = QPushButton("開啟資料夾")
+        self.btn_open_output.clicked.connect(self._open_output_dir)
+        output_row = QHBoxLayout()
+        output_row.addWidget(self.output_dir, 1)
+        output_row.addWidget(pick_output)
+        output_row.addWidget(self.btn_open_output)
+        output_note = QLabel(
+            "檔名是「日期.txt」，UTF-8、欄位以 TAB 分隔，可以用記事本或 Excel 開啟。"
+            "留空 = 預設資料夾。檔案會記下框內出現的所有文字，包括聊天或密碼畫面，請自行留意存放位置。"
+        )
+        output_note.setObjectName("SettingsCardDescription")
+        output_note.setWordWrap(True)
+        output_form = self._new_form()
+        output_form.addRow(self.chk_output)
+        output_form.addRow("輸出資料夾", output_row)
+        output_form.addRow(output_note)
+        layout.addWidget(self._card("文字輸出", "辨識到的字幕、譯文與座標，附加寫入 txt 檔。", output_form))
+
         self.btn_export_diagnostics = QPushButton("匯出診斷日誌")
         self.btn_export_diagnostics.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_export_diagnostics.clicked.connect(self._export_diagnostics)
@@ -1097,6 +1125,8 @@ class SettingsDialog(QWidget):
         self.chk_tray.setChecked(bool(cfg.get("general.minimize_to_tray", True)))
         self.chk_history.setChecked(bool(cfg.get("general.save_history", False)))
         self.history_dir.setText(str(cfg.get("general.history_dir", "")))
+        self.chk_output.setChecked(bool(cfg.get("output.enabled", True)))
+        self.output_dir.setText(str(cfg.get("output.directory", "")))
 
         appearance = copy.deepcopy(DEFAULTS["appearance"])
         appearance.update(cfg.section("appearance"))
@@ -1257,6 +1287,8 @@ class SettingsDialog(QWidget):
             cfg.set("general.minimize_to_tray", self.chk_tray.isChecked())
             cfg.set("general.save_history", self.chk_history.isChecked())
             cfg.set("general.history_dir", self.history_dir.text().strip())
+            cfg.set("output.enabled", self.chk_output.isChecked())
+            cfg.set("output.directory", self.output_dir.text().strip())
 
             appearance = self._personalization_state()
             for key, value in appearance.items():
@@ -1375,6 +1407,25 @@ class SettingsDialog(QWidget):
                 lowered = lowered.replace(source, target)
             portable = lowered.replace("<", "").replace(">", "")
         return QKeySequence.fromString(portable, QKeySequence.SequenceFormat.PortableText)
+
+    def _default_output_dir(self) -> Path:
+        return Path(self.config.path.parent) / "output"
+
+    def _pick_output_dir(self) -> None:
+        start = str(resolve_directory(self.output_dir.text(), self._default_output_dir()))
+        directory = QFileDialog.getExistingDirectory(self, "選擇輸出資料夾", start)
+        if directory:
+            self.output_dir.setText(directory)
+
+    def _open_output_dir(self) -> None:
+        """打開（目前輸入框裡的）輸出資料夾；還沒有就先建立。"""
+        directory = resolve_directory(self.output_dir.text(), self._default_output_dir())
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "輸出資料夾", f"無法建立資料夾：{exc}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
 
     def _pick_history_dir(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, "選擇歷史記錄目錄", self.history_dir.text())

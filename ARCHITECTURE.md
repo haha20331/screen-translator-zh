@@ -9,15 +9,15 @@
 main.py                入口：解析参数、装配 Application、启动 Qt 事件循环
 app/                   UI 无关的"控制器"层（mixin 组合到 Application）
   application.py       Application 主体（组合各 mixin）
-  *_mixin.py           按职责切分的控制器片段（capture / monitor / pipeline / hotkeys / settings / status / history）
+  *_mixin.py           按职责切分的控制器片段（capture / monitor / pipeline / hotkeys / settings / status / history / transcript）
 ui/                    PySide6 视图层（窗口、对话框、覆盖层、托盘）
-services/              领域服务（OCR 后端、翻译后端、截图、更新、诊断）
+services/              领域服务（OCR 后端、翻译后端、截图、更新、诊断、txt 输出 transcript / transcript_writer）
 workers/               后台 worker（翻译线程）
 utils/                纯函数工具（DPI、图像、文本、语言、布局）
 ```
 
 设计上已经用 **mixin 组合**把 `Application` 按职责拆开（`capture_mixin` / `monitor_mixin` /
-`pipeline_mixin` / `hotkeys_mixin` / `settings_mixin` / `status_mixin` / `history_mixin`），
+`pipeline_mixin` / `hotkeys_mixin` / `settings_mixin` / `status_mixin` / `history_mixin` / `transcript_mixin`），
 避免把所有逻辑堆进一个类。
 
 ## 已知结构债（待重构）

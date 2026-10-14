@@ -129,6 +129,7 @@ class PipelineMixin:
             self._set_busy(False)
             self.floating_status.hide_fade(delay_ms=STATUS_HOLD)
             self._auto_start_monitor()
+            self._transcript_finish_single_shot()  # 沒有接著監控：這一句的結束時間不可知，直接寫出
             return
         message = self._pipeline_error or "處理已取消"
         show_dialog = bool(self._pipeline_error)
@@ -203,6 +204,7 @@ class PipelineMixin:
             self._monitor_region_selector.raise_()
         self._pipeline_succeeded = True
         self._commit_stable_text()
+        self._transcript_show(regions, single_shot=not self._monitor_active)
         if failed_count:
             self.set_status(
                 f"識別 {recognized_count} 個文本塊，已翻譯 {translated_count} 個，"

@@ -75,6 +75,8 @@ class TrayIcon(QSystemTrayIcon):
         menu.addAction(self.act_copy_src)
         menu.addAction(self.act_copy_tr)
         menu.addSeparator()
+        self.act_open_output = QAction("開啟輸出資料夾", menu)
+        menu.addAction(self.act_open_output)
         self.act_settings = QAction("開啟設定", menu)
         self.act_about = QAction("關於", menu)
         self.act_quit = QAction("退出", menu)
@@ -92,6 +94,7 @@ class TrayIcon(QSystemTrayIcon):
         self.act_monitor.triggered.connect(self.controller.toggle_monitor)
         self.act_copy_src.triggered.connect(self.controller.copy_original)
         self.act_copy_tr.triggered.connect(self.controller.copy_translation)
+        self.act_open_output.triggered.connect(self.controller.open_output_folder)
         self.act_settings.triggered.connect(self.controller.open_settings)
         self.act_about.triggered.connect(
             getattr(self.controller, "show_about", lambda: None)

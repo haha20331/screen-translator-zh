@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, QRect, Qt, QTimer
+from PySide6.QtCore import QObject, QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMessageBox, QWidget
 
@@ -44,6 +44,7 @@ from app.pipeline_mixin import PipelineMixin
 from app.runtime import main_script, sys_executable
 from app.settings_mixin import SettingsMixin
 from app.status_mixin import StatusMixin
+from app.transcript_mixin import TranscriptMixin
 from app.version import __version__
 from services.ocr.base import OCRUnavailableError, create_ocr_engine, list_ocr_engines
 from services.screenshot_service import ScreenshotService
@@ -87,8 +88,12 @@ class Application(
     CaptureMixin,
     SettingsMixin,
     PipelineMixin,
+    TranscriptMixin,
 ):
     """顶层控制器（生命周期 + 更新；其余职责见各 Mixin）。"""
+
+    # 輸出檔寫不進去時，由寫入執行緒發出（Qt 會排進主執行緒處理）
+    _transcript_problem = Signal(str)
 
     def __init__(self, qt_app: QGuiApplication) -> None:
         super().__init__()
@@ -97,6 +102,7 @@ class Application(
         self._capture_exclusion = CaptureExclusionFilter(qt_app)
         qt_app.installEventFilter(self._capture_exclusion)
         self.config = AppConfig()
+        self._init_transcript()
         self.monitor_map: list[dpi_utils.MonitorInfo] = []
 
         self.screenshot_service = ScreenshotService()
@@ -230,6 +236,7 @@ class Application(
         self._monitor_timer.stop()
         self._no_text_timer.stop()
         self._monitor_active = False
+        self._transcript_shutdown()
         self._dispose_monitor_region()
         self._dispose_selection()
         self._dispose_window_highlight()

@@ -220,6 +220,10 @@ class Translator(ABC):
         讓不同方式的譯文不會互相蓋過；外部直接寫入快取（即時監控的預熱）也要走這個方法。"""
         return source
 
+    def model_label(self) -> str:
+        """記在輸出 txt 裡的「用哪個翻譯」：服務名稱，有模型可選的服務在後面加上模型名稱。"""
+        return self.name
+
     def reset_context(self) -> None:
         """開始一段新的內容（新的擷取、監控開始／停止）時呼叫；有記住上下文的翻譯器在這裡清掉。"""
 

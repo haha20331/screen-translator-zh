@@ -79,6 +79,11 @@
     "show_border": true,
     "min_font_size": 8
   },
+  "output": {
+    "enabled": true,
+    "directory": "",
+    "min_seconds": 0.3
+  },
   "hotkeys": {
     "capture_region": "ctrl+shift+a",
     "capture_fullscreen": "ctrl+shift+f",

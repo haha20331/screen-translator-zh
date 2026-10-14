@@ -178,6 +178,15 @@ DEFAULTS: dict[str, Any] = {
         # 監控中 OCR 連續這麼多秒都抓不到字幕，就自動關閉譯文（推薦 1 秒，0 = 不自動關閉）
         "hide_after_no_text_seconds": 1.0,
     },
+    # 文字輸出：每句字幕（開始、結束時間、原文、譯文、四角點、模型）附加寫進一份 txt，一天一檔。
+    # 字幕結束（被下一句取代、消失、停止監控、離開程式）時才寫，寫下的是最完整的那一版。
+    "output": {
+        "enabled": True,
+        # 留空 = %LOCALAPPDATA%\ScreenTranslator\output\；也可以填其他資料夾
+        "directory": "",
+        # 顯示不到這麼多秒就被下一句取代的字幕（多半是淡入淡出的殘句），狀態欄加上「短暫」；不會丟掉
+        "min_seconds": 0.3,
+    },
     "hotkeys": {
         "capture_region": "ctrl+shift+a",
         "capture_fullscreen": "ctrl+shift+f",
@@ -330,6 +339,23 @@ def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
     monitor["hide_after_no_text_seconds"] = max(0.0, min(30.0, hide_after))
 
 
+def _normalize_output(data: dict[str, Any]) -> None:
+    defaults = DEFAULTS["output"]
+    output = data.get("output")
+    if not isinstance(output, dict):
+        data["output"] = copy.deepcopy(defaults)
+        return
+    if not isinstance(output.get("enabled"), bool):
+        output["enabled"] = defaults["enabled"]
+    directory = output.get("directory", defaults["directory"])
+    output["directory"] = directory.strip() if isinstance(directory, str) else defaults["directory"]
+    try:
+        seconds = float(output.get("min_seconds", defaults["min_seconds"]))
+    except (TypeError, ValueError):
+        seconds = defaults["min_seconds"]
+    output["min_seconds"] = max(0.0, min(10.0, seconds))
+
+
 def _normalize_ocr(data: dict[str, Any], loaded: dict[str, Any]) -> None:
     """Migrate the old Chinese-only OCR default to real automatic detection."""
 
@@ -384,6 +410,7 @@ class AppConfig:
                 _normalize_monitor(self.data, loaded)
                 _normalize_monitor_stability(self.data, loaded)
                 _normalize_overlay(self.data)
+                _normalize_output(self.data)
                 # This legacy field is retained for compatibility; capture
                 # feedback now reads appearance.accent.  Normalize the red
                 # debug value so old files no longer carry misleading state.

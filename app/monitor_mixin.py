@@ -76,6 +76,7 @@ class MonitorMixin:
         self._monitor_idle_hash = ""
         self._monitor_stabilizer = TextStabilizer()
         self._configure_stabilizer()
+        self._transcript_note_monitor(started=True)
         self.set_status("即時監控已開啟，頁面一動就會自動重譯")
         if self.window is not None:
             self.window.set_monitor_checked(True)
@@ -87,6 +88,8 @@ class MonitorMixin:
         if not self._monitor_active:
             return
         self._monitor_active = False
+        self._transcript_end("stop")
+        self._transcript_note_monitor(started=False)
         self._reset_translation_context()
         self._monitor_timer.stop()
         self._no_text_timer.stop()
@@ -237,15 +240,18 @@ class MonitorMixin:
         seconds = max(0.0, min(MAX_NO_TEXT_SECONDS, seconds))
         if seconds <= 0 or not self._monitor_active or self._no_text_timer.isActive():
             return
+        self._transcript_text_gone()  # 字幕大概從這一刻就沒了；計時到了才真的關譯文、結束這一筆
         self._no_text_timer.start(int(round(seconds * 1000)))
 
     def _cancel_no_text_timer(self) -> None:
         """OCR 又抓到字了（不論是新字幕、相同字幕或還在等穩定）：不用關譯文。"""
         self._no_text_timer.stop()
+        self._transcript_text_back()
 
     def _close_translation_after_no_text(self) -> None:
         if not self._monitor_active or self._shutting_down:
             return
+        self._transcript_end("gone")
         if self.overlay_manager is not None:
             self.overlay_manager.clear_all()
             self._sync_overlay_state(False)

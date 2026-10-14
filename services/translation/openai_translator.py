@@ -60,6 +60,9 @@ class OpenAITranslator(Translator):
         custom_glossary = str(config_section.get("glossary", "")) if config_section else ""
         self.glossary = DEFAULT_GLOSSARY + ("\n" + custom_glossary if custom_glossary else "")
 
+    def model_label(self) -> str:
+        return f"{self.name}/{self.model}"
+
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:
         if not self.api_key:
             raise TranslationError(

@@ -324,6 +324,9 @@ class OfflineTranslator(ChineseTargetTranslator):
         tags.append(model_tag(self.resolved_model_name()))  # 不同大小、不同量化的模型譯文不同
         return "|".join([source or "", *tags])
 
+    def model_label(self) -> str:
+        return f"{self.name}/{self.resolved_model_name()}"
+
     def reset_context(self) -> None:
         with self._history_lock:
             self._history.clear()
