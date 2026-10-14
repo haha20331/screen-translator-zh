@@ -154,11 +154,26 @@ def _section_for(translation_section: dict, name: str) -> dict:
     return section
 
 
-def _default_translator(translation_section: dict, name: str):
+def gpu_requested(translation_section: dict) -> bool:
+    """這份設定載入模型時會不會用 GPU：安裝的 llama-cpp-python 要有 GPU 版，而且 ``gpu_layers`` 不是 0
+    （預設 -1 = 全部交給 GPU；預設安裝的 CPU 版沒有 GPU 支援，永遠是 False）。"""
+    if not llama_backend.gpu_offload_supported():
+        return False
+    offline = (translation_section or {}).get("offline", {}) or {}
+    try:
+        return int(offline.get("gpu_layers", -1)) != 0
+    except (TypeError, ValueError):
+        return True
+
+
+def _default_translator(translation_section: dict, name: str, cpu_fallback: bool = True):
     import services.translation.offline_translator  # noqa: F401  （確保已註冊）
     from services.translation.factory import create_translator
 
-    return create_translator("offline", _section_for(translation_section, name), cache=None)
+    section = _section_for(translation_section, name)
+    if not cpu_fallback:
+        section["offline"]["cpu_fallback"] = False
+    return create_translator("offline", section, cache=None)
 
 
 def _release(translator) -> None:
@@ -185,11 +200,14 @@ def run_speed_test(
     clock: Callable[[], float] = time.perf_counter,
     now: Callable[[], datetime.datetime] = datetime.datetime.now,
     rounds: int = TIMED_ROUNDS,
+    gpu: bool | None = None,
 ) -> list[dict[str, Any]]:
     """依序測 ``models``（``(名稱, 顯示名稱)``）。開始測一個模型時呼叫 ``on_start``，測完（或略過、失敗）就呼叫 ``on_result``（讓畫面與存檔即時更新）；
     ``cancelled()`` 變 True 就在下一個模型（或下一句）之前停止。回傳已完成的結果（含略過與失敗的）。"""
     say = progress or (lambda _text: None)
-    factory = make_translator or (lambda name: _default_translator(translation_section, name))
+    fallback = {"ok": True}  # GPU 載入失敗時能不能改用 CPU（電腦的記憶體也載不進去就不能）
+    factory = make_translator or (lambda name: _default_translator(translation_section, name, fallback["ok"]))
+    use_gpu = gpu_requested(translation_section) if gpu is None else gpu
     size_of = sizes or model_bytes
     results: list[dict[str, Any]] = []
     for name, label in models:
@@ -202,15 +220,18 @@ def run_speed_test(
         else:
             free = memory_available()
             need = memory_needed(size)
-            if free is not None and free < need:
+            fits = free is None or free >= need
+            if not fits and not use_gpu:
                 result.update(
                     status=STATUS_MEMORY,
                     message=f"可用 {free / 1e9:.1f} GB，需要約 {need / 1e9:.1f} GB",
                 )
             else:
+                # 用 GPU 時模型放在顯示卡記憶體，不看系統記憶體；但 GPU 載不進去、要退回 CPU 的話，系統記憶體不夠就不退了
+                fallback["ok"] = fits
                 if on_start is not None:
                     on_start(name)
-                result.update(_measure(name, label, factory, say, cancelled, clock, rounds))
+                result.update(_measure(name, label, factory, say, cancelled, clock, rounds, use_gpu))
         if result.get("status") == "cancelled":
             break
         results.append(result)
@@ -219,7 +240,7 @@ def run_speed_test(
     return results
 
 
-def _measure(name: str, label: str, factory, say, cancelled, clock, rounds: int) -> dict[str, Any]:
+def _measure(name: str, label: str, factory, say, cancelled, clock, rounds: int, gpu_wanted: bool = False) -> dict[str, Any]:
     translator = None
     try:
         say(f"{label}：載入並預熱中…")
@@ -246,13 +267,18 @@ def _measure(name: str, label: str, factory, say, cancelled, clock, rounds: int)
         per_sentence = {name_: round(statistics.median(values)) for (name_, _text), values in zip(SPEED_TEST_SENTENCES, times)}
         offline_settings = (getattr(translator, "config", None) or {}).get("offline", {})
         threads = default_threads(int(offline_settings.get("threads", 0) or 0))
-        return {
+        measured: dict[str, Any] = {
             "status": STATUS_OK,
             "ms": per_sentence,
             "avg_ms": round(statistics.mean(per_sentence.values())),
             "load_s": round(load_seconds, 1),
             "threads": threads,
         }
+        device = str(getattr(translator, "device", "") or "")
+        if device:  # 實際用的裝置：要求用 GPU 卻載入失敗退回 CPU 時，數字是 CPU 的，要讓人看得出來
+            measured["device"] = "gpu" if device == "gpu" and gpu_wanted else "cpu"
+            measured["gpu_fallback"] = bool(gpu_wanted and measured["device"] == "cpu")
+        return measured
     except Exception as exc:  # 檔案損毀、記憶體不足、函式庫載入失敗…：記下來，繼續測下一個
         log.warning("速度測試 %s 失敗：%s", name, exc)
         return {"status": STATUS_ERROR, "message": str(exc)[:200]}

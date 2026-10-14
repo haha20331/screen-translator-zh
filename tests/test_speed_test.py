@@ -712,3 +712,96 @@ def test_the_application_frees_and_restores_its_translation_model_around_the_tes
         instance._release_translation_model()  # 沒有翻譯器也不會出錯
     finally:
         instance.floating_status.deleteLater()
+
+
+# ----------------------------------------------------------------------------- GPU
+class _DeviceTranslator(_FakeTranslator):
+    def __init__(self, clock, device):
+        super().__init__(clock, costs=[0.1, 0.1, 0.1])
+        self.device = device
+
+
+@pytest.mark.parametrize(
+    ("supported", "setting", "expected"),
+    [(False, -1, False), (False, 8, False), (True, -1, True), (True, 0, False), (True, 8, True), (True, "abc", True), (True, None, True)],
+)
+def test_the_gpu_is_requested_only_with_a_gpu_build_and_a_non_zero_layer_setting(monkeypatch, supported, setting, expected):
+    monkeypatch.setattr(module.llama_backend, "gpu_offload_supported", lambda: supported)
+    section = {"offline": {} if setting is None else {"gpu_layers": setting}}
+
+    assert module.gpu_requested(section) is expected
+    assert module.gpu_requested({}) is (supported)  # 沒有設定：預設 -1
+
+
+def test_the_device_that_was_really_used_is_recorded(monkeypatch):
+    clock = _Clock()
+    on_gpu, _ = _run(clock, lambda name: _DeviceTranslator(clock, "gpu"), models=[("m", "m")], gpu=True)
+    on_cpu, _ = _run(clock, lambda name: _DeviceTranslator(clock, "cpu"), models=[("m", "m")], gpu=False)
+    fell_back, _ = _run(clock, lambda name: _DeviceTranslator(clock, "cpu"), models=[("m", "m")], gpu=True)
+    mislabeled, _ = _run(clock, lambda name: _DeviceTranslator(clock, "gpu"), models=[("m", "m")], gpu=False)  # CPU 版：翻譯器自稱 gpu
+    unknown, _ = _run(clock, lambda name: _FakeTranslator(clock, costs=[0.1, 0.1, 0.1]), models=[("m", "m")], gpu=False)
+
+    assert (on_gpu[0]["device"], on_gpu[0]["gpu_fallback"]) == ("gpu", False)
+    assert (on_cpu[0]["device"], on_cpu[0]["gpu_fallback"]) == ("cpu", False)
+    assert (fell_back[0]["device"], fell_back[0]["gpu_fallback"]) == ("cpu", True)  # 要求用 GPU 卻退回 CPU：要讓人看得出來
+    assert (mislabeled[0]["device"], mislabeled[0]["gpu_fallback"]) == ("cpu", False)
+    assert "device" not in unknown[0]
+
+
+def test_a_gpu_run_does_not_look_at_the_system_memory(monkeypatch):
+    clock = _Clock()
+    asked = []
+    monkeypatch.setattr(module, "_default_translator", lambda section, name, cpu_fallback=True: asked.append(cpu_fallback) or _DeviceTranslator(clock, "gpu"))
+    results = run_speed_test(
+        {}, [("m", "m")], sizes=lambda name: 7_000_000_000, memory_available=lambda: 1_000_000_000, clock=clock, gpu=True,
+    )
+
+    assert results[0]["status"] == STATUS_OK  # 模型放在顯示卡記憶體，系統記憶體只剩 1 GB 也不略過
+    assert asked == [False]  # 但 GPU 載不進去的話，系統記憶體也載不進這個模型，就不要退回 CPU
+
+
+def test_a_gpu_run_with_enough_system_memory_may_fall_back_to_the_cpu(monkeypatch):
+    clock = _Clock()
+    asked = []
+    monkeypatch.setattr(module, "_default_translator", lambda section, name, cpu_fallback=True: asked.append(cpu_fallback) or _DeviceTranslator(clock, "gpu"))
+    run_speed_test({}, [("m", "m")], sizes=lambda name: 2_000_000_000, memory_available=lambda: 16_000_000_000, clock=clock, gpu=True)
+
+    assert asked == [True]
+
+
+def test_a_cpu_run_still_skips_models_that_do_not_fit(monkeypatch):
+    clock = _Clock()
+    made = []
+    monkeypatch.setattr(module, "_default_translator", lambda *a, **k: made.append(a))
+    results = run_speed_test(
+        {}, [("m", "m")], sizes=lambda name: 7_000_000_000, memory_available=lambda: 1_000_000_000, clock=clock, gpu=False,
+    )
+
+    assert results[0]["status"] == STATUS_MEMORY and made == []
+
+
+def test_the_default_translator_turns_the_cpu_fallback_off_only_when_asked(monkeypatch):
+    captured = []
+    monkeypatch.setattr("services.translation.factory.create_translator", lambda service, section, cache=None: captured.append(section))
+
+    module._default_translator({}, "m")
+    module._default_translator({}, "m", cpu_fallback=False)
+
+    assert "cpu_fallback" not in captured[0]["offline"] and captured[1]["offline"]["cpu_fallback"] is False
+
+
+def test_the_table_names_the_device_each_number_was_measured_on(qapp, tmp_path, downloaded):
+    store = SpeedTestStore(tmp_path / "speed_test.json")
+    store.save_result(_result("qwen2.5-3b-instruct-gguf-q4_k_m", device="gpu", gpu_fallback=False))
+    store.save_result(_result("qwen2.5-1.5b-instruct-gguf-q4_k_m", device="cpu", gpu_fallback=False))
+    store.save_result(_result("qwen2.5-0.5b-instruct-gguf-q8_0", device="cpu", gpu_fallback=True))
+    store.save_result(_result("qwen2.5-1.5b-instruct-gguf-q8_0"))  # 舊版存的結果沒有裝置欄位
+    dialog = SettingsDialog(_config(tmp_path))
+    try:
+        assert _cells(dialog, _row_of("qwen2.5-3b-instruct-gguf-q4_k_m"))[0] == "★ 3B Q4_K_M · GPU"
+        assert _cells(dialog, _row_of("qwen2.5-1.5b-instruct-gguf-q4_k_m"))[0] == "1.5B Q4_K_M · CPU"
+        assert _cells(dialog, _row_of("qwen2.5-0.5b-instruct-gguf-q8_0"))[0] == "0.5B Q8_0 · CPU（GPU 失敗）"
+        assert "GPU" in dialog.table_speed.item(_row_of("qwen2.5-0.5b-instruct-gguf-q8_0"), 0).toolTip()
+        assert _cells(dialog, _row_of("qwen2.5-1.5b-instruct-gguf-q8_0"))[0] == "1.5B Q8_0"  # 沒有紀錄就不亂標
+    finally:
+        dialog.deleteLater()

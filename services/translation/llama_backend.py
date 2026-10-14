@@ -58,8 +58,16 @@ def find_gguf(directory: Path) -> Path | None:
 class LlamaCppEngine:
     """載入一個 GGUF 模型，``complete(prompt, max_tokens)`` 回傳貪婪解碼的文字。"""
 
-    def __init__(self, model_path: Path, threads: int, context_tokens: int = DEFAULT_CONTEXT_TOKENS, gpu_layers: int = 0) -> None:
-        """``gpu_layers``：交給 GPU 的層數（-1 = 全部，0 = 只用 CPU）。GPU 載入失敗（顯示卡記憶體不足等）會退回 CPU。"""
+    def __init__(
+        self,
+        model_path: Path,
+        threads: int,
+        context_tokens: int = DEFAULT_CONTEXT_TOKENS,
+        gpu_layers: int = 0,
+        cpu_fallback: bool = True,
+    ) -> None:
+        """``gpu_layers``：交給 GPU 的層數（-1 = 全部，0 = 只用 CPU）。GPU 載入失敗（顯示卡記憶體不足等）會退回 CPU；
+        ``cpu_fallback=False`` 時不退回、直接丟例外（例如電腦的記憶體也載不進這個模型，退回 CPU 只會把電腦拖垮）。"""
         self.model_path = Path(model_path)
         self.gpu_layers = 0
         try:
@@ -68,6 +76,8 @@ class LlamaCppEngine:
         except Exception as exc:
             if not gpu_layers:
                 raise
+            if not cpu_fallback:
+                raise RuntimeError(f"GPU 載入失敗，而且不改用 CPU（記憶體不夠）：{exc}") from exc
             log.warning("GPU 載入 %s 失敗（%s），改用 CPU", self.model_path.name, exc)
             self._llama = self._open(threads, context_tokens, 0)
         self._init_prefix_cache()

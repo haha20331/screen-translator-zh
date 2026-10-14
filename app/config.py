@@ -92,6 +92,8 @@ DEFAULTS: dict[str, Any] = {
             "model_dir": "",
             # 交給 GPU 的層數：-1 = 有 GPU 版的 llama.cpp 就全部（預設 CPU 版沒有），0 = 只用 CPU
             "gpu_layers": -1,
+            # GPU 載入失敗（顯示卡記憶體不足）時是否改用 CPU。預設是；只有速度測試在電腦記憶體也不夠時才會關掉
+            "cpu_fallback": True,
             # 0 = 自動（最多 6；Intel 混合核心 CPU 上執行緒開太多反而更慢）
             "threads": 0,
             "max_new_tokens": 160,

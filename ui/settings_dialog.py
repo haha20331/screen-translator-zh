@@ -1691,7 +1691,17 @@ class SettingsDialog(QWidget):
             result = self._speed_results.get(name)
             available = llama_model_available(name)
             title = ("★ " if name == current else "") + short_label(name)
-            label = self._speed_cell(title, bold=name == current, tip=model.label)
+            tip = model.label
+            if result is not None and result.get("status") == STATUS_OK and result.get("device"):
+                # 這筆數字是用 CPU 還是 GPU 量的：換了裝置重測會覆蓋舊的，所以要標清楚
+                if result["device"] == "gpu":
+                    title += " · GPU"
+                elif result.get("gpu_fallback"):
+                    title += " · CPU（GPU 失敗）"
+                    tip += "\n要求用 GPU，但載入失敗，改用 CPU 測，這是 CPU 的時間。"
+                else:
+                    title += " · CPU"
+            label = self._speed_cell(title, bold=name == current, tip=tip)
             label.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             self.table_speed.setItem(row, 0, label)
             for column in range(1, len(self._speed_columns)):

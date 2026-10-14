@@ -385,8 +385,9 @@ class OfflineTranslator(ChineseTargetTranslator):
         threads = default_threads(int(self._settings().get("threads", 0)))
         layers = self.gpu_layers()
         log.info("載入離線翻譯模型 %s（threads=%d, gpu_layers=%d）", path, threads, layers)
+        extra = {} if bool(self._settings().get("cpu_fallback", True)) else {"cpu_fallback": False}
         try:
-            self._llama = llama_backend.LlamaCppEngine(path, threads, gpu_layers=layers)
+            self._llama = llama_backend.LlamaCppEngine(path, threads, gpu_layers=layers, **extra)
         except Exception as exc:  # 檔案損毀、記憶體不足等
             raise TranslationError(f"載入 {path.name} 失敗：{exc}") from exc
         self.device = "gpu" if self._llama.gpu_layers else "cpu"

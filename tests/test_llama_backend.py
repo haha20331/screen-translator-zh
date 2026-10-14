@@ -229,6 +229,37 @@ def test_a_cpu_failure_is_not_retried(monkeypatch):
     assert asked == [0]
 
 
+def test_a_gpu_failure_falls_back_to_the_cpu_unless_that_is_switched_off(monkeypatch):
+    asked = _engine_with(monkeypatch, [RuntimeError("out of memory"), object()])
+    llama_backend.LlamaCppEngine("m.gguf", 6, gpu_layers=-1)
+    assert asked == [-1, 0]  # 預設：GPU 載不進去就改用 CPU
+
+    asked = _engine_with(monkeypatch, [RuntimeError("out of memory"), object()])
+    with pytest.raises(RuntimeError, match="不改用 CPU.*out of memory"):
+        llama_backend.LlamaCppEngine("m.gguf", 6, gpu_layers=-1, cpu_fallback=False)
+    assert asked == [-1]  # 速度測試在電腦記憶體也不夠時：寧可失敗，也不要把電腦拖垮
+
+
+def test_the_cpu_fallback_setting_is_only_passed_down_when_it_is_off(tmp_path, monkeypatch):
+    model = tmp_path / "m" / "qwen.gguf"
+    model.parent.mkdir()
+    model.write_bytes(b"x")
+    seen = []
+
+    class FakeEngine:
+        def __init__(self, path, threads, gpu_layers=0, **kwargs):
+            seen.append(kwargs)
+            self.gpu_layers = gpu_layers
+
+    monkeypatch.setattr(llama_backend, "available", lambda: True)
+    monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+    monkeypatch.setattr(llama_backend, "LlamaCppEngine", FakeEngine)
+    OfflineTranslator({"offline": {"model_dir": str(model.parent)}})._load()
+    OfflineTranslator({"offline": {"model_dir": str(model.parent), "cpu_fallback": False}})._load()
+
+    assert seen == [{}, {"cpu_fallback": False}]  # 預設不多傳參數（舊的替身引擎也能用）
+
+
 def test_gpu_support_is_asked_from_the_library(monkeypatch):
     monkeypatch.setattr(llama_backend, "available", lambda: True)
     fake = types.SimpleNamespace(llama_supports_gpu_offload=lambda: True)
