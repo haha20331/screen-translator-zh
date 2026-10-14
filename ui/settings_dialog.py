@@ -911,7 +911,8 @@ class SettingsDialog(QWidget):
         self.btn_clear_cache.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_clear_cache.setToolTip(
             "刪除所有已儲存的翻譯（立刻生效，不必按儲存）。之後遇到同樣的原文會重新翻譯。\n"
-            "換不同的模型做比較時，先清除快取，才不會看到上一個模型留下的譯文。"
+            "換翻譯模型（或翻譯服務）並儲存設定時，程式會自動清空快取，不必手動清除；"
+            "想用同一個模型重新翻譯時，才需要按這個鈕。"
         )
         self.btn_clear_cache.clicked.connect(self._on_clear_cache)
         cache_row = QHBoxLayout()

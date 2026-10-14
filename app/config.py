@@ -105,6 +105,8 @@ DEFAULTS: dict[str, Any] = {
         "google_free_fallback_to_mymemory": True,
         "cache_ttl_days": 30,
         "cache_max_entries": 2000,
+        # 翻譯快取是用哪個模型存的（程式自己記）：換了模型就清空快取
+        "cache_model": "",
         "openai": {
             "api_key": "",
             "base_url": "https://api.openai.com/v1",

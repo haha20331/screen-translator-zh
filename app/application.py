@@ -199,6 +199,8 @@ class Application(
                 cache=self.cache,
                 api_key_resolver=self.config.api_key,
             )
+            if self.reconcile_cache_with_model():
+                self.set_status("翻譯模型和上次不同，已清空翻譯快取")
             self.overlay_manager = OverlayManager(self.config)
             self.overlay_manager.set_monitor_map(self.monitor_map)
 

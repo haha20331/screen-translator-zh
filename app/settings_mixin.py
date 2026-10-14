@@ -127,7 +127,7 @@ class SettingsMixin:
             self.config.set("translation.service", resolved_service)
             self.config.save()
             self.set_status(f"檢測到 API Key，已自動切換到 {resolved_service} 翻譯服務")
-        self.translator = self._build_translator()
+        cleared = self._rebuild_translator()
         self._forget_displayed_translations()  # 可能換了模型：畫面上舊模型的譯文不能被寫進新模型的快取
         self._warmup()
         if self.overlay_manager is not None:
@@ -141,7 +141,7 @@ class SettingsMixin:
         self._apply_transcript_settings()
         if self.window is not None:
             self.window.reload_values()
-        self.set_status("設定已儲存")
+        self.set_status("設定已儲存" + (f"（換了翻譯模型，已清空翻譯快取 {cleared} 句）" if cleared else ""))
 
     def apply_runtime_selection(
         self,
@@ -172,14 +172,57 @@ class SettingsMixin:
             self.config.set("translation.target_language", target)
         self.config.save()
         self.ocr_engine = self._create_configured_ocr_engine()
-        self.translator = self._build_translator()
+        cleared = self._rebuild_translator()
         self._warmup()
         if self.window is not None:
             self.window.reload_values()
         self.set_status(
             f"已切換：OCR={self._active_ocr_engine_name} 翻譯={self.config.get('translation.service')} "
             f"目標={self.config.get('translation.target_language')}"
+            + (f"（換了翻譯模型，已清空翻譯快取 {cleared} 句）" if cleared else "")
         )
+
+    def _translator_label(self) -> str:
+        """目前翻譯器用的模型（``offline/<模型名稱>``、``openai/<model>``…）；沒有翻譯器就是空字串。"""
+        translator = getattr(self, "translator", None)
+        try:
+            return str(translator.model_label()) if translator is not None else ""
+        except Exception:
+            return ""
+
+    def _rebuild_translator(self) -> int:
+        """重建翻譯器；**換了模型（或翻譯服務）就把翻譯快取清空**，回傳清掉幾句（沒換或沒有快取回傳 0）。
+
+        快取的鍵本來就帶著模型名稱，不同模型的譯文不會互相蓋過；清空是為了換模型比較時，
+        不會看到、也不會混進上一個模型留下的譯文。設定沒變時 ``_build_translator`` 會重用同一個翻譯器，不會清。"""
+        previous = self._translator_label()
+        self.translator = self._build_translator()
+        return self._clear_cache_if_model_changed(previous)
+
+    def _clear_cache_if_model_changed(self, previous: str) -> int:
+        current = self._translator_label()
+        self._remember_cache_model(current)
+        if not previous or not current or previous == current or self.cache is None:
+            return 0
+        removed = self.cache.clear()
+        self._forget_displayed_translations()
+        log.info("翻譯模型從 %s 換成 %s，已清空翻譯快取（%d 句）", previous, current, removed)
+        return removed
+
+    def _remember_cache_model(self, label: str) -> None:
+        """記下快取是用哪個模型存的（存進設定檔）：下次啟動時模型變了（例如下載了 3B、自動選擇的結果不同）也能清空。"""
+        if not label or self.config.get("translation.cache_model", "") == label:
+            return
+        self.config.set("translation.cache_model", label)
+        try:
+            self.config.save()
+        except OSError as exc:
+            log.warning("無法儲存快取所屬的模型：%s", exc)
+
+    def reconcile_cache_with_model(self) -> int:
+        """啟動時：設定檔記的快取模型和這次的不同，就清空快取。第一次（沒有紀錄）只記下來，不清。"""
+        stored = str(self.config.get("translation.cache_model", "") or "")
+        return self._clear_cache_if_model_changed(stored)
 
     def _build_translator(self):
         """建立翻譯器；離線翻譯的設定沒變時重用現有實例，避免重複載入數 GB 的模型。"""
