@@ -189,12 +189,6 @@ QLabel#AboutVersion { color: #76756F; font-size: 13px; }
 QLabel#AboutTagline { color: #4F514D; font-size: 13px; }
 QLabel#AboutRepo { color: #4F514D; font-size: 13px; }
 QLabel#ShortcutName { color: #2B2F2C; font-size: 14px; }
-QFrame#ExampleCard {
-    background: #FFFEFC; border: 1px solid #E4E1DA; border-radius: 14px;
-}
-QLabel#ExampleSource { color: #76756F; font-size: 13px; }
-QLabel#ExampleTarget { color: #252826; font-size: 18px; font-weight: 600; }
-QLabel#ExampleHint { color: #76756F; font-size: 12px; }
 """
 
 
