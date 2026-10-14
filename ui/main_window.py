@@ -350,7 +350,7 @@ class CaptureActionCard(QPushButton):
             painter.drawLine(line_x, rect.bottom() - 10, line_x + line_width, rect.bottom() - 10)
 
 MIN_WINDOW_SIZE = (900, 540)
-# 預設尺寸：寬 980；高度是舊預設（580）的 1.3 倍，放得下更多內容、不必一開就捲動或擠在一起
+# 預設尺寸：980×580。（曾經放大到 1.3 倍＝754；刪掉主視窗的「譯文長這樣」範例卡之後內容變少，高度改回 580）
 DEFAULT_WINDOW_WIDTH = 980
 DEFAULT_WINDOW_HEIGHT = 580
 _SCREEN_MARGIN = 80  # 留給工作列與視窗標題列
