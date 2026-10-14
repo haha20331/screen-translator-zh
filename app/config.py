@@ -87,7 +87,7 @@ DEFAULTS: dict[str, Any] = {
         # 離線翻譯（Qwen2.5-Instruct，llama.cpp / GGUF）；model_dir 留空 = 自動尋找 models/translation/
         "offline": {
             # 模型名稱（見 services/translation/offline_translator.OFFLINE_MODELS，由小到大 0.5B／1.5B／3B／7B）。
-            # auto：有 GPU 版的 llama.cpp 且放了 7B 就用 7B，否則用 1.5B Q4_K_M
+            # auto：有 GPU 版的 llama.cpp 且放了 7B 就用 7B，否則用 3B Q4_K_M，沒有下載 3B 就用 1.5B Q4_K_M
             "model_name": "auto",
             "model_dir": "",
             # 交給 GPU 的層數：-1 = 有 GPU 版的 llama.cpp 就全部（預設 CPU 版沒有），0 = 只用 CPU

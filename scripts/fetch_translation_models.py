@@ -4,7 +4,7 @@
 （``pip install huggingface_hub``，開發環境已有）::
 
     python scripts/fetch_translation_models.py --list
-    python scripts/fetch_translation_models.py                                  # 預設模型（Qwen2.5-1.5B Q4_K_M）
+    python scripts/fetch_translation_models.py                                  # 預設的 3B Q4_K_M 加上備用的 1.5B Q4_K_M
     python scripts/fetch_translation_models.py --model qwen2.5-7b-instruct-gguf-q4_k_m qwen2.5-0.5b-instruct-gguf-q8_0
 
 來源版本固定在 ``MODELS`` 的 ``revision``，每個模型資料夾附上 ``manifest.json``（來源、授權、SHA-256）
@@ -20,7 +20,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MODEL = "qwen2.5-1.5b-instruct-gguf-q4_k_m"
+DEFAULT_MODEL = "qwen2.5-3b-instruct-gguf-q4_k_m"  # 程式預設使用的模型（授權：Qwen Research License，不隨程式散布）
+FALLBACK_MODEL = "qwen2.5-1.5b-instruct-gguf-q4_k_m"  # 備用（Apache-2.0，可隨程式散布）：沒有下載 3B 時使用
 
 # 同一個 Qwen2.5-Instruct 系列，大小與量化不同：越大越準也越慢、越吃記憶體。
 # ``files`` 有多個時是官方分片（llama.cpp 讀第一片就會自動找到其餘的）。
@@ -37,7 +38,7 @@ MODELS = {
         "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
         "files": ["qwen2.5-1.5b-instruct-q4_k_m.gguf"],
         "license": "Apache-2.0",
-        "note": "預設。4 位元量化（約 1.1 GB），速度與品質的平衡。",
+        "note": "備用，沒有 3B 時使用。4 位元量化（約 1.1 GB），最快的實用選擇，Apache-2.0 可隨程式散布。",
     },
     "qwen2.5-1.5b-instruct-gguf-q8_0": {
         "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
@@ -51,7 +52,7 @@ MODELS = {
         "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe",
         "files": ["qwen2.5-3b-instruct-q4_k_m.gguf"],
         "license": "Qwen Research License（僅限非商用）",
-        "note": "較大（約 2.1 GB），比 1.5B 準、約慢 2 倍。授權不是 Apache-2.0，散布前請閱讀隨附的 LICENSE。",
+        "note": "預設。約 2.1 GB，比 1.5B 準、約慢 2 倍，真實字幕上和 7B 差不多。授權不是 Apache-2.0（僅限研究與評估），不隨程式散布，請閱讀隨附的 LICENSE。",
     },
     "qwen2.5-7b-instruct-gguf-q4_k_m": {
         "repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
@@ -110,7 +111,7 @@ def fetch(name: str, out_root: Path, force: bool) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", nargs="+", default=[DEFAULT_MODEL], choices=sorted(MODELS), help="要取得的模型（可以多個）")
+    parser.add_argument("--model", nargs="+", default=[DEFAULT_MODEL, FALLBACK_MODEL], choices=sorted(MODELS), help="要取得的模型（可以多個）；預設是 3B 加 1.5B")
     parser.add_argument("--out", type=Path, default=ROOT / "models" / "translation")
     parser.add_argument("--list", action="store_true", help="列出可取得的模型")
     parser.add_argument("--force", action="store_true", help="已存在時重新下載")

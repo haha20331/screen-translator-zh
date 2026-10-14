@@ -84,6 +84,39 @@ def has_spaced_out_chars(text: str) -> bool:
     return bool(_SPACED_OUT_RE.search(text or ""))
 
 
+_SYMBOL_RUN_RE = re.compile(r"([#*=_~`|<>^\\/])\1{2,}")
+
+
+# 程式碼與標記語言才常見、中文譯文不該出現的 ASCII 符號（原文有的不算：原文有 "引號" 或 (括號) 時譯文照樣保留是對的）
+_CODE_SYMBOLS = frozenset("\"';(){}[]<>\\|")
+
+
+def has_symbol_run(output: str, source: str = "") -> bool:
+    """譯文裡有連續三個以上相同的符號（``######``、``****``）：模型選字被限制、找不到合適的字時的亂碼。
+    原文本身就有的（分隔線 ====）不算。"""
+    return any(match.group(0) not in (source or "") for match in _SYMBOL_RUN_RE.finditer(output or ""))
+
+
+def _stray_code_symbols(output: str, source: str) -> list[str]:
+    known = set(unicodedata.normalize("NFKC", source or ""))
+    return [char for char in output or "" if char in _CODE_SYMBOLS and char not in known]
+
+
+def has_symbol_junk(output: str, source: str = "") -> bool:
+    """譯文尾巴出現 ``!");``、``######`` 這類亂碼：好的字被擋掉、模型又找不到替代時，偶爾會退而求其次寫出一串符號。
+    連續三個以上相同的符號，或兩個以上原文沒有的程式碼符號（引號、括號、分號、角括號、豎線）。"""
+    return has_symbol_run(output, source) or len(_stray_code_symbols(output, source)) >= 2
+
+
+def strip_symbol_junk(output: str, source: str = "") -> str:
+    """重翻也救不回來時的最後手段：把亂碼符號拿掉（譯文本身可能還是不通順，但至少不會顯示 ``!");``）。"""
+    if not has_symbol_junk(output, source):
+        return output
+    stray = set(_stray_code_symbols(output, source))
+    cleaned = _SYMBOL_RUN_RE.sub(lambda m: m.group(0) if m.group(0) in (source or "") else "", output)
+    return "".join(char for char in cleaned if char not in stray).strip()
+
+
 def unexpected_latin_words(source: str, output: str) -> list[str]:
     """譯文裡原文沒有的英文單字（3 個字母以上）。原文本來就有的（HP、Ctrl、Windows）不算；
     「HP」「MP」這種兩個字母的縮寫也不算。"""

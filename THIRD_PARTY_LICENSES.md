@@ -25,8 +25,8 @@
 |---|---|---|
 | PP-OCRv6（偵測與辨識，隨 `rapidocr` 套件安裝） | 隨套件：Apache-2.0 | 模型源自 PaddleOCR（Apache-2.0）；PP-OCRv6 模型卡尚未逐一核對 |
 | Qwen2.5-0.5B-Instruct GGUF（Q8_0） | Apache-2.0 | `Qwen/Qwen2.5-0.5B-Instruct-GGUF` @ `9217f5db79a29953eb74d5343926648285ec7e67`（官方釋出，未轉換） |
-| Qwen2.5-1.5B-Instruct GGUF（Q4_K_M 預設、Q8_0） | Apache-2.0 | `Qwen/Qwen2.5-1.5B-Instruct-GGUF` @ `91cad51170dc346986eccefdc2dd33a9da36ead9`（官方釋出，未轉換） |
-| Qwen2.5-3B-Instruct GGUF（Q4_K_M，選用） | **Qwen Research License（僅限研究與評估，非 Apache-2.0）** | `Qwen/Qwen2.5-3B-Instruct-GGUF` @ `7dabda4d13d513e3e842b20f0d435c732f172cbe`；授權檔隨模型資料夾。**不建議隨程式散布**：授權把「非商用」定義為「僅供研究或評估」，並有散布條件，請使用者自行下載（`scripts/fetch_translation_models.py`） |
+| Qwen2.5-1.5B-Instruct GGUF（Q4_K_M 備用、Q8_0） | Apache-2.0 | `Qwen/Qwen2.5-1.5B-Instruct-GGUF` @ `91cad51170dc346986eccefdc2dd33a9da36ead9`（官方釋出，未轉換） |
+| Qwen2.5-3B-Instruct GGUF（Q4_K_M，**程式預設使用，但不隨程式散布**） | **Qwen Research License（僅限研究與評估，非 Apache-2.0）** | `Qwen/Qwen2.5-3B-Instruct-GGUF` @ `7dabda4d13d513e3e842b20f0d435c732f172cbe`；授權檔隨模型資料夾。**不隨程式散布**：授權把「非商用」定義為「僅供研究或評估」，並有散布條件，所以預設使用它，但由使用者自己下載（`scripts/fetch_translation_models.py`，預設就是取得 3B 與 1.5B）；沒有下載時程式自動改用可以散布的 1.5B（Apache-2.0） |
 | Qwen2.5-7B-Instruct GGUF（Q4_K_M，選用） | Apache-2.0 | `Qwen/Qwen2.5-7B-Instruct-GGUF` @ `bb5d59e06d9551d752d08b292a50eb208b07ab1f`（官方釋出，分成兩個檔） |
 
 每個模型資料夾內有 `manifest.json`（來源、版本、授權、SHA-256）與原模型的授權檔 `LICENSE`，隨程式一起散布時請保留。

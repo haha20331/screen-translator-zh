@@ -147,29 +147,33 @@ def run_worker(name: str, threads: int, reps: int, out: Path) -> None:
 
         translator._llama.complete = counting_complete  # 數每句進了幾次模型（大於 1 = 有重翻）
 
-        rows = []
-        for group, sentences in CORPUS.items():
-            for sentence in sentences:
-                times, output, used = [], "", 0
-                for _ in range(reps):
+        # 重複量測要「整批句子」輪流跑（外圈是第幾輪），不能同一句連續翻好幾次：連續翻同一句時提示詞完全相同，
+        # llama.cpp 會直接重用上一次的 KV 快取、幾乎不用預填，量出來會比真實的字幕（每句都不同）樂觀很多
+        collected: dict[str, dict] = {}
+        for _ in range(reps):
+            for group, sentences in CORPUS.items():
+                for sentence in sentences:
                     calls[0] = 0
                     start = time.perf_counter()
                     output = translator.translate([sentence], "auto", "zh-hant")[0]
-                    times.append((time.perf_counter() - start) * 1000)
-                    used = calls[0]
+                    elapsed = (time.perf_counter() - start) * 1000
+                    entry = collected.setdefault(sentence, {"group": group, "times": []})
+                    entry.update(output=output, calls=calls[0])
+                    entry["times"].append(elapsed)
                     translator.reset_context()
-                rows.append(
-                    {
-                        "group": group,
-                        "source": sentence,
-                        "output": output,
-                        "ms": times[0] if reps == 1 else statistics.median(times),
-                        "calls": used,
-                        "kana": has_kana(output),
-                        "not_chinese": looks_not_chinese(sentence, output) and group != "擬聲詞",
-                        "skipped": output == sentence and group == "擬聲詞",
-                    }
-                )
+        rows = [
+            {
+                "group": entry["group"],
+                "source": sentence,
+                "output": entry["output"],
+                "ms": entry["times"][0] if reps == 1 else statistics.median(entry["times"]),
+                "calls": entry["calls"],
+                "kana": has_kana(entry["output"]),
+                "not_chinese": looks_not_chinese(sentence, entry["output"]) and entry["group"] != "擬聲詞",
+                "skipped": entry["output"] == sentence and entry["group"] == "擬聲詞",
+            }
+            for sentence, entry in collected.items()
+        ]
     out.write_text(
         json.dumps(
             {"name": name, "threads": threads, "load_seconds": load_seconds, "rss_mb": rss,
@@ -243,7 +247,8 @@ def write_report(results: list[dict], path: Path, reps: int) -> None:
         f"- 日期：{datetime.date.today().isoformat()}",
         f"- 環境：{platform.system()} {platform.release()}，{platform.processor() or platform.machine()}，{os.cpu_count()} 個邏輯處理器；{engine}；Python {platform.python_version()}",
         f"- 方法：每個模型各在獨立行程裡跑同一批 {sum(len(v) for v in CORPUS.values())} 句、每句單獨翻譯（和即時監控一樣）、"
-        f"執行緒 {results[0]['threads']}、每句重複 {reps} 次取中位數；不使用翻譯快取；提示詞、上下文與歌詞模式關閉、擬聲詞略過與「譯文不是中文時重翻」開啟（預設）",
+        f"執行緒 {results[0]['threads']}、整批句子輪流重複 {reps} 輪、每句取中位數（不連續翻同一句：同一句的提示詞完全相同時 llama.cpp 會直接重用快取，量出來太樂觀）；"
+        "不使用翻譯快取；提示詞、上下文與歌詞模式關閉、擬聲詞略過與「避免譯文夾雜外文／不是中文時重翻」開啟（預設）",
         "- 注意：耗時是在一台同時還開著其他程式的電腦上量的，同一個設定前後可以差一倍；請看比例，不要看絕對值",
         "",
         "## 耗時與記憶體",
@@ -277,7 +282,7 @@ def write_report(results: list[dict], path: Path, reps: int) -> None:
         "",
         "## 譯文品質的機器指標（粗略）",
         "",
-        f"基準：{short[default['name']]}（預設模型）。譯文相同只是「和基準一樣」，不代表比較好或比較差；真正的品質請看下一節的並排比較。",
+        f"基準：{short[default['name']]}（最快的實用模型，拿來當基準）。譯文相同只是「和基準一樣」，不代表比較好或比較差；真正的品質請看下一節的並排比較。",
         "",
         "| 模型 | 譯文仍夾雜假名／外文／多餘英文單字 | 擬聲詞略過 | 和基準譯文相同 |",
         "|---|---|---|---|",
@@ -306,7 +311,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS, help="要比較的模型（第一個是品質比較的基準）")
     parser.add_argument("--threads", nargs="+", type=int, default=[6], help="執行緒數（每個設定各跑一次）")
-    parser.add_argument("--reps", type=int, default=1, help="每句重複幾次取中位數（預設 1：第一次，和實際使用一樣）")
+    parser.add_argument("--reps", type=int, default=1, help="整批句子輪流重複幾輪、每句取中位數（預設 1：只量一輪）")
     parser.add_argument("--report", type=Path, help="另外把結果存成 Markdown 報表（耗時表、品質指標、10 句並排比較）")
     parser.add_argument("--worker", help=argparse.SUPPRESS)
     parser.add_argument("--out", type=Path, help=argparse.SUPPRESS)

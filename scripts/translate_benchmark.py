@@ -50,12 +50,14 @@ def similarity(candidate: str, reference: str) -> float:
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):  # Windows 預設編碼（cp950）印不出所有字；導向檔案時用 UTF-8，終端機則不丟例外
+        sys.stdout.reconfigure(errors="replace") if sys.stdout.isatty() else sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--images", type=Path, required=True, help="含圖片（與可選的同名參考譯文 .txt）的資料夾")
     parser.add_argument(
         "--model",
         default="auto",
-        help="離線翻譯的模型名稱（見 scripts/fetch_translation_models.py --list）；預設 auto = 1.5B Q4_K_M",
+        help="離線翻譯的模型名稱（見 scripts/fetch_translation_models.py --list）；預設 auto = 3B Q4_K_M（沒有下載就用 1.5B）",
     )
     parser.add_argument("--threads", type=int, default=0, help="推論執行緒數（0 = 自動）")
     args = parser.parse_args()

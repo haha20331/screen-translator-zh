@@ -5,17 +5,19 @@
 - NLLB-200（600M / 1.3B）對字幕、遊戲對白這類短句常誤譯，詞表缺字還會輸出 ``⁇``，已不再使用。
 - Qwen2.5-Instruct 加上示範（few-shot）後穩定且自然。
 
-引擎是 llama.cpp（``llama_backend.py``）：CPU 上每句約 0.3 秒（1.5B Q4_K_M），比先前的 CTranslate2 快 2～3 倍，
-品質沒有明顯差異（見 PLAN.md 9.2.7），所以只留這一個引擎。模型有大小之分（0.5B／1.5B／3B／7B，見
-``OFFLINE_MODELS``），``model_name`` 設成其中一個；預設 ``auto``：有 GPU 版的 llama.cpp 且放了 7B 就用 7B，
-否則用 1.5B Q4_K_M。
+引擎是 llama.cpp（``llama_backend.py``）：CPU 上每句約 0.3 秒（1.5B Q4_K_M）、0.55 秒（3B Q4_K_M），
+比先前的 CTranslate2 快 2～3 倍，品質沒有明顯差異（見 PLAN.md 9.2.7），所以只留這一個引擎。模型有大小之分
+（0.5B／1.5B／3B／7B，見 ``OFFLINE_MODELS``），``model_name`` 設成其中一個；預設 ``auto``：有 GPU 版的 llama.cpp
+且放了 7B 就用 7B，否則用 3B Q4_K_M（真實字幕上和 7B 差不多，只要一半的時間與記憶體），沒有下載 3B 時退回 1.5B Q4_K_M
+（Apache-2.0，可以隨程式散布；3B 是 Qwen Research License，只能請使用者自己下載）。
 
 三個可勾選的輔助功能（設定在 ``translation`` 區段，即時生效、不必重新載入模型）：
 - ``use_context``：記住最近 ``context_size`` 句（預設 2）已翻好的原文與譯文，放在提示詞裡當前文，
   讓代名詞、省略的主語、同一首歌的語氣前後一致。
 - ``lyrics_mode``：告訴模型這是歌詞，改用歌詞的系統提示與示範（較自然、有詩意，不逐字直譯）。
-- ``retry_non_chinese``（預設開）：譯文不是中文（殘留日文假名、不該略過的句子被回報略過）時，
-  改用一般提示再翻一次；關閉就只進模型一次，翻出什麼就輸出什麼（較快）。
+- ``retry_non_chinese``（預設開）：生成的當下就擋掉外文、原文沒有的英文字母與字間空格（``token_filter``），
+  模型選不到這些字，大多數句子就不必重翻；仍然不是中文（殘留日文假名、不該略過的句子被回報略過）時，
+  再改用取樣重翻；關閉就完全不干涉，只進模型一次，翻出什麼就輸出什麼（較快）。
 
 流程：依文字判斷來源語言（假名→日文、拉丁字母→英文）→ 逐句交給模型 →
 整理輸出 → 以 OpenCC ``s2twp`` 轉成台灣繁體（目標為簡體 ``zh`` 時則轉簡體）。
@@ -42,8 +44,9 @@ from services.translation.offline_common import (
     looks_not_chinese,
     model_search_paths,
 )
+from services.translation.token_filter import bans_for
 from utils import chinese
-from utils.language_utils import detect_source_language, has_kana
+from utils.language_utils import detect_source_language, has_kana, strip_symbol_junk
 
 log = get_logger("translation.offline")
 
@@ -56,16 +59,20 @@ class OfflineModel(NamedTuple):
 # 可選的模型，由小到大（同一個 Qwen2.5-Instruct 系列；取得方式見 scripts/fetch_translation_models.py）
 OFFLINE_MODELS: tuple[OfflineModel, ...] = (
     OfflineModel("qwen2.5-0.5b-instruct-gguf-q8_0", "Qwen2.5 0.5B・Q8_0（最小最快，日文品質較差）"),
-    OfflineModel("qwen2.5-1.5b-instruct-gguf-q4_k_m", "Qwen2.5 1.5B・Q4_K_M（預設，速度與品質平衡）"),
+    OfflineModel("qwen2.5-1.5b-instruct-gguf-q4_k_m", "Qwen2.5 1.5B・Q4_K_M（最快的實用選擇，可隨程式散布）"),
     OfflineModel("qwen2.5-1.5b-instruct-gguf-q8_0", "Qwen2.5 1.5B・Q8_0（較準，約慢 1.4 倍）"),
-    OfflineModel("qwen2.5-3b-instruct-gguf-q4_k_m", "Qwen2.5 3B・Q4_K_M（更準，約慢 2 倍，非商用授權）"),
+    OfflineModel("qwen2.5-3b-instruct-gguf-q4_k_m", "Qwen2.5 3B・Q4_K_M（預設，較準，約慢 2 倍；非商用授權，需自行下載）"),
     OfflineModel("qwen2.5-7b-instruct-gguf-q4_k_m", "Qwen2.5 7B・Q4_K_M（最準，CPU 上很慢，建議有 GPU 版 llama.cpp 時用）"),
 )
 # 提示詞的版本：改了系統提示詞或示範，譯文就會不同；快取鍵帶著版本，舊提示詞留下的譯文不會被當成新的
-PROMPT_VERSION = 2
-DEFAULT_MODEL_NAME = "qwen2.5-1.5b-instruct-gguf-q4_k_m"
+PROMPT_VERSION = 3  # 3：生成時擋掉外文、原文沒有的英文字母與字間空格（見 token_filter），譯文可能與 2 不同
+# 預設：真實字幕上和 7B 差不多準，速度與記憶體只要一半。授權是 Qwen Research License，不隨程式散布，使用者自己下載
+DEFAULT_MODEL_NAME = "qwen2.5-3b-instruct-gguf-q4_k_m"
+# 備用：Apache-2.0，可以隨程式散布；沒有下載預設的 3B 時用它
+FALLBACK_MODEL_NAME = "qwen2.5-1.5b-instruct-gguf-q4_k_m"
 LARGE_MODEL_NAME = "qwen2.5-7b-instruct-gguf-q4_k_m"
 _MAX_HISTORY = 10
+_SKIP_MARKERS = ("[SKIP]", "SKIP")  # 擬聲詞略過的回報標記；沒有英文的原文要擋英文字母，這個標記要放行
 _SAMPLING_SEEDS = (1, 2)  # 重翻用的取樣種子：最多再翻兩次
 _PLACEHOLDER_RE = re.compile(r"__ST_KEEP_\d+__")
 
@@ -244,7 +251,8 @@ class OfflineTranslator(ChineseTargetTranslator):
 
     # ------------------------------------------------------------- 模型選擇
     def resolved_model_name(self) -> str:
-        """實際要用的模型名稱。``auto``：有 GPU 版 llama.cpp 且放了 7B 就用 7B，否則 1.5B Q4_K_M。"""
+        """實際要用的模型名稱。``auto``：有 GPU 版 llama.cpp 且放了 7B 就用 7B；否則用預設的 3B，
+        沒有 3B 就退回 1.5B；兩個都沒有時回傳預設的 3B（找不到模型的錯誤訊息才會指到推薦的那個）。"""
         if self._resolved_model is not None:
             return self._resolved_model
         settings = self._settings()
@@ -253,6 +261,8 @@ class OfflineTranslator(ChineseTargetTranslator):
             model_dir = str(settings.get("model_dir") or "")
             if llama_backend.gpu_offload_supported() and llama_model_available(LARGE_MODEL_NAME, model_dir):
                 name = LARGE_MODEL_NAME
+            elif not llama_model_available(DEFAULT_MODEL_NAME, model_dir) and llama_model_available(FALLBACK_MODEL_NAME, model_dir):
+                name = FALLBACK_MODEL_NAME
             else:
                 name = DEFAULT_MODEL_NAME
         self._resolved_model = name
@@ -383,8 +393,16 @@ class OfflineTranslator(ChineseTargetTranslator):
         self.model_name = path.parent.name
 
     def warmup(self) -> None:
-        """載入模型並翻一句，讓第一次真正翻譯不必等模型載入。"""
+        """載入模型、分類詞彙表並翻一句，讓第一次真正翻譯不必等模型載入。"""
+        with self._model_lock:
+            self._load()
+            prepare = getattr(self._llama, "prepare_token_filter", None)
+            if callable(prepare) and self.retry_enabled():
+                prepare()
+        # 日文與英文各翻一句：兩種語言的固定前綴（系統提示 + 示範，約 300 個 token）各要算一次，
+        # 3B 約 3 秒、7B 約 7 秒；在這裡（背景預熱）先算好，第一句字幕才不必等
         self._generate(["Hello"], "en")
+        self._generate(["こんにちは"], "ja")
 
     # ------------------------------------------------------------- inference
     def _generate(self, texts: list[str], language: str) -> list[str]:
@@ -430,7 +448,8 @@ class OfflineTranslator(ChineseTargetTranslator):
                 for index, output in zip(bad, redone):
                     if output and not is_skip_output(output) and not looks_not_chinese(texts[index], output):
                         outputs[index] = output
-            return outputs
+            # 重翻也救不回來的亂碼符號（!");）：至少不要顯示出來。「只有擬聲詞」的回報標記 [SKIP] 本身有方括號，不能動
+            return [output if is_skip_output(output) else strip_symbol_junk(output, text) for text, output in zip(texts, outputs)]
 
     def _run(
         self,
@@ -442,13 +461,25 @@ class OfflineTranslator(ChineseTargetTranslator):
         seed: int | None = None,
     ) -> list[str]:
         """逐句交給 llama.cpp：固定前綴（系統提示 + 示範）的 KV 快取由引擎保管，換語言時不必重算。
-        ``seed`` 不是 None 時用取樣解碼（重翻用），否則貪婪解碼。"""
+        ``seed`` 不是 None 時用取樣解碼（重翻用），否則貪婪解碼。
+
+        「譯文不是中文時處理」（``retry_non_chinese``）開著時，生成當下就擋掉外文、原文沒有的英文字母與字間空格
+        （``token_filter``），模型選不到這些詞，大多數句子就不必事後重翻；關著時完全不干涉模型的輸出。"""
         max_tokens = int(self._settings().get("max_new_tokens", 160))
         prefix = static_prompt(language, lyrics, skip)
         extra = {} if seed is None else {"seed": seed}
+        guard = self.retry_enabled()
+        if guard:
+            extra["allow"] = _SKIP_MARKERS if skip else ()  # 「只有擬聲詞」的回報標記 [SKIP] 含英文字母，不能擋
         return [
             clean_output(
-                self._llama.complete(prefix + history_prompt(context) + user_prompt(text, language), max_tokens, prefix, **extra)
+                self._llama.complete(
+                    prefix + history_prompt(context) + user_prompt(text, language),
+                    max_tokens,
+                    prefix,
+                    **extra,
+                    **({"bans": bans_for(text)} if guard else {}),
+                )
             )
             for text, context in zip(texts, contexts)
         ]

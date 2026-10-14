@@ -19,6 +19,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from app.logger import get_logger
+from services.translation.token_filter import TokenFilter
 
 log = get_logger("translation.llama")
 
@@ -70,6 +71,7 @@ class LlamaCppEngine:
             log.warning("GPU 載入 %s 失敗（%s），改用 CPU", self.model_path.name, exc)
             self._llama = self._open(threads, context_tokens, 0)
         self._init_prefix_cache()
+        self._init_token_filter()
 
     def _open(self, threads: int, context_tokens: int, gpu_layers: int):
         from llama_cpp import Llama
@@ -91,6 +93,30 @@ class LlamaCppEngine:
         # 存起來之後換回來只要毫秒。出任何錯就停用這個加速，照函式庫原本的行為（只重用上一次的前綴）。
         self._prefix_states: OrderedDict[str, bytes] = OrderedDict()
         self._prefix_cache_ok = True
+
+    def _init_token_filter(self) -> None:
+        # 生成時擋掉不該出現的詞（外文、原文沒有的英文字母、字間空格），詞彙表的分類第一次需要時才建立
+        llama = self._llama
+
+        def pieces():
+            for token in range(llama.n_vocab()):
+                try:
+                    yield llama.detokenize([token])
+                except Exception:  # 少數特殊記號解不出來：不分類
+                    yield b""
+
+        self._token_filter = TokenFilter(pieces, lambda text: llama.tokenize(text.encode("utf-8"), add_bos=False, special=False))
+        self._token_filter_ok = True
+
+    def prepare_token_filter(self) -> None:
+        """先把詞彙表分類好（約一兩秒），第一句翻譯才不必等。失敗就不擋，行為與沒有這個功能時相同。"""
+        if not self._token_filter_ok:
+            return
+        try:
+            self._token_filter.ensure_loaded()
+        except Exception as exc:
+            log.warning("詞彙表分類失敗，生成時不擋詞：%s", exc)
+            self._token_filter_ok = False
 
     # ------------------------------------------------------------- 固定前綴的 KV 快取
     def _capture_kv(self) -> bytes:
@@ -145,11 +171,22 @@ class LlamaCppEngine:
             self._prefix_states.clear()
             llama.reset()
 
-    def complete(self, prompt: str, max_tokens: int, prefix: str = "", seed: int | None = None) -> str:
+    def complete(
+        self,
+        prompt: str,
+        max_tokens: int,
+        prefix: str = "",
+        seed: int | None = None,
+        bans: frozenset[str] = frozenset(),
+        allow: tuple[str, ...] = (),
+    ) -> str:
         """``prefix`` 是 ``prompt`` 開頭那段固定不變的部分（提供就先讓 KV 快取停在它上面）。
 
         預設貪婪解碼（每次結果相同）。給 ``seed`` 就改用 Qwen 官方建議的取樣（溫度 0.7、top-p 0.8、top-k 20、
         重複懲罰 1.05），同一個種子結果可重現；用來重翻貪婪解碼翻壞的句子（貪婪重翻只會得到一樣的壞結果）。
+
+        ``bans``：生成時要擋掉哪幾類詞（``token_filter.FOREIGN`` 等），模型選不到這些詞，就不會翻出夾雜外文的譯文；
+        ``allow``：這些文字切出來的詞不擋（例如 ``[SKIP]``）。
         """
         if prefix and prompt.startswith(prefix):
             self.prepare(prefix)
@@ -157,6 +194,11 @@ class LlamaCppEngine:
             sampling = {"temperature": 0.0, "top_k": 1}
         else:
             sampling = {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "repeat_penalty": 1.05, "seed": seed}
+        processor = self._ban_processor(bans, allow)
+        if processor is not None:
+            from llama_cpp import LogitsProcessorList
+
+            sampling["logits_processor"] = LogitsProcessorList([processor])
         result = self._llama.create_completion(
             prompt,
             max_tokens=max_tokens,
@@ -165,6 +207,16 @@ class LlamaCppEngine:
             **sampling,
         )
         return str(result["choices"][0]["text"])
+
+    def _ban_processor(self, bans: frozenset[str], allow: tuple[str, ...]):
+        if not bans or not self._token_filter_ok:
+            return None
+        try:
+            return self._token_filter.processor(bans, allow)
+        except Exception as exc:  # 分類失敗、記憶體不足：照沒有這個功能時的行為（事後檢查還在）
+            log.warning("詞彙表分類失敗，生成時不擋詞：%s", exc)
+            self._token_filter_ok = False
+            return None
 
     def close(self) -> None:
         close = getattr(self._llama, "close", None)

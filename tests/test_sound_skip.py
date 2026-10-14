@@ -18,7 +18,7 @@ from services.translation.offline_common import (
     is_skip_output,
     looks_like_sound_ja,
 )
-from services.translation.offline_translator import OfflineTranslator, static_prompt
+from services.translation.offline_translator import OfflineTranslator, model_tag, static_prompt
 from tests.fake_llama import offline_translator, source_of, static_part_of
 from ui.settings_dialog import SettingsDialog
 from ui.style import apply_style
@@ -144,9 +144,10 @@ def test_turning_the_option_off_translates_everything_and_separates_the_cache():
 
     assert out == ["砰！", "汪汪"]  # 關閉：連擬聲詞也翻
     assert all(SKIP_MARKER not in prefix for prefix in generator.prefixes)
-    assert instance.cache_namespace("auto") == "auto|nosound|p2|1.5b-q4_k_m"
+    tag = model_tag(instance.resolved_model_name())  # 實際用哪個模型取決於這台電腦下載了什麼
+    assert instance.cache_namespace("auto") == f"auto|nosound|p3|{tag}"
     instance.config["skip_sounds"] = True
-    assert instance.cache_namespace("auto") == "auto|p2|1.5b-q4_k_m"
+    assert instance.cache_namespace("auto") == f"auto|p3|{tag}"
 
 
 def test_the_marker_is_never_shown_when_skipping_is_not_allowed_and_the_retry_also_fails():

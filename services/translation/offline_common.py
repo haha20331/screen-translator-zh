@@ -17,6 +17,7 @@ from utils.language_utils import (
     has_han,
     has_kana,
     has_spaced_out_chars,
+    has_symbol_junk,
     unexpected_latin_words,
 )
 
@@ -120,7 +121,7 @@ def looks_untranslated(source: str, output: str) -> bool:
 
 
 def looks_not_chinese(source: str, output: str) -> bool:
-    """譯文夾雜了不該有的字：日文假名、韓文／俄文等外文、原文沒有的英文單字，或每個字都隔著空格的失控輸出。
+    """譯文夾雜了不該有的字：日文假名、韓文／俄文等外文、原文沒有的英文單字、每個字都隔著空格或 ``######``、``!");`` 這類亂碼。
 
     小模型偶爾會寫出「明天見ます」「계속你的名字」「數 NIGHT SKY 中的星星」「淚 的 數 越 總 勝 達」。
     這種結果值得再翻一次（改用取樣，貪婪解碼重翻會得到一模一樣的結果）；
@@ -130,6 +131,7 @@ def looks_not_chinese(source: str, output: str) -> bool:
         has_kana(output)
         or has_foreign_script(output)
         or has_spaced_out_chars(output)
+        or has_symbol_junk(output, source)
         or bool(unexpected_latin_words(source, output))
     )
 

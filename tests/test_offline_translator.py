@@ -15,6 +15,7 @@ from services.translation.offline_common import model_search_paths
 from services.translation.offline_translator import (
     _SHOTS,
     DEFAULT_MODEL_NAME,
+    FALLBACK_MODEL_NAME,
     LARGE_MODEL_NAME,
     OFFLINE_MODELS,
     OfflineTranslator,
@@ -143,16 +144,24 @@ def test_missing_model_error_lists_search_locations_and_how_to_get_it(tmp_path, 
 
 
 # ----------------------------------------------------------------------------- 模型選擇
-def test_auto_uses_the_default_model_on_cpu_only_builds(monkeypatch):
+def test_auto_uses_the_3b_default_then_falls_back_to_the_1_5b_that_can_ship_with_the_program(tmp_path, monkeypatch):
+    models = _isolate(tmp_path, monkeypatch)
     monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: False)
 
-    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME == "qwen2.5-1.5b-instruct-gguf-q4_k_m"
+    # 什麼都沒有：指向推薦的預設，找不到模型的錯誤訊息才會叫使用者下載它
+    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME == "qwen2.5-3b-instruct-gguf-q4_k_m"
+    _make_gguf(models / FALLBACK_MODEL_NAME)
+    assert FALLBACK_MODEL_NAME == "qwen2.5-1.5b-instruct-gguf-q4_k_m"
+    assert _translator().resolved_model_name() == FALLBACK_MODEL_NAME  # 沒下載 3B（3B 不隨程式散布）：用備用的 1.5B
+    _make_gguf(models / DEFAULT_MODEL_NAME)
+    assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 兩個都有：用預設的 3B
 
 
 def test_auto_uses_the_large_model_only_with_gpu_support_and_the_model_file(tmp_path, monkeypatch):
     models = _isolate(tmp_path, monkeypatch)
     monkeypatch.setattr(llama_backend, "available", lambda: True)
     monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: True)
+    _make_gguf(models / DEFAULT_MODEL_NAME)
 
     assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 有 GPU 但沒放 7B：用預設的
     _make_gguf(models / LARGE_MODEL_NAME)
@@ -169,7 +178,8 @@ def test_an_explicit_model_name_is_used_as_is(name, monkeypatch):
     assert _translator(model_name=name).resolved_model_name() == name
 
 
-def test_the_choice_is_made_once_per_translator(monkeypatch):
+def test_the_choice_is_made_once_per_translator(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
     instance = _translator()
     monkeypatch.setattr(llama_backend, "gpu_offload_supported", lambda: False)
     assert instance.resolved_model_name() == DEFAULT_MODEL_NAME
@@ -184,7 +194,7 @@ def test_the_model_list_is_ordered_small_to_large_and_has_distinct_names():
     assert len(set(names)) == len(names) and DEFAULT_MODEL_NAME in names and LARGE_MODEL_NAME in names
     sizes = [float(name.split("-")[1].removesuffix("b")) for name in names]
     assert sizes == sorted(sizes)
-    assert [size for size in sizes if size < 1.5] and [size for size in sizes if size > 1.5]  # 有比預設更小、更大的可試
+    assert [size for size in sizes if size < 3] and [size for size in sizes if size > 3]  # 有比預設更小、更大的可試
 
 
 def test_every_listed_model_can_be_fetched_by_the_download_script():
@@ -194,7 +204,7 @@ def test_every_listed_model_can_be_fetched_by_the_download_script():
     spec.loader.exec_module(script)
 
     assert {model.name for model in OFFLINE_MODELS} == set(script.MODELS)
-    assert script.DEFAULT_MODEL == DEFAULT_MODEL_NAME
+    assert script.DEFAULT_MODEL == DEFAULT_MODEL_NAME and script.FALLBACK_MODEL == FALLBACK_MODEL_NAME
     for info in script.MODELS.values():
         assert info["revision"] and len(info["revision"]) == 40  # 固定版本
         assert all(file.endswith(".gguf") for file in info["files"])
@@ -211,7 +221,7 @@ def test_every_listed_model_can_be_fetched_by_the_download_script():
 )
 def test_the_cache_tag_tells_models_apart(name, tag):
     assert model_tag(name) == tag
-    assert _translator(model_name=name).cache_namespace("auto") == f"auto|p2|{tag}"
+    assert _translator(model_name=name).cache_namespace("auto") == f"auto|p3|{tag}"
 
 
 @pytest.mark.parametrize(

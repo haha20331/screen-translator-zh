@@ -35,12 +35,28 @@ class FakeLlamaEngine:
         self.prompts: list[str] = []
         self.max_tokens: list[int] = []
         self.prefixes: list[str] = []
+        self.bans: list[frozenset[str]] = []
+        self.allows: list[tuple[str, ...]] = []
+        self.filter_prepared = 0
 
-    def complete(self, prompt: str, max_tokens: int, prefix: str = "", seed: int | None = None) -> str:
+    def prepare_token_filter(self) -> None:
+        self.filter_prepared += 1
+
+    def complete(
+        self,
+        prompt: str,
+        max_tokens: int,
+        prefix: str = "",
+        seed: int | None = None,
+        bans: frozenset[str] = frozenset(),
+        allow: tuple[str, ...] = (),
+    ) -> str:
         self.prompts.append(prompt)
         self.max_tokens.append(max_tokens)
         self.prefixes.append(prefix)
         self.seeds.append(seed)
+        self.bans.append(bans)
+        self.allows.append(allow)
         return self.decode(prompt, seed) if self._decode_takes_seed else self.decode(prompt)
 
     @property
