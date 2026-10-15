@@ -1,192 +1,117 @@
-# ScreenTranslator
+# 螢幕截圖翻譯（ScreenTranslator）
 
-> Real-time, on-screen translation for anything you **can't copy**. Capture a region, recognize the text with Windows OCR or optional PaddleOCR, translate it, and overlay the result right where the original words were — live, with a draggable region and fade-in highlights for changes.
+Windows 桌面上的即時字幕翻譯工具：在畫面上框一塊區域，程式偵測到字幕變化就辨識文字，翻成**繁體中文**（台灣用語）顯示在框的下方，並把原文、譯文與座標寫進文字檔。辨識與翻譯**全部在本機離線完成**，不需要網路、不需要金鑰（安裝時下載翻譯模型除外）。
 
-[![Stars](https://img.shields.io/github/stars/xuange-hu/screen-translator?style=social)](https://github.com/xuange-hu/screen-translator/stargazers)
-[![CI](https://github.com/xuange-hu/screen-translator/actions/workflows/ci.yml/badge.svg)](https://github.com/xuange-hu/screen-translator/actions/workflows/ci.yml)
-[![Lint](https://github.com/xuange-hu/screen-translator/actions/workflows/ci.yml/badge.svg?event=push&name=lint)](https://github.com/xuange-hu/screen-translator/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://www.microsoft.com/windows)
-[![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)](https://www.python.org)
-[![Release](https://img.shields.io/badge/release-v0.3.0--beta-orange)](https://github.com/xuange-hu/screen-translator/releases)
+- **來源語言**：日文、英文（橫排）。
+- **適合**：影片與直播字幕、歌詞、遊戲對白、無法複製文字的軟體畫面。
 
-**中文**：Windows 桌面截图翻译工具。截图（全屏 / 当前窗口 / 框选）→ Windows OCR 或可选 PaddleOCR 识别 → 自动翻译 → 用透明置顶覆盖层把译文盖在原文位置。新增**实时监控**：区域模式下开监控后可鼠标拖拽调整区域，新出现/变化的文字淡入高亮，变化一眼可见。
+## 這個專案的目的
 
-![demo](assets/demo.svg)
+這是上游專案 [xuange-hu/screen-translator](https://github.com/xuange-hu/screen-translator) 的分支（fork）。上游是「截圖 → 辨識 → 線上翻譯 → 疊加譯文」的通用截圖翻譯工具；這個分支把它改成**看影片、聽歌時的即時字幕翻譯**，主要做了三件事：
 
----
+**1. 優化監視功能**（框住字幕區域，持續翻譯）
 
-## Why ScreenTranslator
+- 變化偵測改成逐像素指紋：字幕沒變、畫面靜止時跳過整輪辨識與翻譯，CPU 用量低；影片背景一直在動時也不誤觸發。
+- 字幕穩定化：可設定要連續辨識到幾次相同結果才翻譯，避免字幕淡入淡出時把殘缺的句子翻成怪句子；內容和已顯示的相同就不重翻。
+- 辨識間隔最短 0.1 秒；字幕消失一秒後自動關閉譯文；停止監控時一併清掉譯文。
+- 譯文放在框的下方（放不下改放上方）、監控框常駐在畫面上可拖曳縮放，程式自己的視窗不會被擷取回去辨識。
+- 換翻譯模型存檔後立刻在背景載入並顯示「模型更換中」，載入期間監控先不送翻譯，載完自動繼續。
 
-Some text simply cannot be selected: games, comics, videos, images, legacy desktop software, and web content behind canvas/DOM tricks. ScreenTranslator keeps the workflow short and stays out of your way:
+**2. 新增離線翻譯模型**
 
-**capture → recognize → translate → overlay**
+- 用 llama.cpp 執行 Qwen2.5／Qwen3 的 GGUF 模型（0.5B 到 7B，預設 3B），翻成繁體中文並轉成台灣用語（OpenCC）；CPU 就能用，有顯示卡（含內顯）時可選用 Vulkan 版減輕 CPU 負擔。
+- 為這些小模型調整的功能：上下文（前兩句）、歌詞模式、略過擬聲詞、生成時擋掉外文、針對 Qwen2.5 的中文提示詞、譯文後處理；提示詞調整的過程與數字見 [PROMPT_TUNING.md](PROMPT_TUNING.md)。
+- 設定頁可選模型，並有「測試速度」；各模型的速度與品質比較見 [MODEL_COMPARISON.md](MODEL_COMPARISON.md)。
 
-- **Live region monitoring (NEW in v0.3).** Start monitoring a region, then drag to move or resize the watched area anytime. It only re-captures when the text actually changes, and newly appeared / changed lines **fade in with a highlight ring** — so you notice changes at a glance without re-reading everything.
-- **Lightweight by default.** Uses the built-in Windows OCR engine — no models, no Paddle, no OpenCV downloaded on first run. Optional high-accuracy PaddleOCR is a one-click, checksum-verified component.
-- **Private by default.** No screenshots or history saved unless you opt in; API keys are read from environment variables and never logged.
-- **Pixel-accurate on any monitor setup.** Per-Monitor V2 DPI aware, multi-monitor (including negative coordinates), correct mapping across mixed scaling.
+**3. 其他**
 
-## Features
+- 辨識引擎預設改用 RapidOCR（PP-OCRv6，離線，一個模型涵蓋日文、英文、中文），Windows 內建 OCR 仍可選用。
+- 文字輸出：每句字幕結束時寫一行（時間、原文、譯文、模型、四角點座標）。
+- Windows 安裝程式：安裝時勾選要下載哪些翻譯模型（推薦 3B），下載後驗證 SHA-256。
+- 移除了和這個目標無關、且會連到第三方下載並執行程式碼的部分（自動更新器、PaddleOCR 元件下載器、上游的發佈流程）。
 
-- Three capture modes: full screen, current window, and mouse drag-region. The current-window mode prefers native Win32 `PrintWindow` and only falls back to a validated visible-area capture.
-- Region selection supports negative multi-monitor coordinates, exact open-interval coordinates, `Esc` to cancel, and a cross-scaling safety check.
-- Default OCR is `Windows.Media.Ocr` (no bundled models). High-accuracy **PaddleOCR** is an optional component downloaded with a live progress bar, verified via HTTPS manifest, protocol version, file size, SHA-256, and Authenticode before atomic install.
-- OCR emits unified text / rect / confidence / orientation / text-line output, with confidence filtering and adjacent-block merging.
-- Unified `Translator` interface: built-in `Mock` (offline-testable), **Google free** (no key, concurrent block translation), MyMemory, OpenAI-compatible, DeepL, Google Cloud Translation v2, **百度翻译**, **有道翻译**, and **Azure AI 翻译**. Batch translation, exponential-backoff retry, timeout, request rate-limiting, and a JSON result cache. 百度/有道/Azure 的密钥可在「设置 → 翻译」填写，或用环境变量 `BAIDU_APP_ID`/`BAIDU_APP_KEY`、`YOUDAO_APP_KEY`/`YOUDAO_APP_SECRET`、`AZURE_TRANSLATOR_KEY`/`AZURE_TRANSLATOR_REGION`。
-- Protects numbers / URLs / emails / placeholders / variables before translation so they aren't mangled.
-- Transparent always-on-top overlay: click-through, auto-wrap, auto font-shrink, light/dark text chosen by background brightness, semi-transparent background, global hide/show. **Right-click the overlay (or use the tray menu) to copy the original / translated text to the clipboard.**
-- 实时监控对静止画面做像素差异检测：画面没变时跳过整轮 OCR + 翻译，仅刷新覆盖层，CPU 占用大幅下降。
-- Edit mode: drag individual translated blocks; `Esc` exits and closes the overlay.
-- Global hotkeys via `pynput`, editable in settings with conflict detection.
-- System tray with capture / full-screen / window / hide / edit / refresh / settings / quit.
-- Correct Per-Monitor V2 DPI and multi-monitor (negative coordinates) coordinate consistency.
-- Unified motion language: capture tick, themed selection shrink, progress dots, segmented reveal; supports reduced / eco motion strategies.
-- OCR / translation / image processing all run on background `QThread`s — UI never blocks; re-entrancy is guarded with a config snapshot.
-- Config in JSON; API keys prefer environment variables; logs are auto-redacted; screenshots and history are not saved by default.
-- In-app update check and a one-click sanitized diagnostics ZIP (config, environment, recent logs — never screenshots, history, models, or keys).
+## 程式碼來源
 
-## Quick start (from source)
+| 部分 | 來源 |
+|---|---|
+| **上游程式碼** | [xuange-hu/screen-translator](https://github.com/xuange-hu/screen-translator)，MIT 授權，Copyright (c) 2026 ScreenTranslator contributors；本分支從它的 commit `e2f7865`（2026-10-10）出發，2026-10-12 匯入（本專案的 commit `8be289b` 只是原樣匯入，沒有其他修改）。保留並沿用的有：截圖與座標（mss、DPI、多螢幕）、框選與覆蓋層介面、系統匣與快捷鍵、設定介面的骨架、線上翻譯服務的介面（Google、DeepL、OpenAI 相容等）、Windows OCR 引擎、測試框架 |
+| **本分支新增的程式** | `services/ocr/rapidocr_ocr.py`（RapidOCR）、`services/translation/` 下的 `offline_translator.py`、`offline_common.py`、`llama_backend.py`、`token_filter.py`、`model_names.py`、`speed_test.py`（離線翻譯）、`services/transcript*.py` 與 `app/transcript_mixin.py`（文字輸出）、`app/model_loading_mixin.py`（模型載入提示）、`utils/stability.py`（字幕穩定化）、`utils/chinese.py`（繁體與後處理）、`utils/window_affinity.py`、`ui/translation_panel.py`、`scripts/`、`installer/`、`ScreenTranslator.spec`，以及 30 多個新增的測試檔 |
+| **本分支大幅修改的上游檔案** | `ui/settings_dialog.py`、`app/monitor_mixin.py`、`app/config.py`、`app/settings_mixin.py`、`app/pipeline_mixin.py`、`app/capture_mixin.py`、`workers/translation_worker.py`、`ui/overlay_manager.py`、`ui/main_window.py`、`utils/layout_utils.py`、`utils/language_utils.py` |
+| **移除的上游部分** | 自動更新器、PaddleOCR 元件下載器、Authenticode 驗證、上游的發佈流程與社群檔案，詳見 [UPSTREAM.md](UPSTREAM.md) |
+| **第三方元件與模型** | PySide6、onnxruntime、RapidOCR（PP-OCR 模型）、llama.cpp、OpenCC 等；翻譯模型是 Alibaba Cloud 的 Qwen（官方 GGUF，不經轉換）。授權逐項列在 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) |
+| **開發方式** | 本分支的修改由專案作者與 Claude Code（Anthropic）協作完成，提交紀錄的 `Co-Authored-By` 有標註 |
 
-Requires **Python 3.11+** (3.12 recommended).
+想看這個分支相對上游改了什麼：`git diff 8be289b HEAD`（`8be289b` 是原樣匯入的上游版本）。
 
-```powershell
-git clone https://github.com/xuange-hu/screen-translator.git
-cd screen-translator
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-core.txt
-python main.py
-```
+## 安裝
 
-Run it, then press the capture hotkey and select a region. Default hotkeys:
+下載 `ScreenTranslator-<版本>-Setup.exe` 並執行（每位使用者安裝，不需要系統管理員權限）。
 
-| Hotkey | Action |
-| --- | --- |
-| `Ctrl+Shift+A` | Select a region and translate |
-| `Ctrl+Shift+F` | Translate the full screen |
-| `Ctrl+Shift+W` | Translate the current window |
-| `Ctrl+Shift+H` | Hide / show the overlay |
-| `Ctrl+Shift+R` | Re-recognize and re-translate the last capture |
+**系統需求**：Windows 10（1809 以上）64 位元；記憶體建議 8 GB 以上（預設的 3B 模型載入後約佔 3.6 GB）。不需要顯示卡。
 
-### Live region monitoring
+**選擇翻譯模型**：安裝精靈的「選擇元件」頁可以勾選要下載的翻譯模型（需要網路，下載後用 SHA-256 驗證）。預設勾選**推薦**的 Qwen2.5 3B。之後想補下載其他模型，重新執行安裝程式勾選即可；也可以自己把 `.gguf` 檔放到安裝資料夾的 `models\translation\<模型名稱>\` 底下。
 
-1. Capture a region as usual (`Ctrl+Shift+A`).
-2. Start monitoring. The selection overlay stays on top with a faint border, eight resize handles, and a "拖拽调整 · 双击停止" hint.
-3. **Drag inside** the box to move the whole watched area; **drag a handle** to resize. The capture follows on release.
-4. New or changed text **fades in with a highlight**; unchanged text stays put — no full-screen flicker.
-5. **Double-click** the region (or use the monitor toggle) to stop.
+| 模型 | 大小 | 說明 | 授權 |
+|---|---|---|---|
+| **Qwen2.5 3B Q4_K_M（推薦）** | 約 2.1 GB | 準確度與速度的平衡 | Qwen Research License（僅限非商用的研究與評估） |
+| Qwen2.5 1.5B Q4_K_M | 約 1.1 GB | 最快的備用選擇，沒有 3B 時自動使用 | Apache-2.0 |
+| Qwen3 1.7B Q8_0 | 約 1.8 GB | | Apache-2.0 |
+| Qwen2.5 0.5B Q8_0 | 約 0.7 GB | 最小最快，日文品質較差 | Apache-2.0 |
+| Qwen2.5 1.5B Q8_0 | 約 1.9 GB | 比 Q4 準，約慢 1.4 倍 | Apache-2.0 |
+| Qwen3 4B Q4_K_M | 約 2.5 GB | | Apache-2.0 |
+| Qwen2.5 7B Q4_K_M | 約 4.7 GB | 最準，要約 6 GB 可用記憶體，建議有獨立顯示卡時使用 | Apache-2.0 |
 
-Default translation is **Google free** (`translate.googleapis.com` gtx endpoint — no registration, no key). If `OPENAI_API_KEY` / `DEEPL_API_KEY` / `GOOGLE_TRANSLATE_API_KEY`（或百度 / 有道 / Azure 凭据）are detected, the app switches to the matching real service automatically; you can also pick a provider manually in settings.
+各模型的速度與品質比較見 [MODEL_COMPARISON.md](MODEL_COMPARISON.md)。**3B 的授權不是一般的開源授權**：只能用於研究與評估、不可商用，所以它不隨程式散布，而是在你勾選後由你的電腦直接從 Hugging Face 下載（安裝時會再提醒一次，授權全文放在模型資料夾的 `LICENSE`）。
 
-> To enable high-accuracy OCR, open *Settings → OCR → Optional high-accuracy component* and click *Download PaddleOCR component*.
-
-## Use cases
-
-- **Games & visual novels** with text baked into the framebuffer.
-- **Comics / manga / manhua** in a language you don't read.
-- **Videos & streams** with hardcoded subtitles.
-- **Legacy or locked desktop apps** where text can't be selected.
-- **Web content** behind canvas / non-selectable DOM.
-
-## How it works (technical)
-
-### DPI & multi-monitor
-The process enables Per-Monitor V2 (`SetProcessDpiAwarenessContext(-4)`) with graceful fallbacks, combined with Qt6 per-screen `devicePixelRatio`. Screenshots (mss) and `GetWindowRect` are physical pixels; Qt coordinates are logical. Each monitor keeps a `(physical rect, logical origin, dpr)` mapping; all conversions are done locally per monitor, then back to global. Overlay windows are created per monitor to avoid misalignment under mixed scaling. See `utils/dpi_utils.py`.
-
-### Click-through overlay
-Overlay windows use `FramelessWindowHint | WindowStaysOnTopHint | Tool | WindowTransparentForInput` plus `WA_TransparentForMouseEvents`, so clicks pass through to the app underneath. Edit mode temporarily disables pass-through to allow dragging blocks.
-
-### OCR coordinate mapping
-OCR returns boxes in the captured image's pixel space; the pipeline offsets them into global physical coordinates: `region.x = capture.bbox.left + box.x`. If the image's longest edge exceeds 4096, it is downscaled for recognition and coordinates are divided back by the scale.
-
-### Translating variable-length text
-The overlay auto-wraps and progressively shrinks the font (down to a minimum) based on the translation length and the text-box size, with a semi-transparent background for readability; if the translation is too long it contracts to fit the region height.
-
-### Background threads
-Each task spins a dedicated `PipelineTask(QThread)` and communicates with the main thread via Qt signals (status / error / result / finished). A new task cancels the old one; a `_stop` flag is checked across pipeline stages to prevent pile-up.
-
-## Build a lightweight installer
+**關於「Windows 已保護您的電腦」**：目前的安裝程式沒有程式碼簽章，SmartScreen 可能顯示警告，按「其他資訊 → 仍要執行」。安裝程式旁附有 `.sha256` 檔，可以用 PowerShell 核對下載有沒有損壞：
 
 ```powershell
-python -m pip install -r requirements-core.txt pyinstaller
-.\scripts\build_lite.ps1 -Version 0.3.0-beta
+(Get-FileHash -Algorithm SHA256 .\ScreenTranslator-0.3.0-beta-Setup.exe).Hash.ToLower()
+Get-Content .\ScreenTranslator-0.3.0-beta-Setup.exe.sha256     # 兩個要完全一樣
 ```
 
-This builds `dist\ScreenTranslator-Lite.exe` via `build-lite.spec`, then calls Inno Setup 6 to produce the installer. The build rejects packages ≥ 200,000,000 bytes. The lightweight archive explicitly excludes Paddle, PaddleX, OpenCV, SciPy, scikit-learn, and Torch.
+**解除安裝**：從「設定 → 應用程式」移除。安裝程式下載的模型會一起移除；你的設定、翻譯快取與輸出的文字檔在 `%LOCALAPPDATA%\ScreenTranslator\`，不會被刪。
 
-Exe only: `.\scripts\build_lite.ps1 -Version 0.3.0-beta -SkipInstaller`
+## 使用
 
-Traditional full package: `python -m PyInstaller build.spec --noconfirm` (not the default download for v0.3.0-beta).
+| 快捷鍵 | 動作 |
+|---|---|
+| `Ctrl+Shift+A` | 框選一塊區域並翻譯，之後自動進入即時監控 |
+| `Ctrl+Shift+M` | 開／關即時監控 |
+| `Ctrl+Shift+F` | 翻譯整個螢幕 |
+| `Ctrl+Shift+W` | 翻譯目前視窗 |
+| `Ctrl+Shift+H` | 顯示／隱藏譯文 |
+| `Ctrl+Shift+R` | 重新辨識、重新翻譯 |
 
-### Code signing & releases
-Tagged releases are produced by `.github/workflows/release-windows.yml`. The repository must configure these GitHub Actions secrets:
+快捷鍵可以在「設定 → 快捷鍵」修改。程式常駐在系統匣，關閉主視窗不會結束。
 
-| Secret | Purpose |
-| --- | --- |
-| `WINDOWS_CERTIFICATE_PFX_BASE64` | Base64-encoded code-signing PFX |
-| `WINDOWS_CERTIFICATE_PASSWORD` | PFX password |
+**即時監控**：框選之後，框會留在畫面上，可以拖曳移動、拖角縮放。字幕出現、改變時才辨識並翻譯；畫面沒變就不動作。預設辨識到就顯示（最快）；字幕淡入淡出時若會先閃出殘缺的句子，可以在「設定 → 監控」把確認次數調成 2（要連續辨識到相同結果才顯示，換字幕約慢半秒到一秒），間隔與「字幕消失多久後關閉譯文」（預設 1 秒）也在那裡。
 
-The pipeline signs the main exe, installer, uninstaller, and PaddleOCR worker, calls a timestamp service, verifies Authenticode, re-checks size, and emits a matching `.sha256`. **Without signing credentials**, the pipeline skips signing and publishes an unsigned lightweight installer (the PaddleOCR component is skipped, since its manifest must be signed); **with** `WINDOWS_CERTIFICATE_PFX_BASE64` / `WINDOWS_CERTIFICATE_PASSWORD` configured, it signs everything and also ships the PaddleOCR component.
+**翻譯設定**（「設定 → 翻譯」）：
 
-#### Downloading unsigned builds (SmartScreen & integrity check)
+- **離線翻譯模型**：選用哪個模型；「測試速度」會量每個已下載模型在這台電腦上的速度。換模型存檔後，程式會馬上在背景載入並顯示「模型更換中」。
+- **使用上下文**（預設開，兩句）：把前面翻好的句子當作前文，讓代名詞與語氣前後一致。
+- **歌詞模式**：看的是歌詞時打開，改用適合歌詞的提示與示範。
+- **略過擬聲詞**（預設開）：只有音效、笑聲、吶喊的字幕不翻譯。
+- **避免譯文夾雜外文**：譯文夾雜假名或外文時，在生成當下擋掉並重翻。
 
-This repository currently has **no code-signing certificate configured**, so the `ScreenTranslator-Lite-*-Setup.exe`, the portable `ScreenTranslator-Lite.exe`, and the uninstaller shipped in Releases are all **unsigned**.
+**文字輸出**：每句字幕結束時寫一行到 `%LOCALAPPDATA%\ScreenTranslator\output\<日期>.txt`（UTF-8、欄位以 Tab 分隔）：開始與結束時間、原文、譯文、狀態、使用的模型、四個角點的螢幕座標。系統匣選單的「開啟輸出資料夾」可以直接打開。
 
-- **SmartScreen / "Windows protected your PC".** When you open the installer or exe, Windows may show a SmartScreen warning. Click **More info → Run anyway** to continue; or, after downloading, right-click the file → **Properties → Unblock** before running. This is expected for unsigned programs and does **not** mean the file is malicious.
-- **Verify integrity (recommended).** Each installer ships with a sibling `*.sha256` file. After downloading, verify the hash with PowerShell to make sure the transfer was not tampered with:
+## 隱私
 
-```powershell
-# In your Downloads folder, compute the installer hash
-Get-FileHash -Algorithm SHA256 .\ScreenTranslator-Lite-0.3.0-beta-Setup.exe | ForEach-Object { $_.Hash.ToLower() }
-# Compare it against the value inside the matching .sha256 file (they must match exactly)
-Get-Content .\ScreenTranslator-Lite-0.3.0-beta-Setup.exe.sha256
-```
+- 辨識與翻譯都在本機；使用離線翻譯時，不會有任何文字或截圖離開你的電腦。
+- 預設不儲存截圖與辨識歷史。
+- 程式的記錄檔只記狀態，不記錄辨識到的文字、截圖或金鑰。
+- 設定裡仍保留上游的線上翻譯服務（Google、DeepL、OpenAI 相容等），**選用它們時辨識到的文字會送到該服務**；預設不使用。
 
-- If you would rather not run an unsigned build, build from source (see *Build a lightweight installer* above), or configure `WINDOWS_CERTIFICATE_PFX_BASE64` / `WINDOWS_CERTIFICATE_PASSWORD` so the pipeline emits signed artifacts.
+## 從原始碼執行、建置安裝程式
 
-## FAQ
+- 開發環境、測試與模型下載：[DEVELOPMENT.md](DEVELOPMENT.md)。
+- 打包成安裝程式：[PACKAGING.md](PACKAGING.md)。
+- 設計與開發紀錄：[PLAN.md](PLAN.md)；提示詞調整的過程與數字：[PROMPT_TUNING.md](PROMPT_TUNING.md)。
+- 只在 CPU 上跑就夠用；有顯示卡（含內顯）時可改裝 Vulkan 版 llama.cpp 減輕 CPU 負擔，見 `requirements-vulkan.txt`。
 
-**Recognition returns nothing.** Install the Windows OCR language pack for the target language; lower *OCR → Minimum confidence*; for hard fonts download and switch to PaddleOCR; confirm the region actually contains text.
+## 授權
 
-**OCR hangs after enabling text-orientation detection.** The orientation model can hang on some Paddle CPU builds. Disable *Enable text orientation detection* in settings; horizontal text is unaffected.
-
-**Overlay is misaligned on a scaled monitor.** Make sure the system display scaling is applied. Cross-scaling region selection is explicitly rejected; complete the selection within a single screen.
-
-**Hotkeys don't respond.** Another app (IME, recorder) may own them. Change the combo in *Settings → Hotkeys*; a failed registration is shown in the status bar.
-
-**"No API key" for translation.** Set the env var or fill it in settings; the Mock translator needs no key.
-
-**Rate limited / 429.** Online services retry automatically and keep the original text shown; lower *Request interval* or raise your quota.
-
-**`ConvertPirAttribute2RuntimeAttribute not support`.** Known oneDNN bug in paddlepaddle 3.3.x on Windows CPU. Pin paddlepaddle to 3.2.x: `python -m pip install "paddlepaddle>=3.2.2,<3.3.0"`.
-
-**Windows OCR asks for a language pack.** Install it, e.g. `Add-WindowsCapability -Online -Name "Language.OCR~~~en-US~0.0.1.0"`.
-
-## Privacy
-
-- Screenshots are not saved by default; image data is released after OCR/translation.
-- *General → Save screenshots and recognition history* is off by default.
-- Using an online translator sends recognized text to that third party (surfaced in the UI and docs).
-- Logs never record recognized text, screenshots, or API keys.
-
-## Roadmap
-
-- **v0.2.5-beta: overlay fix release.** Fixed OCR text-block coverage, paragraph translation, natural font sizing, color matching, overlay layout, translation latency, and failure recovery.
-- **v0.3.0-beta: live region translation (shipped).** Real-time change detection in a selected region; drag to adjust the area while monitoring; newly appeared / changed text fades in with a highlight.
-- **v0.4: scene presets & glossaries.** Controlled presets for game subtitles, visual novels, vertical manga, video captions, plus terminology memory.
-- **v1.0: signing, updates & stability.** Full release governance, long-run reliability, and natural overlay polish.
-
-No mobile, macOS/Linux, browser-extension, cloud-account, or unrelated AI-chat scope.
-
-## Contributing
-
-Bug reports, feature ideas, and PRs are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first. **Never commit API keys, local config, screenshots, or model caches.**
-
-## ⭐ Help it grow
-
-If ScreenTranslator saves you time, a star is the cheapest way to help others find it — and it tells me which features to prioritize. Share it on your favorite community (see the submission copy in the repo discussions / issues), and open an issue with what you'd translate with it.
-
-## License
-
-[MIT](LICENSE) © 2026 ScreenTranslator contributors.
+程式本身採 [MIT](LICENSE)：上游的著作權聲明（Copyright (c) 2026 ScreenTranslator contributors）必須保留，本分支的修改同樣以 MIT 釋出。
+第三方元件與模型的授權見 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)（安裝後也在安裝資料夾的 `licenses\` 裡）；**Qwen2.5 3B 的授權（Qwen Research License）限非商用**，其餘模型是 Apache-2.0。
