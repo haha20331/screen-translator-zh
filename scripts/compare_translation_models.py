@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 CORPUS = {
     "日文歌詞": [
@@ -74,7 +75,9 @@ DEFAULT_MODELS = [
     "qwen2.5-0.5b-instruct-gguf-q8_0",
     "qwen2.5-1.5b-instruct-gguf-q4_k_m",
     "qwen2.5-1.5b-instruct-gguf-q8_0",
+    "qwen3-1.7b-gguf-q8_0",
     "qwen2.5-3b-instruct-gguf-q4_k_m",
+    "qwen3-4b-gguf-q4_k_m",
     "qwen2.5-7b-instruct-gguf-q4_k_m",
 ]
 
@@ -116,7 +119,7 @@ def _rss_mb() -> float | None:
     return None
 
 
-def run_worker(name: str, threads: int, reps: int, out: Path) -> None:
+def run_worker(name: str, threads: int, reps: int, out: Path, gpu_layers: int = 0) -> None:
     """在目前行程裡跑一個模型，把結果寫成 JSON。"""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:  # Windows 上日誌檔還開著，清不掉也不要報錯
@@ -129,7 +132,7 @@ def run_worker(name: str, threads: int, reps: int, out: Path) -> None:
 
         config = AppConfig(Path(tmp) / "config.json")
         section = config.section("translation")
-        section["offline"].update(model_name=name, threads=threads)
+        section["offline"].update(model_name=name, threads=threads, gpu_layers=gpu_layers)  # 預設只用 CPU，各模型才比得準
         translator = create_translator("offline", section, cache=None)
         begin = time.perf_counter()
         translator.warmup()
@@ -219,9 +222,10 @@ def report(results: list[dict]) -> None:
 
 
 def short_name(name: str) -> str:
-    """qwen2.5-1.5b-instruct-gguf-q4_k_m → 1.5B Q4_K_M（報表欄位用的短名稱）。"""
-    size, _, quant = name.removeprefix("qwen2.5-").partition("-instruct-gguf-")
-    return f"{size.upper()} {quant.upper()}" if quant else name
+    """qwen2.5-1.5b-instruct-gguf-q4_k_m → 1.5B Q4_K_M；qwen3-1.7b-gguf-q8_0 → Qwen3 1.7B Q8_0（報表欄位用的短名稱）。"""
+    from services.translation.model_names import display_name
+
+    return display_name(name)
 
 
 def _cell(text: str) -> str:
@@ -311,6 +315,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS, help="要比較的模型（第一個是品質比較的基準）")
     parser.add_argument("--threads", nargs="+", type=int, default=[6], help="執行緒數（每個設定各跑一次）")
+    parser.add_argument("--gpu-layers", type=int, default=0, help="0 = 只用 CPU（預設，報表的比較基準），-1 = 全部交給 GPU（要裝 Vulkan／CUDA 版）")
     parser.add_argument("--reps", type=int, default=1, help="整批句子輪流重複幾輪、每句取中位數（預設 1：只量一輪）")
     parser.add_argument("--report", type=Path, help="另外把結果存成 Markdown 報表（耗時表、品質指標、10 句並排比較）")
     parser.add_argument("--worker", help=argparse.SUPPRESS)
@@ -320,7 +325,7 @@ def main() -> None:
         sys.stdout.reconfigure(errors="replace") if sys.stdout.isatty() else sys.stdout.reconfigure(encoding="utf-8")
 
     if args.worker:
-        run_worker(args.worker, args.threads[0], args.reps, args.out)
+        run_worker(args.worker, args.threads[0], args.reps, args.out, args.gpu_layers)
         return
 
     results = []
@@ -329,7 +334,7 @@ def main() -> None:
             for name in args.models:
                 out = Path(tmp) / f"{name}-{threads}.json"
                 print(f"執行 {name}（threads={threads}）…", flush=True)
-                command = [sys.executable, __file__, "--worker", name, "--threads", str(threads), "--reps", str(args.reps), "--out", str(out)]
+                command = [sys.executable, __file__, "--worker", name, "--threads", str(threads), "--reps", str(args.reps), "--gpu-layers", str(args.gpu_layers), "--out", str(out)]
                 completed = subprocess.run(command, check=False)
                 if completed.returncode != 0 or not out.exists():
                     print(f"  略過 {name}：執行失敗（模型沒下載？請執行 scripts/fetch_translation_models.py --model {name}）")

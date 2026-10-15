@@ -31,6 +31,8 @@ def _result(script, name, ms, calls=1, rss=1800.0):
 def test_short_names(script):
     assert script.short_name("qwen2.5-1.5b-instruct-gguf-q4_k_m") == "1.5B Q4_K_M"
     assert script.short_name("qwen2.5-0.5b-instruct-gguf-q8_0") == "0.5B Q8_0"
+    assert script.short_name("qwen3-1.7b-gguf-q8_0") == "Qwen3 1.7B Q8_0"
+    assert script.short_name("qwen3-4b-gguf-q4_k_m") == "Qwen3 4B Q4_K_M"
     assert script.short_name("something-else") == "something-else"
 
 

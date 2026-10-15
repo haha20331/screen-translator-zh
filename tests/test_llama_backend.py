@@ -394,13 +394,15 @@ def _commit(dialog):
 def test_the_combo_lists_auto_and_every_model_and_defaults_to_auto(qapp, tmp_path, models_present):
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
 
-    assert dialog.combo_offline_model.count() == len(OFFLINE_MODEL_CHOICES) == 6  # 自動 + 0.5B／1.5B 兩種／3B／7B
-    assert [dialog.combo_offline_model.itemData(i) for i in range(6)] == [
+    assert dialog.combo_offline_model.count() == len(OFFLINE_MODEL_CHOICES) == 8  # 自動 + Qwen2.5 的 0.5B／1.5B 兩種／3B／7B + Qwen3 的 1.7B／4B
+    assert [dialog.combo_offline_model.itemData(i) for i in range(8)] == [
         "auto",
         "qwen2.5-0.5b-instruct-gguf-q8_0",
         "qwen2.5-1.5b-instruct-gguf-q4_k_m",
         "qwen2.5-1.5b-instruct-gguf-q8_0",
+        "qwen3-1.7b-gguf-q8_0",
         "qwen2.5-3b-instruct-gguf-q4_k_m",
+        "qwen3-4b-gguf-q4_k_m",
         "qwen2.5-7b-instruct-gguf-q4_k_m",
     ]
     assert dialog.combo_offline_model.currentIndex() == 0
@@ -413,9 +415,9 @@ def test_options_without_a_model_file_are_disabled_with_the_reason(qapp, tmp_pat
     monkeypatch.setattr(settings_module, "llama_model_available", lambda name, model_dir="": name in present)
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
 
-    enabled = [dialog.combo_offline_model.model().item(i).isEnabled() for i in range(6)]
-    assert enabled == [True, True, True, False, False, False]  # 「自動」永遠可選
-    tip = dialog.combo_offline_model.itemData(5, 3)  # ToolTipRole
+    enabled = [dialog.combo_offline_model.model().item(i).isEnabled() for i in range(8)]
+    assert enabled == [True, True, True, False, False, False, False, False]  # 「自動」永遠可選
+    tip = dialog.combo_offline_model.itemData(7, 3)  # ToolTipRole
     assert "fetch_translation_models.py --model qwen2.5-7b-instruct-gguf-q4_k_m" in tip
     assert dialog.combo_offline_model.itemData(2, 3) == ""
     dialog.deleteLater()
@@ -423,13 +425,13 @@ def test_options_without_a_model_file_are_disabled_with_the_reason(qapp, tmp_pat
 
 def test_the_chosen_model_is_saved_and_shown_again(qapp, tmp_path, models_present):
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
-    dialog.combo_offline_model.setCurrentIndex(5)
+    dialog.combo_offline_model.setCurrentIndex(7)
     _commit(dialog)
 
     saved = AppConfig(tmp_path / "config.json")
     assert saved.get("translation.offline.model_name") == "qwen2.5-7b-instruct-gguf-q4_k_m"
     reopened = SettingsDialog(saved)
-    assert reopened.combo_offline_model.currentIndex() == 5
+    assert reopened.combo_offline_model.currentIndex() == 7
     dialog.deleteLater()
     reopened.deleteLater()
 
@@ -447,7 +449,7 @@ def test_an_untouched_combo_does_not_overwrite_a_custom_model_name(qapp, tmp_pat
     dialog.deleteLater()
 
 
-@pytest.mark.parametrize(("name", "index"), [("auto", 0), ("qwen2.5-0.5b-instruct-gguf-q8_0", 1), ("qwen2.5-1.5b-instruct-gguf-q8_0", 3), ("qwen2.5-3b-instruct-gguf-q4_k_m", 4)])
+@pytest.mark.parametrize(("name", "index"), [("auto", 0), ("qwen2.5-0.5b-instruct-gguf-q8_0", 1), ("qwen2.5-1.5b-instruct-gguf-q8_0", 3), ("qwen3-1.7b-gguf-q8_0", 4), ("qwen2.5-3b-instruct-gguf-q4_k_m", 5), ("qwen3-4b-gguf-q4_k_m", 6)])
 def test_existing_settings_select_the_matching_item(qapp, tmp_path, models_present, name, index):
     config = AppConfig(tmp_path / "config.json")
     config.set("translation.offline.model_name", name)

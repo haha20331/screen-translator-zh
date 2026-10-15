@@ -54,6 +54,21 @@ MODELS = {
         "license": "Qwen Research License（僅限非商用）",
         "note": "預設。約 2.1 GB，比 1.5B 準、約慢 2 倍，真實字幕上和 7B 差不多。授權不是 Apache-2.0（僅限研究與評估），不隨程式散布，請閱讀隨附的 LICENSE。",
     },
+    # Qwen3（混合思考模型；翻譯用非思考模式）：全部 Apache-2.0，連 4B 也可以隨程式散布。官方的 1.7B 只有 Q8_0 一種量化
+    "qwen3-1.7b-gguf-q8_0": {
+        "repo": "Qwen/Qwen3-1.7B-GGUF",
+        "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+        "files": ["Qwen3-1.7B-Q8_0.gguf"],
+        "license": "Apache-2.0",
+        "note": "Qwen3 1.7B（約 1.8 GB，官方只有 Q8_0）。Apache-2.0，可隨程式散布；大小介於 Qwen2.5 的 1.5B 與 3B 之間。",
+    },
+    "qwen3-4b-gguf-q4_k_m": {
+        "repo": "Qwen/Qwen3-4B-GGUF",
+        "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
+        "files": ["Qwen3-4B-Q4_K_M.gguf"],
+        "license": "Apache-2.0",
+        "note": "Qwen3 4B（約 2.5 GB）。Apache-2.0，可隨程式散布；比 Qwen2.5 的 3B 再大一點。",
+    },
     "qwen2.5-7b-instruct-gguf-q4_k_m": {
         "repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
         "revision": "bb5d59e06d9551d752d08b292a50eb208b07ab1f",

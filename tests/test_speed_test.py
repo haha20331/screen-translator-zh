@@ -385,7 +385,9 @@ def test_the_table_sits_under_the_model_selector_with_a_button_and_lists_every_m
         assert dialog.table_speed.rowCount() == len(OFFLINE_MODELS)
         headers = [dialog.table_speed.horizontalHeaderItem(c).text() for c in range(dialog.table_speed.columnCount())]
         assert headers == ["模型", "日文一般", "日文歌詞", "英文", "平均", "載入（秒）"]
-        assert [_cells(dialog, r)[0] for r in range(5)] == ["0.5B Q8_0", "1.5B Q4_K_M", "1.5B Q8_0", "★ 3B Q4_K_M", "7B Q4_K_M"]  # ★ = 使用中
+        assert [_cells(dialog, r)[0] for r in range(7)] == [
+            "0.5B Q8_0", "1.5B Q4_K_M", "1.5B Q8_0", "Qwen3 1.7B Q8_0", "★ 3B Q4_K_M", "Qwen3 4B Q4_K_M", "7B Q4_K_M",
+        ]  # ★ = 使用中
         assert dialog.lbl_speed_test.text() == "尚未測試過"
         assert _cells(dialog, 0)[1] == "尚未測試"
     finally:
@@ -420,7 +422,7 @@ def test_saved_results_are_shown_as_soon_as_the_settings_open(qapp, tmp_path, do
 def test_the_star_follows_the_model_in_use_and_auto_resolves_to_the_real_one(qapp, tmp_path, downloaded):
     dialog = SettingsDialog(_config(tmp_path, model="auto"))
     try:
-        stars = [r for r in range(5) if _cells(dialog, r)[0].startswith("★")]
+        stars = [r for r in range(7) if _cells(dialog, r)[0].startswith("★")]
         assert stars == [_row_of("qwen2.5-3b-instruct-gguf-q4_k_m")]  # auto → 預設的 3B（這台有下載）
     finally:
         dialog.deleteLater()
@@ -464,9 +466,9 @@ def test_pressing_the_button_tests_every_downloaded_model_shows_and_saves_the_re
         assert dialog._speed_testing or record  # 一按就開始（在背景執行緒，不會卡住畫面）
         _wait_for_the_test_to_finish(dialog)
 
-        assert "5 個模型" in asked[0] and "3 句" in asked[0]
+        assert "7 個模型" in asked[0] and "3 句" in asked[0]
         assert record["models"] == [model.name for model in OFFLINE_MODELS]
-        assert [_cells(dialog, r)[4] for r in range(5)] == ["100", "200", "300", "400", "500"]
+        assert [_cells(dialog, r)[4] for r in range(7)] == ["100", "200", "300", "400", "500", "600", "700"]
         assert dialog.btn_speed_test.text() == "測試速度" and dialog.btn_speed_test.isEnabled()
         saved = SpeedTestStore(tmp_path / "speed_test.json").load()
         assert set(saved["models"]) == {model.name for model in OFFLINE_MODELS}
@@ -485,7 +487,7 @@ def test_results_are_there_again_after_closing_and_reopening_the_settings(qapp, 
 
     second = SettingsDialog(_config(tmp_path))
     try:
-        assert [_cells(second, r)[4] for r in range(5)] == ["100", "200", "300", "400", "500"]
+        assert [_cells(second, r)[4] for r in range(7)] == ["100", "200", "300", "400", "500", "600", "700"]
     finally:
         second.deleteLater()
 
@@ -576,7 +578,7 @@ def test_the_button_becomes_stop_while_testing_and_stopping_ends_the_test(qapp, 
             dialog._poll_speed_test()
             time.sleep(0.01)
         assert dialog.btn_speed_test.text() == "停止測試"
-        assert "測試中…" in _cells(dialog, 0)[1] or any("測試中…" in _cells(dialog, r)[1] for r in range(5))
+        assert "測試中…" in _cells(dialog, 0)[1] or any("測試中…" in _cells(dialog, r)[1] for r in range(7))
 
         dialog.btn_speed_test.click()  # 停止
         assert not dialog.btn_speed_test.isEnabled()  # 等目前這個模型測完

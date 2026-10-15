@@ -36,6 +36,7 @@ from typing import NamedTuple
 from app.logger import get_logger
 from services.translation import llama_backend
 from services.translation.base import TranslationError, register_translator
+from services.translation.model_names import answer_prefix, model_tag, strip_thinking
 from services.translation.offline_common import (
     SKIP_MARKER,
     ChineseTargetTranslator,
@@ -56,12 +57,14 @@ class OfflineModel(NamedTuple):
     label: str  # 設定畫面顯示的名稱
 
 
-# 可選的模型，由小到大（同一個 Qwen2.5-Instruct 系列；取得方式見 scripts/fetch_translation_models.py）
+# 可選的模型，由小到大（Qwen2.5-Instruct 與 Qwen3 兩個系列；取得方式見 scripts/fetch_translation_models.py）
 OFFLINE_MODELS: tuple[OfflineModel, ...] = (
     OfflineModel("qwen2.5-0.5b-instruct-gguf-q8_0", "Qwen2.5 0.5B・Q8_0（最小最快，日文品質較差）"),
     OfflineModel("qwen2.5-1.5b-instruct-gguf-q4_k_m", "Qwen2.5 1.5B・Q4_K_M（最快的實用選擇，可隨程式散布）"),
     OfflineModel("qwen2.5-1.5b-instruct-gguf-q8_0", "Qwen2.5 1.5B・Q8_0（較準，約慢 1.4 倍）"),
+    OfflineModel("qwen3-1.7b-gguf-q8_0", "Qwen3 1.7B・Q8_0（Apache-2.0，可隨程式散布；官方只有 Q8_0）"),
     OfflineModel("qwen2.5-3b-instruct-gguf-q4_k_m", "Qwen2.5 3B・Q4_K_M（預設，較準，約慢 2 倍；非商用授權，需自行下載）"),
+    OfflineModel("qwen3-4b-gguf-q4_k_m", "Qwen3 4B・Q4_K_M（Apache-2.0，可隨程式散布；比 3B 再大一點）"),
     OfflineModel("qwen2.5-7b-instruct-gguf-q4_k_m", "Qwen2.5 7B・Q4_K_M（最準，CPU 與內顯上很慢、要 7 GB 記憶體，建議有獨立顯示卡時用）"),
 )
 # 提示詞的版本：改了系統提示詞或示範，譯文就會不同；快取鍵帶著版本，舊提示詞留下的譯文不會被當成新的
@@ -174,10 +177,11 @@ def static_prompt(language: str, lyrics: bool = False, skip_sounds: bool = True)
     return "".join(parts)
 
 
-def user_prompt(text: str, language: str) -> str:
-    """每句不同的部分：待翻譯文字，並留下 assistant 開頭讓模型續寫。"""
+def user_prompt(text: str, language: str, answer_prefix: str = "") -> str:
+    """每句不同的部分：待翻譯文字，並留下 assistant 開頭讓模型續寫。
+    ``answer_prefix``：先幫模型寫好的回答開頭（Qwen3 非思考模式的空思考區塊）。"""
     name = _LANGUAGE_NAMES[language]
-    return f"<|im_start|>user\nTranslate this {name} text:\n{text}<|im_end|>\n<|im_start|>assistant\n"
+    return f"<|im_start|>user\nTranslate this {name} text:\n{text}<|im_end|>\n<|im_start|>assistant\n{answer_prefix}"
 
 
 def llama_model_available(name: str, model_dir: str = "") -> bool:
@@ -187,9 +191,6 @@ def llama_model_available(name: str, model_dir: str = "") -> bool:
     )
 
 
-def model_tag(name: str) -> str:
-    """快取鍵用的短名稱：qwen2.5-1.5b-instruct-gguf-q4_k_m → 1.5b-q4_k_m。"""
-    return name.removeprefix("qwen2.5-").replace("-instruct-gguf-", "-")
 
 class ContextEntry(NamedTuple):
     source: str
@@ -220,8 +221,8 @@ def build_prompt(
 
 
 def clean_output(text: str) -> str:
-    """只留第一個非空行（小模型偶爾會在後面附註解），並去掉頭尾空白。"""
-    for line in (text or "").splitlines():
+    """只留第一個非空行（小模型偶爾會在後面附註解），並去掉頭尾空白。Qwen3 自己寫出來的思考區塊也先去掉。"""
+    for line in strip_thinking(text).splitlines():
         if line.strip():
             return line.strip()
     return ""
@@ -483,6 +484,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         （``token_filter``），模型選不到這些詞，大多數句子就不必事後重翻；關著時完全不干涉模型的輸出。"""
         max_tokens = int(self._settings().get("max_new_tokens", 160))
         prefix = static_prompt(language, lyrics, skip)
+        opening = answer_prefix(self.resolved_model_name())  # Qwen3：空的思考區塊，直接寫答案
         extra = {} if seed is None else {"seed": seed}
         guard = self.retry_enabled()
         if guard:
@@ -490,7 +492,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         return [
             clean_output(
                 self._llama.complete(
-                    prefix + history_prompt(context) + user_prompt(text, language),
+                    prefix + history_prompt(context) + user_prompt(text, language, opening),
                     max_tokens,
                     prefix,
                     **extra,

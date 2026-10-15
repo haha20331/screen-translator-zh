@@ -256,8 +256,7 @@ def merge_table(results: list[dict]) -> str:
             order.append(key)
         groups[key].append(result)
 
-    def short(name: str) -> str:
-        return name.removeprefix("qwen2.5-").replace("-instruct-gguf-", "-").replace("-", " ").upper()
+    from services.translation.model_names import display_name as short
 
     lines = [
         "| 模型 | 版本 | 裝置 | OCR（含縮放、合併） | 翻譯 | 合計（中位／平均） | 佔用 CPU（核心） | 載入＋預熱 | 次數 |",
