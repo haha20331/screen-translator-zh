@@ -35,3 +35,21 @@ def pytest_collection_modifyitems(config, items) -> None:
     for item in items:
         if item.nodeid in slow:
             item.add_marker(pytest.mark.slow)
+
+
+@pytest.fixture(autouse=True)
+def _really_delete_widgets_after_each_test():
+    """每個測試結束就把 ``deleteLater()`` 排進去的視窗真的刪掉。
+
+    測試裡沒有事件迴圈，``deleteLater()`` 的視窗不會自己消失，整套連續跑時越積越多，
+    而每次 ``apply_style``（``qapp`` 夾具）都要把樣式重新套到所有還活著的視窗上：實測每多一個設定視窗就多約 0.14 秒，
+    跑到後半段，光是一個測試的準備動作就要一分多鐘，整套因此從約 16 分鐘拖到兩個半小時。
+    """
+    yield
+    try:
+        from PySide6.QtCore import QCoreApplication, QEvent
+    except ImportError:  # 沒裝 PySide6 的環境（純邏輯測試）
+        return
+    app = QCoreApplication.instance()
+    if app is not None:
+        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
