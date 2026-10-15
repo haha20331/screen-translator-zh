@@ -19,6 +19,17 @@ def test_defaults_loaded(tmp_path):
     assert config.get("appearance.motion_profile") == "flow"
 
 
+def test_a_config_file_saved_with_a_utf8_bom_is_still_read(tmp_path):
+    """舊版記事本（與 PowerShell 5 的 Set-Content -Encoding UTF8）存檔會加 BOM；不能因此把整份設定當成壞檔。"""
+    path = tmp_path / "config.json"
+    path.write_text('{"ocr": {"min_confidence": 0.8}}', encoding="utf-8-sig")
+
+    config = AppConfig(path)
+
+    assert config.get("ocr.min_confidence") == 0.8
+    assert not (tmp_path / "config.json.bak").exists()
+
+
 def test_merge_partial(tmp_path):
     path = tmp_path / "config.json"
     path.write_text('{"ocr": {"min_confidence": 0.8}}', encoding="utf-8")

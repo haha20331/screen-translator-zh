@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import re
+import sys
 
 # Qwen3 是「思考／非思考」混合模型：回答之前會先寫一段 <think>…</think> 推理，翻譯字幕不需要，而且很慢。
 # 官方的做法是在輪到模型回答的位置先放一個空的思考區塊（聊天範本的 enable_thinking=False），模型就直接寫答案。
@@ -16,6 +17,13 @@ QWEN3_NON_THINKING_PREFIX = "<think>\n\n</think>\n\n"
 
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _STRAY_THINK_RE = re.compile(r"</?think>")
+
+
+def how_to_get(name: str = "") -> str:
+    """沒有模型時告訴使用者怎麼取得：從原始碼執行用下載腳本；安裝版（PyInstaller）沒有腳本，要重新執行安裝程式。"""
+    if getattr(sys, "frozen", False):
+        return "請重新執行安裝程式，在「選擇元件」勾選要下載的翻譯模型"
+    return "請執行 scripts/fetch_translation_models.py" + (f" --model {name}" if name else "")
 
 
 def model_family(name: str) -> str:

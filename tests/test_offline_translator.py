@@ -160,6 +160,19 @@ def test_missing_model_error_lists_search_locations_and_how_to_get_it(tmp_path, 
     assert f"fetch_translation_models.py --model {DEFAULT_MODEL_NAME}" in message
 
 
+def test_the_installed_program_points_to_the_installer_instead_of_a_script_it_does_not_have(tmp_path, monkeypatch):
+    """安裝版（PyInstaller）沒有 scripts 資料夾：缺模型時要叫使用者重新執行安裝程式，不是叫他跑下載腳本。"""
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+
+    with pytest.raises(TranslationError) as excinfo:
+        _translator().llama_model_path()
+
+    message = str(excinfo.value)
+    assert "重新執行安裝程式" in message and "fetch_translation_models" not in message
+    assert str(tmp_path / "app") in message  # 找過的資料夾還是列出來，自己放模型檔的人看得到該放哪裡
+
+
 # ----------------------------------------------------------------------------- 模型選擇
 def test_auto_uses_the_3b_default_then_falls_back_to_the_1_5b_that_can_ship_with_the_program(tmp_path, monkeypatch):
     models = _isolate(tmp_path, monkeypatch)

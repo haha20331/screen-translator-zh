@@ -405,7 +405,7 @@ class AppConfig:
         if not self.path.exists():
             return
         try:
-            with open(self.path, "r", encoding="utf-8") as fp:
+            with open(self.path, "r", encoding="utf-8-sig") as fp:
                 loaded = json.load(fp)
             if isinstance(loaded, dict):
                 _deep_merge(self.data, loaded)

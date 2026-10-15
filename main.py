@@ -78,7 +78,12 @@ def main() -> int:
     if os.environ.get("SCREEN_TRANSLATOR_SMOKE") == "1":
         from PySide6.QtCore import QTimer
 
-        QTimer.singleShot(3000, qt_app.quit)
+        # 預設 3 秒；要驗證模型載入（打包後的程式找得到模型、DLL 載得起來）時用 SCREEN_TRANSLATOR_SMOKE_SECONDS 拉長
+        try:
+            seconds = float(os.environ.get("SCREEN_TRANSLATOR_SMOKE_SECONDS", "3"))
+        except ValueError:
+            seconds = 3.0
+        QTimer.singleShot(int(max(1.0, seconds) * 1000), qt_app.quit)
 
     return qt_app.exec()
 

@@ -36,7 +36,14 @@ from typing import NamedTuple
 from app.logger import get_logger
 from services.translation import llama_backend
 from services.translation.base import TranslationError, register_translator
-from services.translation.model_names import answer_prefix, display_name, model_tag, prompt_style, strip_thinking
+from services.translation.model_names import (
+    answer_prefix,
+    display_name,
+    how_to_get,
+    model_tag,
+    prompt_style,
+    strip_thinking,
+)
 from services.translation.offline_common import (
     SKIP_MARKER,
     ChineseTargetTranslator,
@@ -342,7 +349,7 @@ class OfflineTranslator(ChineseTargetTranslator):
                 return found
         listing = "\n".join(f"  {path}" for path in searched)
         raise TranslationError(
-            f"找不到離線翻譯模型「{name}」。請執行 scripts/fetch_translation_models.py --model {name}，"
+            f"找不到離線翻譯模型「{name}」。{how_to_get(name)}，"
             f"或把 .gguf 檔放到下列任一資料夾：\n{listing}"
         )
 

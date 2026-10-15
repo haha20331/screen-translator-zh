@@ -56,6 +56,7 @@ from services.ocr.base import list_ocr_engines
 from services.transcript import resolve_directory
 from services.translation.base import list_translators
 from services.translation.factory import service_display_name
+from services.translation.model_names import how_to_get
 from services.translation.offline_translator import OFFLINE_MODELS, OfflineTranslator, llama_model_available
 from services.translation.speed_test import (
     SPEED_TEST_SENTENCES,
@@ -906,7 +907,7 @@ class SettingsDialog(QWidget):
         self.combo_offline_model.setToolTip(
             "「離線翻譯」用哪個模型（同一個 Qwen2.5 系列，越大越準也越慢、越吃記憶體）。\n"
             "0.5B 最快但日文品質差；1.5B 是速度與品質的平衡；3B、7B 較準，在 CPU 上明顯變慢。\n"
-            "灰色的選項代表缺少模型檔，請執行 scripts/fetch_translation_models.py --model <名稱> 下載。\n"
+            f"灰色的選項代表缺少模型檔，{how_to_get('<名稱>')}下載。\n"
             "改了之後下次翻譯會重新載入模型；換了模型，翻譯快取會自動清空。\n"
             "不確定這台電腦跑得動哪個，按下面的「測試速度」，會用 3 句測資量每個已下載模型的翻譯時間。"
         )
@@ -1234,7 +1235,7 @@ class SettingsDialog(QWidget):
         self._set_combo(self.combo_source, cfg.get("translation.source_language", "auto"))
         self._set_combo(self.combo_target, cfg.get("translation.target_language", "zh"))
         self.chk_keep_original.setChecked(bool(cfg.get("translation.keep_original", False)))
-        self.chk_use_context.setChecked(bool(cfg.get("translation.use_context", False)))
+        self.chk_use_context.setChecked(bool(cfg.get("translation.use_context", True)))
         self.spin_context_size.setValue(int(cfg.get("translation.context_size", 2)))
         self.spin_context_size.setEnabled(self.chk_use_context.isChecked())
         self.chk_lyrics_mode.setChecked(bool(cfg.get("translation.lyrics_mode", False)))
@@ -1583,7 +1584,7 @@ class SettingsDialog(QWidget):
             item.setEnabled(usable)
             self.combo_offline_model.setItemData(
                 index,
-                "" if usable else f"找不到 llama-cpp-python 或模型檔：請執行 scripts/fetch_translation_models.py --model {name}",
+                "" if usable else f"找不到 llama-cpp-python 或模型檔：{how_to_get(name)}",
                 Qt.ItemDataRole.ToolTipRole,
             )
         saved = str(cfg.get("translation.offline.model_name", "auto") or "auto")
@@ -1774,7 +1775,7 @@ class SettingsDialog(QWidget):
             QMessageBox.information(
                 self,
                 "測試速度",
-                "找不到任何已下載的模型。請先執行 scripts/fetch_translation_models.py 下載（見 DEVELOPMENT.md）。",
+                f"找不到任何已下載的模型。{how_to_get()}下載。",
             )
             return
         answer = QMessageBox.question(
