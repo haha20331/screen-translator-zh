@@ -60,6 +60,9 @@ def main() -> None:
         help="離線翻譯的模型名稱（見 scripts/fetch_translation_models.py --list）；預設 auto = 3B Q4_K_M（沒有下載就用 1.5B）",
     )
     parser.add_argument("--threads", type=int, default=0, help="推論執行緒數（0 = 自動）")
+    parser.add_argument("--variant", default="production", help="提示詞版本（scripts/prompt_variants.py）；production = 目前正式程式碼")
+    parser.add_argument("--context", action="store_true", help="開上下文（兩句）")
+    parser.add_argument("--lyrics", action="store_true", help="開歌詞模式")
     args = parser.parse_args()
 
     paths = sorted(p for p in args.images.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".bmp", ".webp"})
@@ -72,6 +75,13 @@ def main() -> None:
         offline = config.section("translation")["offline"]
         offline["threads"] = args.threads
         offline["model_name"] = args.model
+        config.section("translation").update(use_context=args.context, context_size=2, lyrics_mode=args.lyrics)
+        if args.variant != "production":
+            import prompt_variants  # 同一個資料夾；裝進正式模組，量舊版或實驗版的提示詞
+
+            spec = prompt_variants.get(args.variant)
+            if spec is not None:
+                prompt_variants.install(services.translation.offline_translator, spec)
         engine = create_ocr_engine(config.get("ocr.engine", "rapidocr"), config.section("ocr"), config)
         translator = create_translator(
             config.get("translation.service", "offline"), config.section("translation"), cache=None
