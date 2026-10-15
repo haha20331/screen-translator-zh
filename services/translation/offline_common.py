@@ -19,6 +19,7 @@ from utils.language_utils import (
     has_spaced_out_chars,
     has_symbol_junk,
     unexpected_latin_words,
+    untranslated_english_words,
 )
 
 # 預設最多用幾個執行緒（設定 ``threads`` 可改）。在 Intel 混合核心 CPU（i7-13700H）上，執行緒開太多反而更慢。
@@ -133,6 +134,8 @@ def looks_not_chinese(source: str, output: str) -> bool:
         or has_spaced_out_chars(output)
         or has_symbol_junk(output, source)
         or bool(unexpected_latin_words(source, output))
+        or bool(untranslated_english_words(source, output))
+        or chinese.is_meta_reply(output)
     )
 
 
@@ -163,7 +166,7 @@ class ChineseTargetTranslator(Translator):
         return chinese.to_traditional(text)
 
     def output_looks_untranslated(self, source: str, output: str) -> bool:
-        return looks_untranslated(source, output) or chinese.has_runaway_repetition(output, source)
+        return looks_untranslated(source, output) or chinese.has_runaway_repetition(output, source) or chinese.is_meta_reply(output)
 
     # ----------------------------------------------------------- 擬聲詞防呆
     def sound_skip_enabled(self) -> bool:
@@ -207,7 +210,8 @@ class ChineseTargetTranslator(Translator):
                     continue
                 # 空輸出或只是把日文抄回來：保留原文，讓基底類別把它當作翻譯失敗（不寫入快取）
                 if output and not self.output_looks_untranslated(texts[index], output):
-                    results[index] = self._to_target_script(chinese.normalize_punctuation(output), target_language)
+                    tidy = chinese.normalize_punctuation(chinese.strip_skip_leak(output))
+                    results[index] = self._to_target_script(tidy, target_language)
                 else:
                     failed.add(index)
         self.last_failed_indices = failed

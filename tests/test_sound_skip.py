@@ -61,21 +61,23 @@ def test_ordinary_japanese_does_not(text):
 
 
 # ----------------------------------------------------------------------------- 提示詞
-def test_prompt_tells_the_model_to_skip_sound_effects_with_examples():
-    prompt = static_prompt("ja")
+@pytest.mark.parametrize(("style", "rule"), [("zh", "音效"), ("en", "sound effect")])
+def test_prompt_tells_the_model_to_skip_sound_effects_with_examples(style, rule):
+    prompt = static_prompt("ja", style=style)
 
-    assert SKIP_MARKER in prompt and "sound effect" in prompt
+    assert SKIP_MARKER in prompt and rule in prompt
     assert f"<|im_start|>assistant\n{SKIP_MARKER}<|im_end|>" in prompt  # 示範：音效 → [SKIP]
     assert "<|im_start|>assistant\n歡迎回來<|im_end|>" in prompt  # 對照：短短的真話照翻
-    assert SKIP_MARKER in static_prompt("en", lyrics=True) and SKIP_MARKER in static_prompt("ja", lyrics=True)
+    assert SKIP_MARKER in static_prompt("en", lyrics=True, style=style) and SKIP_MARKER in static_prompt("ja", lyrics=True, style=style)
 
 
+@pytest.mark.parametrize("style", ["zh", "en"])
 @pytest.mark.parametrize("lyrics", [False, True])
 @pytest.mark.parametrize("language", ["ja", "en"])
-def test_prompt_without_the_rule_has_no_skip_instruction_or_examples(language, lyrics):
-    prompt = static_prompt(language, lyrics, skip_sounds=False)
+def test_prompt_without_the_rule_has_no_skip_instruction_or_examples(language, lyrics, style):
+    prompt = static_prompt(language, lyrics, skip_sounds=False, style=style)
 
-    assert SKIP_MARKER not in prompt and "sound effect" not in prompt
+    assert SKIP_MARKER not in prompt and "sound effect" not in prompt and "音效" not in prompt
     assert prompt.endswith("<|im_end|>\n")
 
 
@@ -145,9 +147,9 @@ def test_turning_the_option_off_translates_everything_and_separates_the_cache():
     assert out == ["砰！", "汪汪"]  # 關閉：連擬聲詞也翻
     assert all(SKIP_MARKER not in prefix for prefix in generator.prefixes)
     tag = model_tag(instance.resolved_model_name())  # 實際用哪個模型取決於這台電腦下載了什麼
-    assert instance.cache_namespace("auto") == f"auto|nosound|p4|{tag}"
+    assert instance.cache_namespace("auto") == f"auto|nosound|p5|{tag}"
     instance.config["skip_sounds"] = True
-    assert instance.cache_namespace("auto") == f"auto|p4|{tag}"
+    assert instance.cache_namespace("auto") == f"auto|p5|{tag}"
 
 
 def test_the_marker_is_never_shown_when_skipping_is_not_allowed_and_the_retry_also_fails():

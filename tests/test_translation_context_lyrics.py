@@ -40,7 +40,7 @@ TRANSLATIONS = {
 
 def decode(prompt: str) -> str:
     source = source_of(prompt)
-    if "song lyrics" in prompt and source == "進む":  # 歌詞提示讓模型把日文留在譯文裡
+    if "歌詞翻譯" in prompt and source == "進む":  # 歌詞提示讓模型把日文留在譯文裡
         return "進むと"
     return TRANSLATIONS.get(source, "")
 
@@ -50,7 +50,7 @@ def _translator(**section) -> tuple[OfflineTranslator, FakeLlamaEngine]:
 
 
 def _user_turns(prompt: str) -> list[str]:
-    return re.findall(r"<\|im_start\|>user\nTranslate this \w+ text:\n(.*?)<\|im_end\|>", prompt)
+    return re.findall(r"<\|im_start\|>user\n(?:Translate this \w+ text:|翻譯這句[日英]文：)\n(.*?)<\|im_end\|>", prompt)
 
 
 def _last_prompt(generator: FakeLlamaEngine) -> str:
@@ -59,38 +59,45 @@ def _last_prompt(generator: FakeLlamaEngine) -> str:
 
 
 # ----------------------------------------------------------------------------- 提示詞
-def test_lyrics_prompt_changes_system_text_and_examples_but_keeps_the_shape():
-    plain, lyrics = static_prompt("ja"), static_prompt("ja", lyrics=True)
+@pytest.mark.parametrize(("style", "marker"), [("zh", "歌詞翻譯"), ("en", "song lyrics")])
+def test_lyrics_prompt_changes_system_text_and_examples_but_keeps_the_shape(style, marker):
+    plain, lyrics = static_prompt("ja", style=style), static_prompt("ja", lyrics=True, style=style)
 
-    assert "song lyrics" in lyrics and "song lyrics" not in plain
+    assert marker in lyrics and marker not in plain
     assert lyrics != plain
     assert lyrics.startswith("<|im_start|>system\n") and lyrics.endswith("<|im_end|>\n")
     assert lyrics.count("<|im_start|>assistant\n") == len(module._LYRICS_SHOTS["ja"])
     assert plain.count("<|im_start|>assistant\n") == len(module._SHOTS["ja"])
-    assert static_prompt("en", lyrics=True) != static_prompt("en")
+    assert static_prompt("en", lyrics=True, style=style) != static_prompt("en", style=style)
 
 
+_NO_SUBJECT_MARKERS = {"zh": ("原文沒有主詞時，譯文也不要加主詞",), "en": ("Do not add a subject or pronoun", "leave it out of the translation too")}
+
+
+@pytest.mark.parametrize("style", ["zh", "en"])
 @pytest.mark.parametrize("lyrics", [False, True])
 @pytest.mark.parametrize("skip_sounds", [False, True])
 @pytest.mark.parametrize("language", ["ja", "en"])
-def test_the_prompt_tells_the_model_not_to_add_a_subject_the_original_does_not_have(language, lyrics, skip_sounds):
-    system = static_prompt(language, lyrics, skip_sounds).split("<|im_end|>", 1)[0]
+def test_the_prompt_tells_the_model_not_to_add_a_subject_the_original_does_not_have(language, lyrics, skip_sounds, style):
+    system = static_prompt(language, lyrics, skip_sounds, style).split("<|im_end|>", 1)[0]
 
-    assert "Do not add a subject or pronoun" in system
-    assert "leave it out of the translation too" in system
+    for marker in _NO_SUBJECT_MARKERS[style]:
+        assert marker in system
     assert "我" in system and "你" in system  # 舉例說明是哪種字
 
 
-def test_the_examples_do_not_contradict_the_no_subject_rule():
-    everything = "".join(static_prompt(language, lyrics) for language in ("ja", "en") for lyrics in (False, True))
+@pytest.mark.parametrize("style", ["zh", "en"])
+def test_the_examples_do_not_contradict_the_no_subject_rule(style):
+    everything = "".join(static_prompt(language, lyrics, style=style) for language in ("ja", "en") for lyrics in (False, True))
+    ja_header, en_header = ("翻譯這句日文：", "翻譯這句英文：") if style == "zh" else ("Translate this Japanese text:", "Translate this English text:")
 
     # 原文沒有主詞的示範，譯文也不能有（這兩句以前的示範自己加了「我」）
     assert "<|im_start|>assistant\n我喜歡你<|im_end|>" not in everything
     assert "<|im_start|>assistant\n我聽見了你的聲音<|im_end|>" not in everything
     assert "<|im_start|>assistant\n喜歡喔<|im_end|>" in everything and "<|im_start|>assistant\n聽得見你的聲音<|im_end|>" in everything
     # 原文有主詞的示範照翻，才不會被教成「一律拿掉主詞」
-    assert "Translate this Japanese text:\n私は学生です。<|im_end|>\n<|im_start|>assistant\n我是學生。" in static_prompt("ja")
-    assert "Translate this English text:\nI am a student.<|im_end|>\n<|im_start|>assistant\n我是學生。" in static_prompt("en")
+    assert f"{ja_header}\n私は学生です。<|im_end|>\n<|im_start|>assistant\n我是學生。" in static_prompt("ja", style=style)
+    assert f"{en_header}\nI am a student.<|im_end|>\n<|im_start|>assistant\n我是學生。" in static_prompt("en", style=style)
 
 
 def test_the_cache_key_carries_the_prompt_version_so_old_prompts_leave_no_stale_translations():
@@ -100,18 +107,22 @@ def test_the_cache_key_carries_the_prompt_version_so_old_prompts_leave_no_stale_
     assert f"|p{module.PROMPT_VERSION}|" in instance.cache_namespace("auto")
 
 
-def test_history_prompt_is_finished_chat_turns_in_time_order():
+@pytest.mark.parametrize(
+    ("style", "ja_header", "en_header"),
+    [("zh", "翻譯這句日文：", "翻譯這句英文："), ("en", "Translate this Japanese text:", "Translate this English text:")],
+)
+def test_history_prompt_is_finished_chat_turns_in_time_order(style, ja_header, en_header):
     entries = [
         ContextEntry("こんにちは", "你好", "ja", 1.0),
         ContextEntry("Thank you", "謝謝", "en", 2.0),
     ]
 
-    text = history_prompt(entries)
+    text = history_prompt(entries, style)
 
     assert text == (
-        "<|im_start|>user\nTranslate this Japanese text:\nこんにちは<|im_end|>\n"
+        f"<|im_start|>user\n{ja_header}\nこんにちは<|im_end|>\n"
         "<|im_start|>assistant\n你好<|im_end|>\n"
-        "<|im_start|>user\nTranslate this English text:\nThank you<|im_end|>\n"
+        f"<|im_start|>user\n{en_header}\nThank you<|im_end|>\n"
         "<|im_start|>assistant\n謝謝<|im_end|>\n"
     )
     assert history_prompt([]) == ""
@@ -237,15 +248,15 @@ def test_placeholders_are_not_put_into_the_context():
 def test_lyrics_mode_switches_the_system_prompt_live():
     instance, generator = _translator()
     instance.translate(["こんにちは"], "auto", "zh-hant")
-    assert "song lyrics" not in generator.prefixes[-1]
+    assert "歌詞翻譯" not in generator.prefixes[-1]
 
     instance.config["lyrics_mode"] = True
     instance.translate(["元気ですか"], "auto", "zh-hant")
-    assert "song lyrics" in generator.prefixes[-1]
+    assert "歌詞翻譯" in generator.prefixes[-1]
 
     instance.config["lyrics_mode"] = False
     instance.translate(["ありがとう"], "auto", "zh-hant")
-    assert "song lyrics" not in generator.prefixes[-1]
+    assert "歌詞翻譯" not in generator.prefixes[-1]
 
 
 def test_japanese_left_in_the_output_is_retried_with_the_plain_prompt():
@@ -255,7 +266,7 @@ def test_japanese_left_in_the_output_is_retried_with_the_plain_prompt():
 
     assert out == ["前進"]  # 歌詞提示回「進むと」（殘留假名），改用一般提示重翻
     assert generator.calls == 2
-    assert "song lyrics" not in generator.prefixes[-1]
+    assert "歌詞翻譯" not in generator.prefixes[-1]
 
 
 def test_retry_when_the_output_is_not_chinese_is_on_by_default():
@@ -310,13 +321,13 @@ def test_no_retry_when_the_output_is_clean():
 @pytest.mark.parametrize(
     ("section", "expected"),
     [
-        ({}, "auto|p4|1.5b-q4_k_m"),
-        ({"lyrics_mode": True}, "auto|lyrics|p4|1.5b-q4_k_m"),
-        ({"use_context": True}, "auto|ctx|p4|1.5b-q4_k_m"),
-        ({"lyrics_mode": True, "use_context": True}, "auto|lyrics|ctx|p4|1.5b-q4_k_m"),
-        ({"retry_non_chinese": True}, "auto|p4|1.5b-q4_k_m"),  # 預設就是開，不另外分流
-        ({"retry_non_chinese": False}, "auto|noretry|p4|1.5b-q4_k_m"),
-        ({"lyrics_mode": True, "retry_non_chinese": False}, "auto|lyrics|noretry|p4|1.5b-q4_k_m"),
+        ({}, "auto|p5|1.5b-q4_k_m"),
+        ({"lyrics_mode": True}, "auto|lyrics|p5|1.5b-q4_k_m"),
+        ({"use_context": True}, "auto|ctx|p5|1.5b-q4_k_m"),
+        ({"lyrics_mode": True, "use_context": True}, "auto|lyrics|ctx|p5|1.5b-q4_k_m"),
+        ({"retry_non_chinese": True}, "auto|p5|1.5b-q4_k_m"),  # 預設就是開，不另外分流
+        ({"retry_non_chinese": False}, "auto|noretry|p5|1.5b-q4_k_m"),
+        ({"lyrics_mode": True, "retry_non_chinese": False}, "auto|lyrics|noretry|p5|1.5b-q4_k_m"),
     ],
 )
 def test_cache_namespace_separates_translation_styles(section, expected):
@@ -456,14 +467,26 @@ def test_main_window_reload_shows_saved_values_without_rewriting_them(qapp, tmp_
     window.deleteLater()
 
 
-def test_the_lyrics_prompt_asks_for_plain_modern_chinese_not_classical_chinese():
-    lyrics = module.static_prompt("ja", lyrics=True)
-    plain = module.static_prompt("ja")
+def test_the_english_lyrics_prompt_asks_for_plain_modern_chinese_not_classical_chinese():
+    lyrics = module.static_prompt("ja", lyrics=True, style="en")
+    plain = module.static_prompt("ja", style="en")
 
     assert "modern vernacular Chinese" in lyrics and "do not use classical or literary Chinese" in lyrics
     assert "白話文" in lyrics and "文言文" in lyrics
     assert "classical" not in plain and "vernacular" not in plain  # 一般模式的提示詞沒有動
-    assert module.static_prompt("en", lyrics=True).count("vernacular") == 1  # 英文歌詞也一樣
+    assert module.static_prompt("en", lyrics=True, style="en").count("vernacular") == 1  # 英文歌詞也一樣
     # 白話文的要求放在系統提示詞裡（固定前綴），不是每句都重複；快取版本跟著提高
     assert lyrics.index("vernacular") < lyrics.index("<|im_start|>user")
     assert module.PROMPT_VERSION >= 4
+
+
+def test_the_chinese_lyrics_prompt_asks_for_plain_modern_chinese_not_classical_chinese():
+    lyrics = module.static_prompt("ja", lyrics=True, style="zh")
+    plain = module.static_prompt("ja", style="zh")
+
+    assert "現代白話文" in lyrics and "不要用文言文" in lyrics
+    for archaic in "之乃吾汝爾兮矣焉":
+        assert archaic in lyrics.split("<|im_start|>user")[0]  # 古字列在系統提示詞裡，告訴模型避免
+    assert "文言文" not in plain and "白話文" not in plain  # 一般模式的提示詞沒有動
+    assert lyrics.count("白話文") == 1 and module.static_prompt("en", lyrics=True, style="zh").count("白話文") == 1
+    assert module.PROMPT_VERSION >= 5

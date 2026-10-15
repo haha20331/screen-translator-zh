@@ -36,7 +36,7 @@ from typing import NamedTuple
 from app.logger import get_logger
 from services.translation import llama_backend
 from services.translation.base import TranslationError, register_translator
-from services.translation.model_names import answer_prefix, display_name, model_tag, strip_thinking
+from services.translation.model_names import answer_prefix, display_name, model_tag, prompt_style, strip_thinking
 from services.translation.offline_common import (
     SKIP_MARKER,
     ChineseTargetTranslator,
@@ -68,7 +68,7 @@ OFFLINE_MODELS: tuple[OfflineModel, ...] = (
     OfflineModel("qwen2.5-7b-instruct-gguf-q4_k_m", "Qwen2.5 7B・Q4_K_M（最準，CPU 與內顯上很慢、要 7 GB 記憶體，建議有獨立顯示卡時用）"),
 )
 # 提示詞的版本：改了系統提示詞或示範，譯文就會不同；快取鍵帶著版本，舊提示詞留下的譯文不會被當成新的
-PROMPT_VERSION = 4  # 4：歌詞提示詞要求用白話文、不要文言文；3：生成時擋掉外文、原文沒有的英文字母與字間空格（見 token_filter）
+PROMPT_VERSION = 5  # 5：Qwen2.5 系列改用中文提示詞（Qwen3 維持英文）、譯文後處理（頓號、新字體、觸摸、SKIP 混入、客套回覆）；4：歌詞提示詞要求用白話文、不要文言文；3：生成時擋掉外文、原文沒有的英文字母與字間空格（見 token_filter）
 # 預設：真實字幕上和 7B 差不多準，速度與記憶體只要一半。授權是 Qwen Research License，不隨程式散布，使用者自己下載
 DEFAULT_MODEL_NAME = "qwen2.5-3b-instruct-gguf-q4_k_m"
 # 備用：Apache-2.0，可以隨程式散布；沒有下載預設的 3B 時用它
@@ -160,31 +160,76 @@ _LYRICS_SHOTS: dict[str, list[tuple[str, str]]] = {
 }
 
 
-def static_prompt(language: str, lyrics: bool = False, skip_sounds: bool = True) -> str:
+# ----------------------------------------------------------------------------- 兩種提示詞風格
+# 中文版：系統提示詞與每句使用者輪（「翻譯這句日文：」）都用中文，示範同英文版。Qwen2.5 是以中文為主的模型，
+# 盲測（PROMPT_TUNING.md）：3B 比英文版好（歌詞 62:31 與 55:28，通順度 +0.4～0.6、保真度 +0.15～0.3），台詞持平；
+# Qwen3 1.7B 的台詞反而變差、歌詞稍好，整體沒有差別，所以 Qwen3 維持英文版。
+_ZH_SKIP_RULE = (
+    f" 如果文字只有音效、擬聲詞、笑聲、嘆息、尖叫這類沒有意義的聲音（例如 ドン、ガシャーン、ワンワン、ははは、Boom、Woof、Haha），"
+    f"不要翻成「砰」「汪汪」之類的中文擬聲詞，直接輸出 {SKIP_MARKER}。"
+)
+_ZH_NO_SUBJECT_RULE = "原文沒有主詞時，譯文也不要加主詞（例如不要自己補「我」「你」「他」）。"
+_ZH_BASE_SYSTEM_PROMPT = (
+    "你是專業的翻譯。請把使用者給的文字翻譯成自然流暢的台灣繁體中文，完整保留原意，只輸出譯文，不要任何說明。" + _ZH_NO_SUBJECT_RULE
+)
+_ZH_BASE_LYRICS_SYSTEM_PROMPT = (
+    "你是專業的歌詞翻譯。使用者給的是一句歌詞（可能只是片段）。請翻成自然、有詩意的台灣繁體中文，保留原意、情感與意象，"
+    "不要逐字直譯；用現代白話文，不要用文言文，避免「之、乃、吾、汝、爾、兮、矣、焉」這類古字。只輸出譯文，不要任何說明。"
+    + _ZH_NO_SUBJECT_RULE
+)
+
+
+class PromptStyle(NamedTuple):
+    system: str  # 一般字幕的系統提示詞（不含略過擬聲詞的規則）
+    system_lyrics: str  # 歌詞模式
+    skip_rule: str  # 開著「略過擬聲詞」時接在系統提示詞後面
+    user_format: str  # 每句使用者輪的格式（示範、前文、待翻譯句都用同一個）；{name} 是語言名稱
+    names: dict[str, str]
+
+
+PROMPT_STYLES: dict[str, PromptStyle] = {
+    "en": PromptStyle(
+        _BASE_SYSTEM_PROMPT, _BASE_LYRICS_SYSTEM_PROMPT, _SKIP_RULE, "Translate this {name} text:\n{text}", _LANGUAGE_NAMES
+    ),
+    "zh": PromptStyle(
+        _ZH_BASE_SYSTEM_PROMPT,
+        _ZH_BASE_LYRICS_SYSTEM_PROMPT,
+        _ZH_SKIP_RULE,
+        "翻譯這句{name}：\n{text}",
+        {"ja": "日文", "en": "英文"},
+    ),
+}
+DEFAULT_PROMPT_STYLE = "zh"
+
+
+def _user_turn(style: PromptStyle, text: str, language: str) -> str:
+    return style.user_format.format(name=style.names[language], text=text)
+
+
+def static_prompt(language: str, lyrics: bool = False, skip_sounds: bool = True, style: str = DEFAULT_PROMPT_STYLE) -> str:
     """固定前綴（system + 示範），每次翻譯都一樣；結尾剛好在 ``<|im_end|>\\n`` 的分詞邊界上。
 
     交給 CTranslate2 的 ``static_prompt``，這段的注意力快取只算一次（實測每句快約 40%）。
     ``lyrics`` 為真時換成歌詞用的系統提示與示範；``skip_sounds`` 為假時拿掉「只有擬聲詞就回報略過」的規則與示範。
     """
-    name = _LANGUAGE_NAMES[language]
-    if lyrics:
-        system = _LYRICS_SYSTEM_PROMPT if skip_sounds else _BASE_LYRICS_SYSTEM_PROMPT
-    else:
-        system = _SYSTEM_PROMPT if skip_sounds else _BASE_SYSTEM_PROMPT
+    chosen = PROMPT_STYLES[style]
+    system = chosen.system_lyrics if lyrics else chosen.system
+    if skip_sounds:
+        system += chosen.skip_rule
     parts = [f"<|im_start|>system\n{system}<|im_end|>\n"]
     for source, target in (_LYRICS_SHOTS if lyrics else _SHOTS)[language]:
         if target == SKIP_MARKER and not skip_sounds:
             continue
-        parts.append(f"<|im_start|>user\nTranslate this {name} text:\n{source}<|im_end|>\n")
+        parts.append(f"<|im_start|>user\n{_user_turn(chosen, source, language)}<|im_end|>\n")
         parts.append(f"<|im_start|>assistant\n{target}<|im_end|>\n")
     return "".join(parts)
 
 
-def user_prompt(text: str, language: str, answer_prefix: str = "") -> str:
+def user_prompt(text: str, language: str, answer_prefix: str = "", style: str = DEFAULT_PROMPT_STYLE) -> str:
     """每句不同的部分：待翻譯文字，並留下 assistant 開頭讓模型續寫。
     ``answer_prefix``：先幫模型寫好的回答開頭（Qwen3 非思考模式的空思考區塊）。"""
-    name = _LANGUAGE_NAMES[language]
-    return f"<|im_start|>user\nTranslate this {name} text:\n{text}<|im_end|>\n<|im_start|>assistant\n{answer_prefix}"
+    turn = _user_turn(PROMPT_STYLES[style], text, language)
+    return f"<|im_start|>user\n{turn}<|im_end|>\n<|im_start|>assistant\n{answer_prefix}"
 
 
 def llama_model_available(name: str, model_dir: str = "") -> bool:
@@ -202,25 +247,34 @@ class ContextEntry(NamedTuple):
     timestamp: float
 
 
-def history_prompt(entries: list[ContextEntry]) -> str:
+def history_prompt(entries: list[ContextEntry], style: str = DEFAULT_PROMPT_STYLE) -> str:
     """前文：先前翻好的句子，照時間順序接在示範後面，當成更早的幾輪對話。
 
     用「已完成的對話輪」而不是「請參考以下前文」的說明文字：小模型看到說明容易連前文一起翻，
     對話輪則會自然接續同樣的格式，只翻最後一句。
     """
+    chosen = PROMPT_STYLES[style]
     parts = []
     for entry in entries:
-        name = _LANGUAGE_NAMES[entry.language]
-        parts.append(f"<|im_start|>user\nTranslate this {name} text:\n{entry.source}<|im_end|>\n")
+        parts.append(f"<|im_start|>user\n{_user_turn(chosen, entry.source, entry.language)}<|im_end|>\n")
         parts.append(f"<|im_start|>assistant\n{entry.translation}<|im_end|>\n")
     return "".join(parts)
 
 
 def build_prompt(
-    text: str, language: str, history: list[ContextEntry] | None = None, lyrics: bool = False, skip_sounds: bool = True
+    text: str,
+    language: str,
+    history: list[ContextEntry] | None = None,
+    lyrics: bool = False,
+    skip_sounds: bool = True,
+    style: str = DEFAULT_PROMPT_STYLE,
 ) -> str:
     """完整的 Qwen ChatML 提示詞（固定前綴 + 前文 + 待翻譯文字）。"""
-    return static_prompt(language, lyrics, skip_sounds) + history_prompt(history or []) + user_prompt(text, language)
+    return (
+        static_prompt(language, lyrics, skip_sounds, style)
+        + history_prompt(history or [], style)
+        + user_prompt(text, language, style=style)
+    )
 
 
 def clean_output(text: str) -> str:
@@ -318,7 +372,7 @@ class OfflineTranslator(ChineseTargetTranslator):
             return super().output_looks_untranslated(source, output)
         # 只進模型一次、翻出什麼就輸出什麼：不是中文也照顯示，只擋「原樣抄回原文」與失控重複
         echoed = has_kana(source) and output.strip() == source.strip()
-        return echoed or chinese.has_runaway_repetition(output, source)
+        return echoed or chinese.has_runaway_repetition(output, source) or chinese.is_meta_reply(output)
 
     def context_size(self) -> int:
         try:
@@ -504,8 +558,10 @@ class OfflineTranslator(ChineseTargetTranslator):
         「譯文不是中文時處理」（``retry_non_chinese``）開著時，生成當下就擋掉外文、原文沒有的英文字母與字間空格
         （``token_filter``），模型選不到這些詞，大多數句子就不必事後重翻；關著時完全不干涉模型的輸出。"""
         max_tokens = int(self._settings().get("max_new_tokens", 160))
-        prefix = static_prompt(language, lyrics, skip)
-        opening = answer_prefix(self.resolved_model_name())  # Qwen3：空的思考區塊，直接寫答案
+        model = self.resolved_model_name()
+        style = prompt_style(model)  # Qwen2.5 系列：中文提示詞；Qwen3：英文提示詞
+        prefix = static_prompt(language, lyrics, skip, style)
+        opening = answer_prefix(model)  # Qwen3：空的思考區塊，直接寫答案
         extra = {} if seed is None else {"seed": seed}
         guard = self.retry_enabled()
         if guard:
@@ -513,7 +569,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         return [
             clean_output(
                 self._llama.complete(
-                    prefix + history_prompt(context) + user_prompt(text, language, opening),
+                    prefix + history_prompt(context, style) + user_prompt(text, language, opening, style),
                     max_tokens,
                     prefix,
                     **extra,

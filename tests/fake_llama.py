@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from services.translation.offline_translator import OfflineTranslator
 
-_SOURCE_RE = re.compile(r"Translate this \w+ text:\n(.*?)<\|im_end\|>", re.S)
+_SOURCE_RE = re.compile(r"(?:Translate this \w+ text:|翻譯這句[日英]文：)\n(.*?)<\|im_end\|>", re.S)
 
 
 def source_of(prompt: str) -> str:

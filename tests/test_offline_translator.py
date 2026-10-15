@@ -41,25 +41,41 @@ def test_registered_under_offline_name():
     assert OfflineTranslator.identical_means_failure is False
 
 
-@pytest.mark.parametrize(("language", "name"), [("ja", "Japanese"), ("en", "English")])
-def test_prompt_has_system_shots_and_target_text(language, name):
-    prompt = build_prompt("待翻譯", language)
+# 兩種提示詞風格：zh（Qwen2.5 系列，預設）與 en（Qwen3），差在系統提示詞與每句使用者輪的語言，示範一樣
+_STYLES = [
+    ("zh", "台灣繁體中文", {"ja": "翻譯這句日文：", "en": "翻譯這句英文："}),
+    ("en", "Traditional Chinese as used in Taiwan", {"ja": "Translate this Japanese text:", "en": "Translate this English text:"}),
+]
+
+
+@pytest.mark.parametrize(("style", "system_marker", "headers"), _STYLES)
+@pytest.mark.parametrize("language", ["ja", "en"])
+def test_prompt_has_system_shots_and_target_text(language, style, system_marker, headers):
+    prompt = build_prompt("待翻譯", language, style=style)
+    header = headers[language]
 
     assert prompt.startswith("<|im_start|>system\n")
-    assert "Traditional Chinese as used in Taiwan" in prompt
+    assert system_marker in prompt
     shots = len(_SHOTS[language]) + 1  # 示範 + 最後等待模型續寫的一個
     assert prompt.count("<|im_start|>assistant\n") == shots
-    assert prompt.count(f"Translate this {name} text:") == shots
-    assert prompt.endswith(f"Translate this {name} text:\n待翻譯<|im_end|>\n<|im_start|>assistant\n")
+    assert prompt.count(header) == shots
+    assert prompt.endswith(f"{header}\n待翻譯<|im_end|>\n<|im_start|>assistant\n")
 
 
+def test_the_default_prompt_style_is_the_chinese_one():
+    assert build_prompt("待翻譯", "ja") == build_prompt("待翻譯", "ja", style="zh")
+    assert static_prompt("ja") != static_prompt("ja", style="en")
+
+
+@pytest.mark.parametrize("style", ["zh", "en"])
 @pytest.mark.parametrize("language", ["ja", "en"])
-def test_prompt_is_static_prefix_plus_user_turn(language):
-    assert build_prompt("文字", language) == static_prompt(language) + user_prompt("文字", language)
+def test_prompt_is_static_prefix_plus_user_turn(language, style):
+    text = "ZQ待翻譯Q7"  # 不能是提示詞裡本來就有的字
+    assert build_prompt(text, language, style=style) == static_prompt(language, style=style) + user_prompt(text, language, style=style)
     # 固定前綴不含待翻譯文字，且停在對話輪次邊界，才能被引擎的 KV 快取重用
-    assert "文字" not in static_prompt(language)
-    assert static_prompt(language).endswith("<|im_end|>\n")
-    assert user_prompt("文字", language).startswith("<|im_start|>user\n")
+    assert text not in static_prompt(language, style=style)
+    assert static_prompt(language, style=style).endswith("<|im_end|>\n")
+    assert user_prompt(text, language, style=style).startswith("<|im_start|>user\n")
 
 
 @pytest.mark.parametrize(
@@ -240,7 +256,7 @@ def test_every_listed_model_can_be_fetched_by_the_download_script():
 )
 def test_the_cache_tag_tells_models_apart(name, tag):
     assert model_tag(name) == tag
-    assert _translator(model_name=name).cache_namespace("auto") == f"auto|p4|{tag}"
+    assert _translator(model_name=name).cache_namespace("auto") == f"auto|p5|{tag}"
 
 
 @pytest.mark.parametrize(

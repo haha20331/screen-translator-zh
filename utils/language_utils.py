@@ -124,6 +124,24 @@ def unexpected_latin_words(source: str, output: str) -> list[str]:
     return [word for word in _LATIN_WORD_RE.findall(output or "") if word.lower() not in known]
 
 
+_LOWER_WORD_RE = re.compile(r"\b[a-z]{3,}\b")
+# 中文裡本來就常保留英文拼法的字（產品、網站、縮寫的全名）；英文原文有這些字、譯文照留是正常的
+_KEEP_ENGLISH = frozenset(
+    "email wifi app apps online offline bluetooth iphone ipad android youtube google twitter facebook instagram windows linux macos usb hdmi wiki".split()
+)
+
+
+def untranslated_english_words(source: str, output: str) -> list[str]:
+    """英文原文的譯文裡，原樣留著沒翻的小寫英文單字（「在小行星帶深處， sir。」「我們年輕且 reckless」）。
+
+    只看全小寫的單字（人名、按鍵名 Esc、縮寫 HP 都不算），而且那個字要是原文裡本來就有的；
+    譯文裡沒有任何中文時是「整句沒翻」，不在這裡處理。日文、中文原文不看。"""
+    if has_kana(source) or has_han(source) or not has_han(output):
+        return []
+    known = set(_LOWER_WORD_RE.findall((source or "").lower()))
+    return [word for word in _LOWER_WORD_RE.findall(output or "") if word in known and word not in _KEEP_ENGLISH]
+
+
 def script_class(text: str) -> str:
     """文字的書寫系統：``ja``（含假名）、``han``（只有漢字，沒有假名）、``latin``、``other``（數字、符號）。"""
     value = text or ""

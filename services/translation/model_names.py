@@ -27,6 +27,11 @@ def answer_prefix(name: str) -> str:
     return QWEN3_NON_THINKING_PREFIX if model_family(name) == "qwen3" else ""
 
 
+def prompt_style(name: str) -> str:
+    """提示詞的風格：Qwen3 用英文（中文版對它的台詞反而變差），其餘（Qwen2.5 系列與自訂模型）用中文。"""
+    return "en" if model_family(name) == "qwen3" else "zh"
+
+
 def strip_thinking(text: str) -> str:
     """去掉模型自己寫出來的思考區塊（沒有照聊天範本走、或思考沒關掉時）；沒有思考區塊就原樣回傳。"""
     return _STRAY_THINK_RE.sub("", _THINK_BLOCK_RE.sub("", text or ""))

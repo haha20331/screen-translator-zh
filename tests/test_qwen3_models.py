@@ -14,6 +14,7 @@ from services.translation.model_names import (
     display_name,
     model_family,
     model_tag,
+    prompt_style,
     strip_thinking,
 )
 from services.translation.offline_translator import (
@@ -40,9 +41,26 @@ def test_qwen3_models_get_the_opening_and_qwen25_models_do_not(name):
         assert model_family(other) == "qwen2.5" and answer_prefix(other) == ""
 
 
+def test_qwen3_models_use_the_english_prompts_and_every_other_model_the_chinese_ones():
+    """盲測：中文提示詞對 Qwen2.5 3B 明顯較好，對 Qwen3 1.7B 的台詞反而較差（PROMPT_TUNING.md）。"""
+    assert all(prompt_style(name) == "en" for name in QWEN3)
+    for other in ("qwen2.5-3b-instruct-gguf-q4_k_m", "qwen2.5-1.5b-instruct-gguf-q4_k_m", "qwen2.5-7b-instruct-gguf-q4_k_m", "custom"):
+        assert prompt_style(other) == "zh"
+
+
+def test_the_translator_sends_the_prompt_style_that_belongs_to_the_model():
+    for name, header in (("qwen3-1.7b-gguf-q8_0", "Translate this Japanese text:\n"), ("qwen2.5-3b-instruct-gguf-q4_k_m", "翻譯這句日文：\n")):
+        instance, fake = offline_translator(lambda prompt: "你好", offline={"model_name": name})
+
+        instance.translate(["こんにちは"], "auto", "zh-hant")
+
+        assert header in fake.prompts[0]
+        assert fake.prefixes[0] == static_prompt("ja", style=prompt_style(name))
+
+
 def test_the_user_turn_ends_with_the_opening_only_when_one_is_given():
-    plain = user_prompt("会いたい", "ja")
-    opened = user_prompt("会いたい", "ja", QWEN3_NON_THINKING_PREFIX)
+    plain = user_prompt("会いたい", "ja", style="en")
+    opened = user_prompt("会いたい", "ja", QWEN3_NON_THINKING_PREFIX, style="en")
 
     assert plain.endswith("<|im_start|>assistant\n")
     assert opened == plain + "<think>\n\n</think>\n\n"
@@ -74,7 +92,7 @@ def test_retries_keep_the_opening_and_the_fixed_prefix_is_shared_between_familie
     assert instance.translate(["会いたい"], "auto", "zh-hant") == ["想見"]
     assert fake.seeds == [None, 1]
     assert all(prompt.endswith("<think>\n\n</think>\n\n") for prompt in fake.prompts)
-    assert set(fake.prefixes) == {static_prompt("ja")}  # 固定前綴（系統提示＋示範）兩個系列一樣，快取照用
+    assert set(fake.prefixes) == {static_prompt("ja", style="en")}  # Qwen3 用英文提示詞；固定前綴整場翻譯都一樣，快取照用
 
 
 def test_a_thinking_block_the_model_writes_anyway_is_removed_from_the_output():

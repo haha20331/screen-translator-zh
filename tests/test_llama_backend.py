@@ -30,7 +30,7 @@ TRANSLATIONS = {"こんにちは": "你好", "ありがとう": "謝謝", "進�
 
 def decode(prompt: str) -> str:
     source = source_of(prompt)
-    if "song lyrics" in prompt and source == "進む":  # 歌詞提示讓模型把日文留在譯文裡
+    if "歌詞翻譯" in prompt and source == "進む":  # 歌詞提示讓模型把日文留在譯文裡
         return "進むと"
     return TRANSLATIONS.get(source, "")
 
@@ -48,7 +48,7 @@ def test_the_whole_chatml_prompt_goes_to_llama_cpp_and_the_answer_is_cleaned():
     assert out == ["你好"]
     prompt = fake.prompts[0]
     assert prompt.startswith("<|im_start|>system\n")  # 固定前綴（系統提示 + 示範）
-    assert "Translate this Japanese text:\nこんにちは<|im_end|>\n<|im_start|>assistant\n" in prompt
+    assert "翻譯這句日文：\nこんにちは<|im_end|>\n<|im_start|>assistant\n" in prompt  # Qwen2.5 系列：中文提示詞
     assert prompt.endswith("<|im_start|>assistant\n")  # 讓模型從這裡續寫
     assert fake.max_tokens == [160]
 
@@ -72,7 +72,7 @@ def test_context_and_lyrics_are_put_into_the_prompt():
     instance.translate(["ありがとう"], "auto", "zh-hant")
 
     prompt = fake.prompts[-1]
-    assert "song lyrics" in prompt  # 歌詞提示
+    assert "歌詞翻譯" in prompt  # 歌詞提示（Qwen2.5 系列用中文提示詞）
     assert prompt.index("こんにちは") < prompt.index("ありがとう")  # 前一句當前文，放在待翻句之前
     assert "<|im_start|>assistant\n你好<|im_end|>\n" in prompt
 
@@ -80,7 +80,7 @@ def test_context_and_lyrics_are_put_into_the_prompt():
 def test_the_kana_retry_and_the_sound_skip_work():
     instance, fake = _translator(lyrics_mode=True)
     assert instance.translate(["進む"], "auto", "zh-hant") == ["前進"]  # 歌詞提示殘留假名 → 改用一般提示重翻
-    assert fake.calls == 2 and "song lyrics" not in fake.prompts[-1]
+    assert fake.calls == 2 and "歌詞翻譯" not in fake.prompts[-1]
 
     sound, _ = _translator()
     assert sound.translate(["ドン！"], "auto", "zh-hant") == ["ドン！"]  # 擬聲詞：原文保留、不算失敗
