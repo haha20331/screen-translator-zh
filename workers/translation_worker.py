@@ -171,7 +171,11 @@ class PipelineTask(QThread):
                 if auto_color:
                     region.text_color = ensure_text_contrast(region.text_color, region.background_color)
 
-            self._emit_status(f"正在翻譯 {len(regions)} 個文本塊...")
+            if getattr(self.translator, "is_ready", lambda: True)():
+                self._emit_status(f"正在翻譯 {len(regions)} 個文本塊...")
+            else:
+                # 離線模型還在載入（啟動或剛換模型）：下面的 translate 會等它載好，先說明在等什麼
+                self._emit_status("翻譯模型載入中…")
             # 图标、文件名以及已经是目标语言的文字保持原样。旧逻辑把中文
             # 中文再翻一遍、把文件夹图标“O/0”翻成方块，是整页发脏的主因。
             restored_map = {text: text for text in unique_texts}

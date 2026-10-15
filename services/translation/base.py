@@ -51,6 +51,10 @@ class Translator(ABC):
         self.last_failed_count = 0
         self.last_failed_indices: set[int] = set()
 
+    def is_ready(self) -> bool:
+        """翻譯器現在能不能馬上翻譯。線上服務隨時可以；離線模型還在載入或預熱時是 False。"""
+        return True
+
     # ------------------------------------------------------------- 子类实现
     @abstractmethod
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:

@@ -38,6 +38,7 @@ from app.config import AppConfig
 from app.history_mixin import HistoryMixin
 from app.hotkeys import HotkeyError, HotkeyManager
 from app.logger import app_data_dir, get_logger
+from app.model_loading_mixin import ModelLoadingMixin
 from app.models import CaptureInfo, TextRegion
 from app.monitor_mixin import MonitorMixin
 from app.pipeline_mixin import PipelineMixin
@@ -89,11 +90,14 @@ class Application(
     SettingsMixin,
     PipelineMixin,
     TranscriptMixin,
+    ModelLoadingMixin,
 ):
     """顶层控制器（生命周期 + 更新；其余职责见各 Mixin）。"""
 
     # 輸出檔寫不進去時，由寫入執行緒發出（Qt 會排進主執行緒處理）
     _transcript_problem = Signal(str)
+    # 背景預熱結束（翻譯器、錯誤訊息、花了幾秒）；預熱在背景執行緒跑，靠這個信號回到主執行緒
+    _warmup_finished = Signal(object, str, float)
 
     def __init__(self, qt_app: QGuiApplication) -> None:
         super().__init__()
@@ -137,6 +141,7 @@ class Application(
         self._pipeline_error = ""
         self._shutting_down = False
         self._shutdown_finalized = False
+        self._init_model_loading()
 
         self._capture_timer = QTimer(self)
         self._capture_timer.setSingleShot(True)
@@ -216,7 +221,9 @@ class Application(
             self._foreground_tracker.start()
             self._apply_hotkeys()
             self._apply_autostart()
-            self._warmup()
+            note = self._warmup()
+            if note:
+                self.set_status(note)
             if (not self.config.get("general.first_run_done", False)
                     and os.environ.get("SCREEN_TRANSLATOR_SELFTEST") != "1"):
                 QTimer.singleShot(500, self._show_welcome)
@@ -276,30 +283,6 @@ class Application(
         if worker is not None:
             worker.deleteLater()
         self.qt_app.quit()
-
-    def _warmup(self) -> None:
-        """后台线程预热 OCR 与离线翻译模型，避免第一次截图时卡很久。"""
-        if os.environ.get("SCREEN_TRANSLATOR_NO_WARMUP") == "1" or os.environ.get(
-            "SCREEN_TRANSLATOR_SELFTEST"
-        ) == "1":
-            return
-
-        def job() -> None:
-            try:
-                if self.ocr_engine is not None:
-                    self.ocr_engine.warmup()
-            except Exception as exc:
-                log.warning("OCR 模型預熱失敗：%s", exc)
-            try:
-                warmup = getattr(self.translator, "warmup", None)
-                if callable(warmup):
-                    warmup()
-            except Exception as exc:
-                log.warning("翻譯模型預熱失敗：%s", exc)
-
-        import threading
-
-        threading.Thread(target=job, daemon=True, name="ocr-warmup").start()
 
     def _remember_external_foreground(self) -> None:
         """保留最近一次非本程序前台窗口，供点击“当前窗口”后稳定捕获。"""

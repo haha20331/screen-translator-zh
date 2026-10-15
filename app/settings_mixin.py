@@ -101,7 +101,9 @@ class SettingsMixin:
     def _reload_translation_model(self) -> None:
         """速度測試結束後：背景把原本的模型載回來並預熱，下一句字幕才不必等。"""
         if not self._shutting_down:
-            self._warmup()
+            note = self._warmup()
+            if note:
+                self.set_status(note)
 
     def _begin_settings_exit(self, page: SettingsDialog, result: int) -> None:
         if self._settings_page is not page:
@@ -150,7 +152,7 @@ class SettingsMixin:
             self.set_status(f"檢測到 API Key，已自動切換到 {resolved_service} 翻譯服務")
         cleared = self._rebuild_translator()
         self._forget_displayed_translations()  # 可能換了模型：畫面上舊模型的譯文不能被寫進新模型的快取
-        self._warmup()
+        loading = self._warmup() or ""  # 換了模型就馬上在背景載入；載入中的提示併進下面的狀態列文字
         if self.overlay_manager is not None:
             self.overlay_manager.apply_style()
         try:
@@ -162,7 +164,11 @@ class SettingsMixin:
         self._apply_transcript_settings()
         if self.window is not None:
             self.window.reload_values()
-        self.set_status("設定已儲存" + (f"（換了翻譯模型，已清空翻譯快取 {cleared} 句）" if cleared else ""))
+        self.set_status(
+            "設定已儲存"
+            + (f"（換了翻譯模型，已清空翻譯快取 {cleared} 句）" if cleared else "")
+            + (f"；{loading}" if loading else "")
+        )
 
     def apply_runtime_selection(
         self,
@@ -194,13 +200,14 @@ class SettingsMixin:
         self.config.save()
         self.ocr_engine = self._create_configured_ocr_engine()
         cleared = self._rebuild_translator()
-        self._warmup()
+        loading = self._warmup() or ""
         if self.window is not None:
             self.window.reload_values()
         self.set_status(
             f"已切換：OCR={self._active_ocr_engine_name} 翻譯={self.config.get('translation.service')} "
             f"目標={self.config.get('translation.target_language')}"
             + (f"（換了翻譯模型，已清空翻譯快取 {cleared} 句）" if cleared else "")
+            + (f"；{loading}" if loading else "")
         )
 
     def _translator_label(self) -> str:

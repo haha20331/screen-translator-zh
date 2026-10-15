@@ -36,7 +36,7 @@ from typing import NamedTuple
 from app.logger import get_logger
 from services.translation import llama_backend
 from services.translation.base import TranslationError, register_translator
-from services.translation.model_names import answer_prefix, model_tag, strip_thinking
+from services.translation.model_names import answer_prefix, display_name, model_tag, strip_thinking
 from services.translation.offline_common import (
     SKIP_MARKER,
     ChineseTargetTranslator,
@@ -246,6 +246,8 @@ class OfflineTranslator(ChineseTargetTranslator):
         self._resolved_model: str | None = None
         self.device = ""
         self.model_name = ""  # 實際載入的模型（auto 模式下可能和設定不同）
+        self._warmups_running = 0  # 背景預熱的執行緒數（預熱期間 is_ready 是 False）
+        self._warmup_count_lock = threading.Lock()
 
     # ------------------------------------------------------------- availability
     @classmethod
@@ -344,6 +346,16 @@ class OfflineTranslator(ChineseTargetTranslator):
     def model_label(self) -> str:
         return f"{self.name}/{self.resolved_model_name()}"
 
+    def display_model_name(self) -> str:
+        """給使用者看的短名稱（3B Q4_K_M、Qwen3 1.7B Q8_0），顯示載入進度時用。"""
+        return display_name(self.resolved_model_name())
+
+    def is_ready(self) -> bool:
+        """模型已載入、而且沒有在預熱：現在翻譯不必等。"""
+        with self._warmup_count_lock:
+            warming = self._warmups_running > 0
+        return self._llama is not None and not warming
+
     def reset_context(self) -> None:
         with self._history_lock:
             self._history.clear()
@@ -414,15 +426,21 @@ class OfflineTranslator(ChineseTargetTranslator):
 
     def warmup(self) -> None:
         """載入模型、分類詞彙表並翻一句，讓第一次真正翻譯不必等模型載入。"""
-        with self._model_lock:
-            self._load()
-            prepare = getattr(self._llama, "prepare_token_filter", None)
-            if callable(prepare) and self.retry_enabled():
-                prepare()
-        # 日文與英文各翻一句：兩種語言的固定前綴（系統提示 + 示範，約 300 個 token）各要算一次，
-        # 3B 約 3 秒、7B 約 7 秒；在這裡（背景預熱）先算好，第一句字幕才不必等
-        self._generate(["Hello"], "en")
-        self._generate(["こんにちは"], "ja")
+        with self._warmup_count_lock:
+            self._warmups_running += 1
+        try:
+            with self._model_lock:
+                self._load()
+                prepare = getattr(self._llama, "prepare_token_filter", None)
+                if callable(prepare) and self.retry_enabled():
+                    prepare()
+            # 日文與英文各翻一句：兩種語言的固定前綴（系統提示 + 示範，約 300 個 token）各要算一次，
+            # 3B 約 3 秒、7B 約 7 秒；在這裡（背景預熱）先算好，第一句字幕才不必等
+            self._generate(["Hello"], "en")
+            self._generate(["こんにちは"], "ja")
+        finally:
+            with self._warmup_count_lock:
+                self._warmups_running -= 1
 
     # ------------------------------------------------------------- inference
     def _generate(self, texts: list[str], language: str) -> list[str]:

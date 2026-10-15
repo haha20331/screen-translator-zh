@@ -119,6 +119,11 @@ class MonitorMixin:
         request = self._monitor_request
         if request is None:
             return
+        if self._translator_warming():
+            # 翻譯模型還在背景載入：這一輪送出去只會卡在載入上（重新整理還會被當成舊任務沒結束）。
+            # 這一格畫面不記進去，載入完成後的下一輪照常辨識、翻譯。
+            self._monitor_schedule_next()
+            return
         try:
             if request["mode"] == "fullscreen":
                 capture = self.screenshot_service.capture_fullscreen()
@@ -178,7 +183,9 @@ class MonitorMixin:
         self._monitor_signature = ""
         self._monitor_frame_hash = ""
         self._monitor_idle_hash = ""
-        self.set_status("重新整理中…")
+        self.set_status(
+            "翻譯模型載入中，完成後自動重新整理" if self._translator_warming() else "重新整理中…"
+        )
         self._monitor_timer.stop()
         self._monitor_timer.start(0)
 
