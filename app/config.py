@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.logger import app_data_dir
+from utils.language_utils import TARGET_LANGUAGE
 
 DEFAULTS: dict[str, Any] = {
     "general": {
@@ -253,6 +254,7 @@ def _normalize_appearance(data: dict[str, Any]) -> None:
 def _normalize_translation(data: dict[str, Any]) -> None:
     """Clamp legacy anonymous-Google tuning that made large captures slower."""
     translation = data.setdefault("translation", {})
+    translation["target_language"] = TARGET_LANGUAGE  # 目標語言只有繁體中文：舊設定檔裡的其他值（簡體、英文…）改回來
     try:
         workers = int(translation.get("google_free_max_workers", 6) or 6)
     except (TypeError, ValueError):
@@ -459,7 +461,7 @@ class AppConfig:
         node = self.data
         for part in parts[:-1]:
             node = node.setdefault(part, {})
-        node[parts[-1]] = value
+        node[parts[-1]] = TARGET_LANGUAGE if dotted == "translation.target_language" else value
 
     def hotkeys(self) -> dict[str, str]:
         return dict(self.section("hotkeys"))

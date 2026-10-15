@@ -82,7 +82,7 @@ from ui.no_wheel import NoWheelComboBox, NoWheelDoubleSpinBox, NoWheelSlider, No
 from ui.overlay_preview import OverlayPreview
 from ui.personalization import AppearancePreview, PersonalizationChoiceRow
 from utils import stability
-from utils.language_utils import LANGUAGES
+from utils.language_utils import LANGUAGES, TARGET_LANGUAGE, TARGET_LANGUAGES
 
 log = get_logger("settings")
 
@@ -900,7 +900,10 @@ class SettingsDialog(QWidget):
         self.combo_target = NoWheelComboBox()
         for code, name in LANGUAGES:
             self.combo_source.addItem(name, code)
+        for code, name in TARGET_LANGUAGES:  # 目標語言只有繁體中文，只是顯示出來（不能改）
             self.combo_target.addItem(name, code)
+        self.combo_target.setEnabled(False)
+        self.combo_target.setToolTip("譯文固定是繁體中文（台灣用語）。")
         self.combo_offline_model = NoWheelComboBox()
         for label, name in OFFLINE_MODEL_CHOICES:
             self.combo_offline_model.addItem(label, name)
@@ -1233,7 +1236,7 @@ class SettingsDialog(QWidget):
 
         self._set_combo(self.combo_service, cfg.get("translation.service", "mock"))
         self._set_combo(self.combo_source, cfg.get("translation.source_language", "auto"))
-        self._set_combo(self.combo_target, cfg.get("translation.target_language", "zh"))
+        self._set_combo(self.combo_target, TARGET_LANGUAGE)
         self.chk_keep_original.setChecked(bool(cfg.get("translation.keep_original", False)))
         self.chk_use_context.setChecked(bool(cfg.get("translation.use_context", True)))
         self.spin_context_size.setValue(int(cfg.get("translation.context_size", 2)))
@@ -1379,7 +1382,7 @@ class SettingsDialog(QWidget):
 
             cfg.set("translation.service", self.combo_service.currentData() or "mock")
             cfg.set("translation.source_language", self.combo_source.currentData() or "auto")
-            cfg.set("translation.target_language", self.combo_target.currentData() or "zh")
+            cfg.set("translation.target_language", TARGET_LANGUAGE)
             cfg.set("translation.keep_original", self.chk_keep_original.isChecked())
             cfg.set("translation.use_context", self.chk_use_context.isChecked())
             cfg.set("translation.context_size", self.spin_context_size.value())

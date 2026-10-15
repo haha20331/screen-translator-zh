@@ -25,6 +25,11 @@ LANGUAGES = [
 
 LANGUAGE_CODES = [code for code, _ in LANGUAGES]
 
+# 翻譯的目標語言只有繁體中文（使用者 2026-10-15 的決定）：介面不提供其他選項，設定檔裡的其他值會被改回來。
+# 輸入語言（LANGUAGES）仍可選；離線翻譯支援日文與英文。
+TARGET_LANGUAGE = "zh-hant"
+TARGET_LANGUAGES = [(TARGET_LANGUAGE, "繁體中文")]
+
 
 _TECHNICAL_PATH_RE = re.compile(r"^[\w.@:+~-]+(?:[/\\][\w.@:+~-]+)+$")
 _TECHNICAL_FILE_RE = re.compile(

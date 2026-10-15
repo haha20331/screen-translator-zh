@@ -35,7 +35,7 @@ from ui.motion import (
 )
 from ui.no_wheel import NoWheelComboBox
 from ui.settings_transition import SettingsTransitionGuard
-from utils.language_utils import LANGUAGES
+from utils.language_utils import LANGUAGES, TARGET_LANGUAGES
 
 
 class NativePageDeck(QWidget):
@@ -522,7 +522,10 @@ class MainWindow(QWidget):
         self._block_signals = True
         for code, name in LANGUAGES:
             self.combo_source.addItem(name, code)
+        for code, name in TARGET_LANGUAGES:  # 目標語言只有繁體中文，只是顯示出來（不能改）
             self.combo_target.addItem(name, code)
+        self.combo_target.setEnabled(False)
+        self.combo_target.setToolTip("譯文固定是繁體中文（台灣用語）。")
         for engine in list_ocr_engines():
             self.combo_ocr.addItem(engine, engine)
         for service in list_translators():
@@ -534,7 +537,7 @@ class MainWindow(QWidget):
         """Refresh duplicated quick controls after settings are saved."""
         self._block_signals = True
         self.combo_source.setCurrentIndex(self._index_of(self.combo_source, self.controller.config.get("translation.source_language", "auto")))
-        self.combo_target.setCurrentIndex(self._index_of(self.combo_target, self.controller.config.get("translation.target_language", "zh")))
+        self.combo_target.setCurrentIndex(0)  # 只有繁體中文一個選項
         self.combo_ocr.setCurrentIndex(self._index_of(self.combo_ocr, self.controller.config.get("ocr.engine", "windows")))
         self.combo_service.setCurrentIndex(self._index_of(self.combo_service, self.controller.config.get("translation.service", "mymemory")))
         self.check_keep_original.setChecked(bool(self.controller.config.get("translation.keep_original", False)))

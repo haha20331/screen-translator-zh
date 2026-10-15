@@ -164,7 +164,7 @@ class MonitorMixin:
             and self.translator is not None
         ):
             source = self.translator.cache_namespace(str(self.config.get("translation.source_language", "auto")))
-            target = str(self.config.get("translation.target_language", "zh"))
+            target = str(self.config.get("translation.target_language", "zh-hant"))
             for text, translated in self._monitor_known.items():
                 try:
                     self.cache.set(source, target, text, translated)
