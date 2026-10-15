@@ -1,0 +1,2 @@
+# Tools for building the Windows installer (see PACKAGING.md). Install into a clean venv after requirements-core.txt.
+pyinstaller>=6.10,<7

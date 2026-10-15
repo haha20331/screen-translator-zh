@@ -35,3 +35,9 @@ Thumbs.db
 
 # 使用者的驗證樣本（含受版權保護的截圖），不進版控
 val_data/
+
+# 打包用的乾淨環境與輸出（見 PACKAGING.md）
+.venv-build/
+release/
+
+installer/generated/

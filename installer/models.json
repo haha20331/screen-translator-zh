@@ -1,0 +1,158 @@
+{
+  "_comment": "安裝程式的模型清單（scripts/installer_models.py 會檢查它與 scripts/fetch_translation_models.py、程式內的模型清單一致，並產生 Inno Setup 的 [Components] 與 [Files]）。SHA-256 與大小已和 Hugging Face 的 X-Linked-ETag／X-Linked-Size 核對過。",
+  "host": "https://huggingface.co",
+  "models": [
+    {
+      "name": "qwen2.5-3b-instruct-gguf-q4_k_m",
+      "component": "qwen25_3b",
+      "label": "Qwen2.5 3B Q4_K_M（推薦）：約 2.1 GB，準確度與速度的平衡；授權限非商用的研究與評估",
+      "recommended": true,
+      "license": "Qwen Research License（僅限非商用）",
+      "repo": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe",
+      "files": [
+        {
+          "name": "qwen2.5-3b-instruct-q4_k_m.gguf",
+          "size": 2104932768,
+          "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d"
+        }
+      ],
+      "license_file": {
+        "name": "LICENSE",
+        "size": 7388,
+        "sha256": "ef52482bb785733093dc9a2e8edd8e764c77d12d8e9d8f10a80c9b547d32d0f9"
+      }
+    },
+    {
+      "name": "qwen2.5-1.5b-instruct-gguf-q4_k_m",
+      "component": "qwen25_1_5b",
+      "label": "Qwen2.5 1.5B Q4_K_M：約 1.1 GB，最快的備用選擇（Apache-2.0）",
+      "recommended": false,
+      "license": "Apache-2.0",
+      "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+      "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
+      "files": [
+        {
+          "name": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+          "size": 1117320736,
+          "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"
+        }
+      ],
+      "license_file": {
+        "name": "LICENSE",
+        "size": 11343,
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+      }
+    },
+    {
+      "name": "qwen3-1.7b-gguf-q8_0",
+      "component": "qwen3_1_7b",
+      "label": "Qwen3 1.7B Q8_0：約 1.8 GB（Apache-2.0）",
+      "recommended": false,
+      "license": "Apache-2.0",
+      "repo": "Qwen/Qwen3-1.7B-GGUF",
+      "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+      "files": [
+        {
+          "name": "Qwen3-1.7B-Q8_0.gguf",
+          "size": 1834426016,
+          "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a"
+        }
+      ],
+      "license_file": {
+        "name": "LICENSE",
+        "size": 11544,
+        "sha256": "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd"
+      }
+    },
+    {
+      "name": "qwen2.5-0.5b-instruct-gguf-q8_0",
+      "component": "qwen25_0_5b",
+      "label": "Qwen2.5 0.5B Q8_0：約 0.7 GB，最小最快，日文品質較差（Apache-2.0）",
+      "recommended": false,
+      "license": "Apache-2.0",
+      "repo": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+      "revision": "9217f5db79a29953eb74d5343926648285ec7e67",
+      "files": [
+        {
+          "name": "qwen2.5-0.5b-instruct-q8_0.gguf",
+          "size": 675710816,
+          "sha256": "ca59ca7f13d0e15a8cfa77bd17e65d24f6844b554a7b6c12e07a5f89ff76844e"
+        }
+      ],
+      "license_file": {
+        "name": "LICENSE",
+        "size": 11343,
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+      }
+    },
+    {
+      "name": "qwen2.5-1.5b-instruct-gguf-q8_0",
+      "component": "qwen25_1_5b_q8",
+      "label": "Qwen2.5 1.5B Q8_0：約 1.9 GB，比 Q4 準、約慢 1.4 倍（Apache-2.0）",
+      "recommended": false,
+      "license": "Apache-2.0",
+      "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+      "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
+      "files": [
+        {
+          "name": "qwen2.5-1.5b-instruct-q8_0.gguf",
+          "size": 1894532128,
+          "sha256": "d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8"
+        }
+      ],
+      "license_file": {
+        "name": "LICENSE",
+        "size": 11343,
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+      }
+    },
+    {
+      "name": "qwen3-4b-gguf-q4_k_m",
+      "component": "qwen3_4b",
+      "label": "Qwen3 4B Q4_K_M：約 2.5 GB（Apache-2.0）",
+      "recommended": false,
+      "license": "Apache-2.0",
+      "repo": "Qwen/Qwen3-4B-GGUF",
+      "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
+      "files": [
+        {
+          "name": "Qwen3-4B-Q4_K_M.gguf",
+          "size": 2497280256,
+          "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5"
+        }
+      ],
+      "license_file": {
+        "name": "LICENSE",
+        "size": 11544,
+        "sha256": "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd"
+      }
+    },
+    {
+      "name": "qwen2.5-7b-instruct-gguf-q4_k_m",
+      "component": "qwen25_7b",
+      "label": "Qwen2.5 7B Q4_K_M：約 4.7 GB，最準，需要約 6 GB 可用記憶體（Apache-2.0）",
+      "recommended": false,
+      "license": "Apache-2.0",
+      "repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+      "revision": "bb5d59e06d9551d752d08b292a50eb208b07ab1f",
+      "files": [
+        {
+          "name": "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+          "size": 3993201344,
+          "sha256": "dfce12e3862a5283ccfb88221b48480e58745165de856439950d0f22590580db"
+        },
+        {
+          "name": "qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf",
+          "size": 689872288,
+          "sha256": "539cf93f78e887edea1c04e2d7d8cdaca9d01dae9c9025bcb8accbe29df3d72a"
+        }
+      ],
+      "license_file": {
+        "name": "LICENSE",
+        "size": 11343,
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+      }
+    }
+  ]
+}

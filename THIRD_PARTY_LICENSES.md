@@ -3,17 +3,19 @@
 本專案以 [xuange-hu/screen-translator](https://github.com/xuange-hu/screen-translator)（MIT）為基底，詳見 `UPSTREAM.md` 與 `LICENSE`。
 對外散布時請隨附本檔與各模型資料夾內的授權檔。授權資訊取自各套件在 PyPI 的中繼資料（2026-10-12 查詢），**尚未逐一核對各模型卡**，散布前請再確認。
 
+**安裝版**：安裝資料夾的 `licenses\` 內有隨程式打包的每個第三方套件的授權檔（由 `scripts/collect_licenses.py` 在建置時收集，`licenses\INDEX.txt` 列出套件、版本、授權與授權檔）。翻譯模型**不在安裝程式裡**：使用者在安裝時勾選後，由使用者的電腦直接從 Hugging Face 下載（固定版本、SHA-256 驗證），授權檔 `LICENSE` 與 `manifest.json` 一起放進模型資料夾。
+
 ## 程式相依套件
 
 | 套件 | 授權 | 備註 |
 |---|---|---|
-| PySide6 (Qt for Python) | LGPL-3.0 / GPL-2.0 / GPL-3.0（三選一） | 以 LGPL-3.0 使用：打包時保持動態連結（PyInstaller onedir），讓使用者能替換 Qt 函式庫，並提供授權文字 |
-| pynput | LGPL-3.0 | 同上 |
+| PySide6 (Qt for Python) | LGPL-3.0 / GPL-2.0 / GPL-3.0（三選一） | 以 LGPL-3.0 使用：打包時保持動態連結（PyInstaller 資料夾式，Qt 的 DLL 是安裝資料夾 `_internal\PySide6\` 底下獨立的檔案，使用者可以替換），並隨附授權文字。原始碼可從 Qt（<https://download.qt.io/>）與 PySide6（PyPI）取得；本專案沒有修改它們 |
+| pynput | LGPL-3.0 | 同上（純 Python，原始碼就在安裝資料夾的 `_internal\pynput\`，可以直接替換） |
 | mss | MIT | |
 | Pillow | MIT-CMU | |
 | numpy | BSD-3-Clause 等 | |
 | requests | Apache-2.0 | |
-| winocr | MIT | Windows OCR 備援引擎 |
+| winocr、winrt（Windows 執行階段的 Python 繫結） | MIT | Windows OCR 備援引擎 |
 | rapidocr | Apache-2.0 | |
 | onnxruntime | MIT | |
 | llama-cpp-python（含 llama.cpp / ggml，離線翻譯的推論引擎） | MIT | 預編譯 wheel 內含 llama.cpp 與 ggml 的動態函式庫；索引寫在 `requirements-core.txt` |

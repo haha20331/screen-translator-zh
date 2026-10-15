@@ -20,9 +20,10 @@
 
 測試因此由 287 通過 / 4 失敗（4 個失敗皆為 Linux 上跑 Windows 專用的 `test_authenticode.py`）變為 240 通過 / 3 跳過 / 0 失敗，數量差來自被移除功能的測試。
 
-## 尚未處理（之後的步驟）
+## 後續的改寫
 
-- `README.md`、`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`、`installer/`、`scripts/build_lite.ps1`、`scripts/sign_release.ps1`、`build-lite.spec` 仍是上游內容，打包階段（M9）一併改寫。
+- **已改寫**：`README.md`（繁體中文，標明程式碼來源與本分支的目的）、`installer/ScreenTranslator.iss`（新的安裝程式，安裝時下載模型）、建置腳本（`scripts/build_installer.ps1` 取代 `scripts/build_lite.ps1`）、`ScreenTranslator.spec`（資料夾式，取代單檔的 `build-lite.spec`）。細節見 `PACKAGING.md`。
+- **仍是上游內容**：`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`（內容和連結指向上游專案，對外散布前依實際的專案位置改寫）、`scripts/sign_release.ps1`（程式碼簽章，沒有簽章憑證所以沒用到，訊息仍是簡體）。
 
 ## 如何比對上游
 
