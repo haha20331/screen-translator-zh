@@ -240,7 +240,7 @@ def test_every_listed_model_can_be_fetched_by_the_download_script():
 )
 def test_the_cache_tag_tells_models_apart(name, tag):
     assert model_tag(name) == tag
-    assert _translator(model_name=name).cache_namespace("auto") == f"auto|p3|{tag}"
+    assert _translator(model_name=name).cache_namespace("auto") == f"auto|p4|{tag}"
 
 
 @pytest.mark.parametrize(

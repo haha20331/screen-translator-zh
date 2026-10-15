@@ -310,13 +310,13 @@ def test_no_retry_when_the_output_is_clean():
 @pytest.mark.parametrize(
     ("section", "expected"),
     [
-        ({}, "auto|p3|1.5b-q4_k_m"),
-        ({"lyrics_mode": True}, "auto|lyrics|p3|1.5b-q4_k_m"),
-        ({"use_context": True}, "auto|ctx|p3|1.5b-q4_k_m"),
-        ({"lyrics_mode": True, "use_context": True}, "auto|lyrics|ctx|p3|1.5b-q4_k_m"),
-        ({"retry_non_chinese": True}, "auto|p3|1.5b-q4_k_m"),  # 預設就是開，不另外分流
-        ({"retry_non_chinese": False}, "auto|noretry|p3|1.5b-q4_k_m"),
-        ({"lyrics_mode": True, "retry_non_chinese": False}, "auto|lyrics|noretry|p3|1.5b-q4_k_m"),
+        ({}, "auto|p4|1.5b-q4_k_m"),
+        ({"lyrics_mode": True}, "auto|lyrics|p4|1.5b-q4_k_m"),
+        ({"use_context": True}, "auto|ctx|p4|1.5b-q4_k_m"),
+        ({"lyrics_mode": True, "use_context": True}, "auto|lyrics|ctx|p4|1.5b-q4_k_m"),
+        ({"retry_non_chinese": True}, "auto|p4|1.5b-q4_k_m"),  # 預設就是開，不另外分流
+        ({"retry_non_chinese": False}, "auto|noretry|p4|1.5b-q4_k_m"),
+        ({"lyrics_mode": True, "retry_non_chinese": False}, "auto|lyrics|noretry|p4|1.5b-q4_k_m"),
     ],
 )
 def test_cache_namespace_separates_translation_styles(section, expected):
@@ -454,3 +454,16 @@ def test_main_window_reload_shows_saved_values_without_rewriting_them(qapp, tmp_
     assert window.check_lyrics.isChecked()
     assert AppConfig(tmp_path / "config.json").get("translation.lyrics_mode") is False  # 沒存檔就不會寫入
     window.deleteLater()
+
+
+def test_the_lyrics_prompt_asks_for_plain_modern_chinese_not_classical_chinese():
+    lyrics = module.static_prompt("ja", lyrics=True)
+    plain = module.static_prompt("ja")
+
+    assert "modern vernacular Chinese" in lyrics and "do not use classical or literary Chinese" in lyrics
+    assert "白話文" in lyrics and "文言文" in lyrics
+    assert "classical" not in plain and "vernacular" not in plain  # 一般模式的提示詞沒有動
+    assert module.static_prompt("en", lyrics=True).count("vernacular") == 1  # 英文歌詞也一樣
+    # 白話文的要求放在系統提示詞裡（固定前綴），不是每句都重複；快取版本跟著提高
+    assert lyrics.index("vernacular") < lyrics.index("<|im_start|>user")
+    assert module.PROMPT_VERSION >= 4

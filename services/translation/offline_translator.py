@@ -68,7 +68,7 @@ OFFLINE_MODELS: tuple[OfflineModel, ...] = (
     OfflineModel("qwen2.5-7b-instruct-gguf-q4_k_m", "Qwen2.5 7B・Q4_K_M（最準，CPU 與內顯上很慢、要 7 GB 記憶體，建議有獨立顯示卡時用）"),
 )
 # 提示詞的版本：改了系統提示詞或示範，譯文就會不同；快取鍵帶著版本，舊提示詞留下的譯文不會被當成新的
-PROMPT_VERSION = 3  # 3：生成時擋掉外文、原文沒有的英文字母與字間空格（見 token_filter），譯文可能與 2 不同
+PROMPT_VERSION = 4  # 4：歌詞提示詞要求用白話文、不要文言文；3：生成時擋掉外文、原文沒有的英文字母與字間空格（見 token_filter）
 # 預設：真實字幕上和 7B 差不多準，速度與記憶體只要一半。授權是 Qwen Research License，不隨程式散布，使用者自己下載
 DEFAULT_MODEL_NAME = "qwen2.5-3b-instruct-gguf-q4_k_m"
 # 備用：Apache-2.0，可以隨程式散布；沒有下載預設的 3B 時用它
@@ -133,7 +133,10 @@ _SHOTS: dict[str, list[tuple[str, str]]] = {
 _BASE_LYRICS_SYSTEM_PROMPT = (
     "You are a professional translator of song lyrics. The user's text is one line from a song. "
     "Translate it into natural, poetic Traditional Chinese as used in Taiwan, keeping the meaning, "
-    "emotion and imagery instead of translating word by word. The line may be a fragment. "
+    "emotion and imagery instead of translating word by word. "
+    "Write in modern vernacular Chinese (白話文), the way people speak and write today; "
+    "do not use classical or literary Chinese (文言文) and avoid archaic words such as 之, 乃, 吾, 汝, 爾, 兮, 矣, 焉. "
+    "The line may be a fragment. "
     "Output only the translation, with no explanations." + _NO_SUBJECT_RULE
 )
 _LYRICS_SYSTEM_PROMPT = _BASE_LYRICS_SYSTEM_PROMPT + _SKIP_RULE
