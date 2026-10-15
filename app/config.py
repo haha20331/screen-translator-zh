@@ -69,8 +69,9 @@ DEFAULTS: dict[str, Any] = {
         "target_language": "zh-hant",
         "keep_original": False,
         # 離線翻譯（LLM）的輔助功能，即時生效：
-        # 上下文：記住最近 context_size 句已翻好的句子，當成前文協助翻譯這一句（超過 context_ttl_seconds 的不用）
-        "use_context": False,
+        # 上下文：記住最近 context_size 句已翻好的句子，當成前文協助翻譯這一句（超過 context_ttl_seconds 的不用）。
+        # 預設開：盲測與對照（PROMPT_TUNING.md）顯示關掉後 chrF 四組都下降 2.2～3.5 點；只有離線翻譯有效
+        "use_context": True,
         "context_size": 2,
         "context_ttl_seconds": 120,
         # 歌詞模式：提示模型這是歌詞，用較自然、有詩意的方式意譯

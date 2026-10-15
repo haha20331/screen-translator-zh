@@ -138,9 +138,9 @@ def test_build_prompt_puts_history_between_examples_and_current_text():
 
 
 # ----------------------------------------------------------------------------- 上下文
-def test_context_is_off_by_default():
+def test_a_translator_without_the_setting_does_not_use_context():
+    """設定檔裡沒有這個鍵時（只有直接建立翻譯器的情況）不用上下文；程式的預設設定是開，見下面的 DEFAULTS 測試。"""
     instance, generator = _translator()
-
     instance.translate(["こんにちは"], "auto", "zh-hant")
     instance.translate(["元気ですか"], "auto", "zh-hant")
 
@@ -364,10 +364,10 @@ def test_a_poisoned_cache_entry_with_the_original_prepended_is_ignored(tmp_path)
 
 
 # ----------------------------------------------------------------------------- 設定與介面
-def test_defaults_are_off_with_two_sentences_of_context():
+def test_defaults_are_context_on_with_two_sentences_and_lyrics_off():
     translation = DEFAULTS["translation"]
 
-    assert translation["use_context"] is False
+    assert translation["use_context"] is True  # 盲測對照：關掉上下文譯文品質下降（PROMPT_TUNING.md）
     assert translation["context_size"] == 2
     assert translation["lyrics_mode"] is False
 
@@ -390,11 +390,13 @@ class _Controller:
 def test_settings_dialog_round_trips_the_two_options(qapp, tmp_path):
     config = AppConfig(tmp_path / "config.json")
     dialog = SettingsDialog(config)
-    assert not dialog.chk_use_context.isChecked()
+    assert dialog.chk_use_context.isChecked()  # 預設開
     assert dialog.spin_context_size.value() == 2
-    assert not dialog.spin_context_size.isEnabled()  # 沒勾上下文時，句數不能改
+    assert dialog.spin_context_size.isEnabled()
     assert not dialog.chk_lyrics_mode.isChecked()
 
+    dialog.chk_use_context.setChecked(False)
+    assert not dialog.spin_context_size.isEnabled()  # 沒勾上下文時，句數不能改
     dialog.chk_use_context.setChecked(True)
     assert dialog.spin_context_size.isEnabled()
     dialog.spin_context_size.setValue(4)
