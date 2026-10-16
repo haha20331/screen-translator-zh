@@ -12,6 +12,13 @@ from utils import dpi_utils
 # 框沒被動到（滑鼠不在框內）超過這麼久，就變得更透明，免得一直擋在字幕旁邊；滑鼠移進框內就恢復
 IDLE_DIM_MS = 2000
 DIM_OPACITY = 0.3  # 變透明之後的整體不透明度（框線還看得到，找得到框在哪）
+# 框裡面幾乎全透明、變淡之後更是收不到滑鼠事件，所以每隔這麼久直接看游標在不在框裡
+CURSOR_POLL_MS = 100
+# 拖曳、縮放時，通知譯文面板跟著框走的最短間隔：滑鼠事件可以一秒來好幾百個，面板不必每個都重排一次
+REGION_UPDATE_MS = 16
+# 框裡面的填色透明度（0～255）。肉眼看是全透明；不能是 0：Windows 對「逐點透明度」是 0 的像素
+# 讓滑鼠直接穿過去，框的裡面就抓不住了（拖曳移動框要靠抓裡面），1 的話看不出來、滑鼠還抓得到
+INSIDE_ALPHA = 1
 
 
 class MonitorRegionSelector(QWidget):
@@ -32,6 +39,7 @@ class MonitorRegionSelector(QWidget):
         parent=None,
         idle_ms: int = IDLE_DIM_MS,
         dim_opacity: float = DIM_OPACITY,
+        poll_ms: int = CURSOR_POLL_MS,
     ) -> None:
         super().__init__(parent)
         self._idle_ms = max(0, int(idle_ms))  # 0 = 不變透明
@@ -42,7 +50,7 @@ class MonitorRegionSelector(QWidget):
         self._highlight_color = QColor(accent)
         self._dragging = False
         self._resize_dir = 0
-        self._drag_offset = QPoint()
+        self._press_global = QPoint()  # 按下去那一刻游標的螢幕座標：拖曳量都用螢幕座標算（見 mouseMoveEvent）
         self._base_geometry = self._physical_to_geometry(physical_bbox)
         self._geometry = QRect(self._base_geometry)
         self._physical = tuple(physical_bbox)
@@ -75,6 +83,14 @@ class MonitorRegionSelector(QWidget):
         self._idle_timer.timeout.connect(self._dim_if_idle)
         self._fade = QPropertyAnimation(self, b"windowOpacity", self)
         self._fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(max(10, int(poll_ms)))
+        self._poll_timer.timeout.connect(self._poll_cursor)
+        # 拖曳時送給譯文面板的更新：合併成每 REGION_UPDATE_MS 一次，最後一次一定會送
+        self._update_timer = QTimer(self)
+        self._update_timer.setSingleShot(True)
+        self._update_timer.setInterval(REGION_UPDATE_MS)
+        self._update_timer.timeout.connect(self._flush_region_changed)
 
     # --------------------------------------------------------- 閒置變透明
     def is_dimmed(self) -> bool:
@@ -112,9 +128,25 @@ class MonitorRegionSelector(QWidget):
         self._dimmed = True
         self._fade_to(self._dim_opacity, motion_duration(260))
 
+    def _poll_cursor(self) -> None:
+        """定時直接看游標在不在框裡：框裡面幾乎全透明、變淡之後更是收不到 enter／mouseMove，不能只靠事件。"""
+        if self._dragging:
+            return
+        if self._cursor_inside():
+            if self._dimmed or self._idle_timer.isActive():
+                self._touch()
+        elif not self._dimmed and not self._idle_timer.isActive():
+            self._arm_idle()
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._arm_idle()
+        self._poll_timer.start()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._poll_timer.stop()
+        self._update_timer.stop()
 
     def enterEvent(self, event) -> None:
         super().enterEvent(event)
@@ -193,7 +225,7 @@ class MonitorRegionSelector(QWidget):
         self._dragging = True
         self._touch()
         self._resize_dir = self._hit_test(event.position().toPoint())
-        self._drag_offset = event.position().toPoint()
+        self._press_global = event.globalPosition().toPoint()
         self._base_geometry = QRect(self._geometry)
         self._pulse.stop()
 
@@ -204,7 +236,9 @@ class MonitorRegionSelector(QWidget):
         if not self._dragging:
             self._apply_cursor(pos)
             return
-        delta = pos - self._drag_offset
+        # 拖曳量用「螢幕座標」算：event.position() 是相對於框「現在的位置」，框一動它就跟著變，
+        # 用它算移動量會讓框在兩個位置之間來回跳（抽搐）；螢幕座標不受框移動的影響
+        delta = event.globalPosition().toPoint() - self._press_global
         g = QRect(self._base_geometry)
         d = self._resize_dir
         min_w, min_h = 32, 32
@@ -219,9 +253,15 @@ class MonitorRegionSelector(QWidget):
                 g.setTop(min(g.top() + delta.y(), g.bottom() - min_h))
             if d in (3, 4, 8):
                 g.setBottom(max(g.bottom() + delta.y(), g.top() + min_h))
+        if g == self._geometry:
+            return
         self._geometry = g
         self.setGeometry(g)
-        physical = self._geometry_to_physical(g)
+        if not self._update_timer.isActive():
+            self._update_timer.start()
+
+    def _flush_region_changed(self) -> None:
+        physical = self._geometry_to_physical(self._geometry)
         if physical is not None:
             self._physical = physical
             self.region_changed.emit(physical)
@@ -231,9 +271,11 @@ class MonitorRegionSelector(QWidget):
             return
         self._dragging = False
         self._resize_dir = 0
+        self._update_timer.stop()
         physical = self._geometry_to_physical(self._geometry)
         if physical is not None:
             self._physical = physical
+            self.region_changed.emit(physical)  # 排隊中還沒送的最後一次更新，先送出去再說「定案」
             self.region_committed.emit(physical)
         self._apply_cursor(event.position().toPoint())
         if not self._cursor_inside():
@@ -253,8 +295,9 @@ class MonitorRegionSelector(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
 
+        # 框裡面不上色（INSIDE_ALPHA 的說明見檔案開頭）；框線與四個角的把手維持原樣
         fill = QColor(self._accent)
-        fill.setAlpha(14)
+        fill.setAlpha(INSIDE_ALPHA)
         painter.fillRect(self.rect(), fill)
 
         pulse = 0.5 + 0.5 * (1.0 - abs(1.0 - 2.0 * self._pulse_t))
