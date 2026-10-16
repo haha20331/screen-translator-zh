@@ -14,7 +14,7 @@ from PySide6.QtCore import (
     QVariantAnimation,
     Signal,
 )
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeySequence, QPainter, QPen, QShortcut
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QFontMetricsF, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import QWidget
 
 from app.logger import get_logger
@@ -50,6 +50,11 @@ def font_families(config) -> list[str]:
     return families
 
 
+# 直排時要轉 90 度（順時針）才對的字元：括號、破折號、長音、波浪號、刪節號（橫排的「「」直排時是「﹁」）。
+# 逗號、句號、驚嘆號、問號在台灣用法本來就置中，直排時不必動
+ROTATE_WHEN_VERTICAL = frozenset("「」『』（）()〈〉《》【】〔〕［］[]｛｝{}—―─ー～〜…‥-")
+
+
 @dataclass
 class Block:
     rect: QRectF
@@ -58,6 +63,34 @@ class Block:
     background: str = ""
     source_line_height: float = 0.0
     source_line_count: int = 1
+    # 直排：譯文由上往下、欄由右往左排（原文是直排、而且框是又高又窄時）
+    vertical: bool = False
+
+
+def vertical_cells(text: str, rect: QRectF, cell: float, pitch: float) -> tuple[list[tuple[str, QRectF]], bool]:
+    """直排的排版：欄由右往左、每欄由上往下，一個字佔一格（``cell`` 見方），欄與欄的間距是 ``pitch``。
+
+    換行字元（``\n``）另起一欄，空白不佔格子。回傳 ``([(字, 那一格的位置)], 是否超出 rect 的左邊)``。
+    ``rect`` 放不下的字會繼續往左排（超出去），由呼叫的人決定要縮小字還是接受。"""
+    rows = max(1, int(rect.height() // max(1.0, cell)))
+    cells: list[tuple[str, QRectF]] = []
+    column = row = 0
+    for char in text:
+        if char == "\n":
+            if row:
+                column += 1
+                row = 0
+            continue
+        if char.isspace():
+            continue
+        if row >= rows:
+            column += 1
+            row = 0
+        x = rect.right() - (column + 1) * pitch + (pitch - cell) / 2
+        cells.append((char, QRectF(x, rect.top() + row * cell, cell, cell)))
+        row += 1
+    columns = column + 1 if cells else 0
+    return cells, columns * pitch > rect.width() + 0.5
 
 
 class TranslationOverlayWindow(QWidget):
@@ -499,19 +532,22 @@ class TranslationOverlayWindow(QWidget):
             # 横向留一点呼吸即可，纵向不再吃掉本就很紧的 OCR 行高。
             eff_padding = min(padding, max(1, int(rect.height()) // 6))
             font = self._font_cache.get(idx)
-            if font is None:
-                multiline = block.source_line_count > 1 or "\n" in block.text
-                font = self._fit_font(
-                    block.text,
-                    block.rect.adjusted(0.5, 0.5, -0.5, -0.5),
-                    eff_padding,
-                    size_height=self._size_groups.get(idx),
-                    multiline=multiline,
-                )
-                self._font_cache[idx] = font
             text_rect = background_rect.adjusted(
                 eff_padding, 0.0, -eff_padding, 0.0
             )
+            if font is None:
+                if block.vertical:
+                    font = self._fit_vertical_font(block.text, text_rect, size_height=self._size_groups.get(idx))
+                else:
+                    multiline = block.source_line_count > 1 or "\n" in block.text
+                    font = self._fit_font(
+                        block.text,
+                        block.rect.adjusted(0.5, 0.5, -0.5, -0.5),
+                        eff_padding,
+                        size_height=self._size_groups.get(idx),
+                        multiline=multiline,
+                    )
+                self._font_cache[idx] = font
 
             if auto_background:
                 if block.background:
@@ -550,7 +586,9 @@ class TranslationOverlayWindow(QWidget):
             painter.setClipRect(
                 background_rect, Qt.ClipOperation.IntersectClip
             )
-            if block.source_line_count > 1 or "\n" in block.text:
+            if block.vertical:
+                self._draw_vertical_text(painter, block.text, text_rect, font)
+            elif block.source_line_count > 1 or "\n" in block.text:
                 text_flags = (
                     Qt.AlignmentFlag.AlignLeft
                     | Qt.AlignmentFlag.AlignTop
@@ -562,11 +600,12 @@ class TranslationOverlayWindow(QWidget):
                     | Qt.AlignmentFlag.AlignVCenter
                     | Qt.TextFlag.TextSingleLine
                 )
-            painter.drawText(
-                text_rect,
-                text_flags,
-                block.text,
-            )
+            if not block.vertical:
+                painter.drawText(
+                    text_rect,
+                    text_flags,
+                    block.text,
+                )
             if flash > 0.0:
                 ring = QColor(self._highlight_color)
                 ring.setAlpha(int(round(flash * 190)))
@@ -648,6 +687,42 @@ class TranslationOverlayWindow(QWidget):
             if metrics.height() <= height_budget:
                 break
         return font
+
+    @staticmethod
+    def _vertical_metrics(font: QFont) -> tuple[float, float]:
+        """直排一格的邊長（全形字的寬）與欄距（比一格寬一點，欄與欄不會黏在一起）。"""
+        cell = QFontMetricsF(font).horizontalAdvance("國")
+        return cell, cell * 1.12
+
+    def _fit_vertical_font(self, text: str, rect: QRectF, size_height: float | None = None) -> QFont:
+        """直排的字型大小：以原文的字寬（欄寬）為準，譯文在這個框裡排不下就縮小，縮到最小字還是排不下就接受（往左多排幾欄）。"""
+        families = self._font_families()
+        pref_size = int(self._config.get("overlay.font_size", 18))
+        min_size = int(self._config.get("overlay.min_font_size", 8))
+        height = size_height if size_height is not None else rect.width()
+        auto_max_size = max(pref_size, 36) if bool(self._config.get("overlay.auto_background", True)) else pref_size
+        raw = max(min_size, min(auto_max_size, int(round(height * 0.72))))
+        font = self._make_font(families, raw)
+        for size in range(raw, min_size - 1, -1):
+            font = self._make_font(families, size)
+            cell, pitch = self._vertical_metrics(font)
+            _cells, overflow = vertical_cells(text, rect, cell, pitch)
+            if not overflow:
+                break
+        return font
+
+    def _draw_vertical_text(self, painter: QPainter, text: str, rect: QRectF, font: QFont) -> None:
+        cell, pitch = self._vertical_metrics(font)
+        cells, _overflow = vertical_cells(text, rect, cell, pitch)
+        for char, box in cells:
+            if char in ROTATE_WHEN_VERTICAL:
+                painter.save()
+                painter.translate(box.center())
+                painter.rotate(90)
+                painter.drawText(QRectF(-cell / 2, -cell / 2, cell, cell), Qt.AlignmentFlag.AlignCenter, char)
+                painter.restore()
+            else:
+                painter.drawText(box, Qt.AlignmentFlag.AlignCenter, char)
 
     def _font_families(self) -> list[str]:
         return font_families(self._config)

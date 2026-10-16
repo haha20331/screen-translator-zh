@@ -1040,6 +1040,12 @@ class SettingsDialog(QWidget):
         self.combo_placement = NoWheelComboBox()
         self.combo_placement.addItem("框選區域時，顯示在框的下方（原文保持可見，推薦）", "below")
         self.combo_placement.addItem("蓋在原文上方（取代原文）", "in_place")
+        self.combo_placement.setToolTip(
+            "譯文放在哪裡。\n"
+            "顯示在框的下方：原文照常看得到，譯文列在框下面的面板（只有框選區域才有框；全螢幕、視窗擷取仍然蓋在原文上）。\n"
+            "蓋在原文上方：譯文直接蓋住原文。排列方向跟著主視窗的「文字方向」：選直向時，譯文也由上往下、欄由右往左排，"
+            "所以直排的文字不必改成「顯示在框下方」。"
+        )
         self.combo_display_mode = NoWheelComboBox()
         self.combo_display_mode.addItem("僅顯示譯文", False)
         self.combo_display_mode.addItem("原文 + 譯文（兩行對照）", True)

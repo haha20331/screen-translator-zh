@@ -99,6 +99,8 @@ class OverlayManager(QObject):
                         region.background_color,
                         (region.source_line_height or region.height) / monitor.dpr,
                         max(1, region.source_line_count),
+                        # 原文是直排、框又高又窄：譯文也直排（跟著主視窗的「文字方向」）
+                        bool(region.vertical) and region.height >= region.width,
                     )
                 )
             if not blocks:
