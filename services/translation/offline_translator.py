@@ -297,8 +297,8 @@ class OfflineTranslator(ChineseTargetTranslator):
     name = "offline"
     config_key = "offline"
 
-    def __init__(self, config_section: dict, cache=None, api_key: str = "") -> None:
-        super().__init__(config_section, cache, api_key)
+    def __init__(self, config_section: dict, cache=None) -> None:
+        super().__init__(config_section, cache)
         self._model_lock = threading.Lock()
         self._llama: llama_backend.LlamaCppEngine | None = None
         # 最近翻好的句子（上下文功能）。保留比 context_size 多一些，調大設定時馬上有前文可用

@@ -28,16 +28,16 @@ Windows 桌面上的即時字幕翻譯工具：在畫面上框一塊區域，程
 - 辨識引擎預設改用 RapidOCR（PP-OCRv6，離線，一個模型涵蓋日文、英文、中文），Windows 內建 OCR 仍可選用。
 - 文字輸出：每句字幕結束時寫一行（時間、原文、譯文、模型、四角點座標）。
 - Windows 安裝程式：安裝時勾選要下載哪些翻譯模型（推薦 3B），下載後驗證 SHA-256。
-- 移除了和這個目標無關、且會連到第三方下載並執行程式碼的部分（自動更新器、PaddleOCR 元件下載器、上游的發佈流程）。
+- 移除了和這個目標無關的部分：會連到第三方下載並執行程式碼的自動更新器與 PaddleOCR 元件下載器、上游的發佈流程，以及**所有線上翻譯服務與金鑰設定**（翻譯只剩離線模型，目標語言固定繁體中文）。
 
 ## 程式碼來源
 
 | 部分 | 來源 |
 |---|---|
-| **上游程式碼** | [xuange-hu/screen-translator](https://github.com/xuange-hu/screen-translator)，MIT 授權，Copyright (c) 2026 ScreenTranslator contributors；本分支從它的 commit `e2f7865`（2026-10-10）出發，2026-10-12 匯入（本專案的 commit `8be289b` 只是原樣匯入，沒有其他修改）。保留並沿用的有：截圖與座標（mss、DPI、多螢幕）、框選與覆蓋層介面、系統匣與快捷鍵、設定介面的骨架、線上翻譯服務的介面（Google、DeepL、OpenAI 相容等）、Windows OCR 引擎、測試框架 |
+| **上游程式碼** | [xuange-hu/screen-translator](https://github.com/xuange-hu/screen-translator)，MIT 授權，Copyright (c) 2026 ScreenTranslator contributors；本分支從它的 commit `e2f7865`（2026-10-10）出發，2026-10-12 匯入（本專案的 commit `8be289b` 只是原樣匯入，沒有其他修改）。保留並沿用的有：截圖與座標（mss、DPI、多螢幕）、框選與覆蓋層介面、系統匣與快捷鍵、設定介面的骨架、翻譯器的共同介面與快取、Windows OCR 引擎、測試框架 |
 | **本分支新增的程式** | `services/ocr/rapidocr_ocr.py`（RapidOCR）、`services/translation/` 下的 `offline_translator.py`、`offline_common.py`、`llama_backend.py`、`token_filter.py`、`model_names.py`、`speed_test.py`（離線翻譯）、`services/transcript*.py` 與 `app/transcript_mixin.py`（文字輸出）、`app/model_loading_mixin.py`（模型載入提示）、`utils/stability.py`（字幕穩定化）、`utils/chinese.py`（繁體與後處理）、`utils/window_affinity.py`、`ui/translation_panel.py`、`scripts/`、`installer/`、`ScreenTranslator.spec`，以及 30 多個新增的測試檔 |
 | **本分支大幅修改的上游檔案** | `ui/settings_dialog.py`、`app/monitor_mixin.py`、`app/config.py`、`app/settings_mixin.py`、`app/pipeline_mixin.py`、`app/capture_mixin.py`、`workers/translation_worker.py`、`ui/overlay_manager.py`、`ui/main_window.py`、`utils/layout_utils.py`、`utils/language_utils.py` |
-| **移除的上游部分** | 自動更新器、PaddleOCR 元件下載器、Authenticode 驗證、上游的發佈流程與社群檔案，詳見 [UPSTREAM.md](UPSTREAM.md) |
+| **移除的上游部分** | 自動更新器、PaddleOCR 元件下載器、Authenticode 驗證、**所有線上翻譯服務與它們的金鑰設定**（Google、DeepL、OpenAI 相容、百度、有道、Azure、MyMemory）、上游的發佈流程與社群檔案，詳見 [UPSTREAM.md](UPSTREAM.md) |
 | **第三方元件與模型** | PySide6、onnxruntime、RapidOCR（PP-OCR 模型）、llama.cpp、OpenCC 等；翻譯模型是 Alibaba Cloud 的 Qwen（官方 GGUF，不經轉換）。授權逐項列在 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) |
 | **開發方式** | 本分支的修改由專案作者與 Claude Code（Anthropic）協作完成，提交紀錄的 `Co-Authored-By` 有標註 |
 
@@ -122,7 +122,8 @@ Get-Content .\ScreenTranslator-0.3.0-beta-Setup.exe.sha256     # 兩個要完全
 - 辨識與翻譯都在本機；使用離線翻譯時，不會有任何文字或截圖離開你的電腦。
 - 預設不儲存截圖與辨識歷史。
 - 程式的記錄檔只記狀態，不記錄辨識到的文字、截圖或金鑰。
-- 設定裡仍保留上游的線上翻譯服務（Google、DeepL、OpenAI 相容等），**選用它們時辨識到的文字會送到該服務**；預設不使用。
+- 程式**沒有任何線上翻譯服務**（上游的 Google、DeepL、OpenAI 相容等都已移除），也不儲存任何服務的帳號或金鑰；舊版設定檔裡殘留的服務設定與金鑰，程式一啟動就會刪掉並存回檔案。辨識到的文字不會送到任何地方。
+- 只有安裝時下載翻譯模型會連網（連到 Hugging Face）。
 
 ## 從原始碼執行、建置安裝程式
 

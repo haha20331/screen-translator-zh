@@ -14,7 +14,7 @@
 | mss | MIT | |
 | Pillow | MIT-CMU | |
 | numpy | BSD-3-Clause 等 | |
-| requests | Apache-2.0 | |
+| requests | Apache-2.0 | RapidOCR 的相依套件；本專案自己的程式不使用它，辨識模型已隨 `rapidocr` 安裝，執行時不會連網下載 |
 | winocr、winrt（Windows 執行階段的 Python 繫結） | MIT | Windows OCR 備援引擎 |
 | rapidocr | Apache-2.0 | |
 | onnxruntime | MIT | |

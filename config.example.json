@@ -31,38 +31,27 @@
     }
   },
   "translation": {
-    "service": "google_free",
-    "auto_select_service": true,
-    "mock_mode": "dictionary",
-    "glossary": "",
+    "service": "offline",
     "source_language": "auto",
-    "target_language": "zh",
+    "target_language": "zh-hant",
     "keep_original": false,
+    "use_context": true,
+    "context_size": 2,
+    "lyrics_mode": false,
+    "skip_sounds": true,
+    "retry_non_chinese": true,
+    "offline": {
+      "model_name": "auto",
+      "model_dir": "",
+      "gpu_layers": -1,
+      "threads": 0
+    },
     "timeout_seconds": 30,
     "max_retries": 3,
     "retry_delay_seconds": 1.0,
     "request_interval_seconds": 0.0,
-    "google_free_max_workers": 4,
-    "google_free_interval": 0.05,
-    "google_free_partial_retries": 0,
-    "google_free_retry_backoff": 0.35,
-    "google_free_fallback_to_mymemory": true,
     "cache_ttl_days": 30,
-    "cache_max_entries": 2000,
-    "openai": {
-      "api_key": "",
-      "base_url": "https://api.openai.com/v1",
-      "model": "gpt-4o-mini"
-    },
-    "deepl": {
-      "api_key": "",
-      "base_url": "https://api-free.deepl.com/v2",
-      "formality": "default"
-    },
-    "google": {
-      "api_key": "",
-      "base_url": "https://translation.googleapis.com/language/translate/v2"
-    }
+    "cache_max_entries": 2000
   },
   "overlay": {
     "background_color": "#000000",

@@ -41,18 +41,16 @@ class Translator(ABC):
         self,
         config_section: dict,
         cache: TranslationCache | None = None,
-        api_key: str = "",
     ) -> None:
         self.config = config_section or {}
         self.cache = cache
-        self.api_key = api_key
         self._lock = Lock()
         self._last_request_time = 0.0
         self.last_failed_count = 0
         self.last_failed_indices: set[int] = set()
 
     def is_ready(self) -> bool:
-        """翻譯器現在能不能馬上翻譯。線上服務隨時可以；離線模型還在載入或預熱時是 False。"""
+        """翻譯器現在能不能馬上翻譯。離線模型還在載入或預熱時是 False。"""
         return True
 
     # ------------------------------------------------------------- 子类实现

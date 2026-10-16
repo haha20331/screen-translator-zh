@@ -151,7 +151,6 @@ def test_saving_the_settings_forgets_the_displayed_translations_too(controller, 
         monkeypatch.setattr(controller, name, lambda *a, **k: None)
     monkeypatch.setattr(controller, "_create_configured_ocr_engine", lambda: None)
     monkeypatch.setattr(controller, "_build_translator", lambda: None)
-    monkeypatch.setattr(controller, "_resolve_translator_service", lambda: controller.config.get("translation.service", "mock"))
     controller._monitor_known = {"こんにちは": "舊模型的譯文"}
     controller._monitor_signature = "shown"
 
@@ -215,14 +214,6 @@ def test_changing_other_translation_options_keeps_the_cache(controller, tmp_path
     assert controller.cache.count() == 2
 
 
-def test_switching_to_another_translation_service_clears_the_cache_too(controller, tmp_path):
-    _with_offline_model(controller, tmp_path)
-    _edit_settings(controller, translation__service="mock")
-
-    assert controller._rebuild_translator() == 2
-    assert controller.cache.count() == 0
-
-
 def test_the_first_translator_has_no_previous_model_so_nothing_is_cleared(controller, tmp_path):
     controller.cache = TranslationCache(tmp_path / "cache.json")
     controller.cache.set("auto", "zh-hant", "こんにちは", "譯文")
@@ -263,7 +254,6 @@ def test_saving_the_settings_with_a_new_model_says_so_in_the_status(controller, 
     for name in ("_refresh_appearance", "refresh_monitor_map", "_warmup", "_apply_hotkeys", "_apply_autostart"):
         monkeypatch.setattr(controller, name, lambda *a, **k: None)
     monkeypatch.setattr(controller, "_create_configured_ocr_engine", lambda: None)
-    monkeypatch.setattr(controller, "_resolve_translator_service", lambda: controller.config.get("translation.service", "mock"))
     _with_offline_model(controller, tmp_path)
     _edit_settings(controller, translation__offline__model_name=MODEL_3B)
     messages: list[str] = []
@@ -279,7 +269,6 @@ def test_saving_without_a_new_model_keeps_the_plain_status(controller, tmp_path,
     for name in ("_refresh_appearance", "refresh_monitor_map", "_warmup", "_apply_hotkeys", "_apply_autostart"):
         monkeypatch.setattr(controller, name, lambda *a, **k: None)
     monkeypatch.setattr(controller, "_create_configured_ocr_engine", lambda: None)
-    monkeypatch.setattr(controller, "_resolve_translator_service", lambda: controller.config.get("translation.service", "mock"))
     _with_offline_model(controller, tmp_path)
     messages: list[str] = []
     controller.set_status = messages.append
@@ -287,15 +276,3 @@ def test_saving_without_a_new_model_keeps_the_plain_status(controller, tmp_path,
     controller._apply_settings()
 
     assert controller.cache.count() == 2 and messages[-1] == "設定已儲存"
-
-
-def test_picking_another_service_in_the_main_window_clears_the_cache(controller, tmp_path, monkeypatch):
-    monkeypatch.setattr(controller, "_create_configured_ocr_engine", lambda: None)
-    monkeypatch.setattr(controller, "_warmup", lambda: None)
-    _with_offline_model(controller, tmp_path)
-    messages: list[str] = []
-    controller.set_status = messages.append
-
-    controller.apply_runtime_selection(service="mock")
-
-    assert controller.cache.count() == 0 and "已清空翻譯快取 2 句" in messages[-1]

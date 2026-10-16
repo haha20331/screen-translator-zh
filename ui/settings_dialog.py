@@ -54,8 +54,6 @@ from app.version import __version__
 from services.diagnostics import DiagnosticsExportError, export_diagnostics
 from services.ocr.base import list_ocr_engines
 from services.transcript import resolve_directory
-from services.translation.base import list_translators
-from services.translation.factory import service_display_name
 from services.translation.model_names import how_to_get
 from services.translation.offline_translator import OFFLINE_MODELS, OfflineTranslator, llama_model_available
 from services.translation.speed_test import (
@@ -889,13 +887,6 @@ class SettingsDialog(QWidget):
     def _build_translation_tab(self) -> QWidget:
         tab, layout = self._new_page()
         form = self._new_form()
-        self.combo_service = NoWheelComboBox()
-        for service in list_translators():
-            self.combo_service.addItem(service_display_name(service), service)
-        self.combo_service.setToolTip(
-            "選擇翻譯服務商；預設 mymemory 為免費詞典翻譯，開箱即用，"
-            "填入對應 Key 可獲得更準的線上翻譯。"
-        )
         self.combo_source = NoWheelComboBox()
         self.combo_target = NoWheelComboBox()
         for code, name in LANGUAGES:
@@ -959,15 +950,7 @@ class SettingsDialog(QWidget):
         self.spin_context_size.setToolTip("最多記住前幾句，預設 2。句子越多每次翻譯越慢。")
         self.chk_lyrics_mode.setToolTip("歌詞常是片段、有意象，用歌詞的提示與示範讓模型意譯而不是逐字直譯。\n" + _llm_only)
         self.chk_use_context.toggled.connect(self.spin_context_size.setEnabled)
-        self.spin_timeout = NoWheelSpinBox()
-        self.spin_timeout.setRange(5, 300)
-        self.spin_retries = NoWheelSpinBox()
-        self.spin_retries.setRange(0, 10)
-        self.spin_interval = NoWheelDoubleSpinBox()
-        self.spin_interval.setRange(0.0, 30.0)
-        self.spin_interval.setSingleStep(0.1)
 
-        form.addRow("翻譯服務", self.combo_service)
         form.addRow("輸入語言", self.combo_source)
         form.addRow("目標語言", self.combo_target)
         form.addRow("離線翻譯模型", self.combo_offline_model)
@@ -997,63 +980,11 @@ class SettingsDialog(QWidget):
         cache_row.addStretch(1)
         form.addRow("翻譯快取", cache_row)
         self._refresh_cache_count()
-        form.addRow("超時（秒）", self.spin_timeout)
-        form.addRow("失敗重試次數", self.spin_retries)
-        form.addRow("請求間隔（秒）", self.spin_interval)
-        layout.addWidget(self._card("翻譯路徑", "選擇語言、服務與失敗重試策略。", form))
-
-        key_form = self._new_form()
-        self.edit_openai_key = QLineEdit()
-        self.edit_openai_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.edit_openai_model = QLineEdit()
-        self.edit_openai_url = QLineEdit()
-        self.edit_deepl_key = QLineEdit()
-        self.edit_deepl_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.edit_google_key = QLineEdit()
-        self.edit_google_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.edit_baidu_appid = QLineEdit()
-        self.edit_baidu_key = QLineEdit()
-        self.edit_baidu_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.edit_youdao_key = QLineEdit()
-        self.edit_youdao_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.edit_youdao_secret = QLineEdit()
-        self.edit_youdao_secret.setEchoMode(QLineEdit.EchoMode.Password)
-        self.edit_azure_key = QLineEdit()
-        self.edit_azure_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.edit_azure_region = QLineEdit()
-        key_form.addRow("OpenAI API Key", self.edit_openai_key)
-        key_form.addRow("OpenAI 模型", self.edit_openai_model)
-        key_form.addRow("OpenAI Base URL", self.edit_openai_url)
-        key_form.addRow("DeepL API Key", self.edit_deepl_key)
-        key_form.addRow("Google API Key", self.edit_google_key)
-        key_form.addRow("百度 APP ID", self.edit_baidu_appid)
-        key_form.addRow("百度 API Key", self.edit_baidu_key)
-        key_form.addRow("有道 App Key", self.edit_youdao_key)
-        key_form.addRow("有道 App Secret", self.edit_youdao_secret)
-        key_form.addRow("Azure 翻譯 Key", self.edit_azure_key)
-        key_form.addRow("Azure 區域(Region)", self.edit_azure_region)
-        self.edit_openai_key.setToolTip("OpenAI 相容服務的 API Key（如 gpt-4o-mini 翻譯）。")
-        self.edit_openai_model.setToolTip("模型名，例如 gpt-4o-mini；留空使用程式預設值。")
-        self.edit_openai_url.setToolTip("自定義 Base URL，用於代理或第三方相容端點；留空使用官方地址。")
-        self.edit_deepl_key.setToolTip("DeepL 的 API Key（Pro 或 Free 均可）。")
-        self.edit_google_key.setToolTip("Google Cloud Translation 的 API Key。")
-        self.edit_baidu_appid.setToolTip("百度翻譯開放平臺的 APP ID。")
-        self.edit_baidu_key.setToolTip("百度翻譯開放平臺的金鑰（Secret）。")
-        self.edit_youdao_key.setToolTip("有道智雲的 App Key。")
-        self.edit_youdao_secret.setToolTip("有道智雲的 App Secret。")
-        self.edit_azure_key.setToolTip("Azure AI 翻譯服務的金鑰。")
-        self.edit_azure_region.setToolTip("Azure 翻譯資源所屬區域，例如 eastasia。")
-        layout.addWidget(
-            self._card(
-                "線上服務憑據",
-                "優先讀取環境變數；此處僅用於當前裝置的本地配置。",
-                key_form,
-            )
-        )
+        layout.addWidget(self._card("離線翻譯", "輸入語言、翻譯模型與翻譯選項。翻譯全部在這台電腦上完成。", form))
 
         privacy = QLabel(
-            "隱私提示：使用線上翻譯服務時，截圖識別出的文字會發送到第三方伺服器。"
-            "本應用預設不儲存截圖、不上傳圖片，請自行確認服務商隱私政策。"
+            "隱私：辨識與翻譯都在這台電腦上完成，程式沒有任何線上翻譯服務，辨識到的文字不會送出，"
+            "也不儲存任何服務的帳號或金鑰。程式預設不儲存截圖，也不上傳圖片。"
         )
         privacy.setObjectName("NoticeLabel")
         privacy.setWordWrap(True)
@@ -1234,7 +1165,6 @@ class SettingsDialog(QWidget):
         self.spin_y_tol.setValue(float(cfg.get("ocr.merge_y_tolerance_ratio", 0.5)))
         self.spin_x_gap.setValue(float(cfg.get("ocr.merge_x_gap_ratio", 0.8)))
 
-        self._set_combo(self.combo_service, cfg.get("translation.service", "mock"))
         self._set_combo(self.combo_source, cfg.get("translation.source_language", "auto"))
         self._set_combo(self.combo_target, TARGET_LANGUAGE)
         self.chk_keep_original.setChecked(bool(cfg.get("translation.keep_original", False)))
@@ -1247,20 +1177,6 @@ class SettingsDialog(QWidget):
         self.chk_retry_non_chinese.setChecked(bool(cfg.get("translation.retry_non_chinese", True)))
         self.spin_min_hold.setValue(float(cfg.get("overlay.min_hold_seconds", 0.5)))
         self.spin_cache_entries.setValue(int(cfg.get("translation.cache_max_entries", 2000)))
-        self.spin_timeout.setValue(int(cfg.get("translation.timeout_seconds", 30)))
-        self.spin_retries.setValue(int(cfg.get("translation.max_retries", 3)))
-        self.spin_interval.setValue(float(cfg.get("translation.request_interval_seconds", 0.0)))
-        self.edit_openai_key.setText(str(cfg.get("translation.openai.api_key", "")))
-        self.edit_openai_model.setText(str(cfg.get("translation.openai.model", "gpt-4o-mini")))
-        self.edit_openai_url.setText(str(cfg.get("translation.openai.base_url", "https://api.openai.com/v1")))
-        self.edit_deepl_key.setText(str(cfg.get("translation.deepl.api_key", "")))
-        self.edit_google_key.setText(str(cfg.get("translation.google.api_key", "")))
-        self.edit_baidu_appid.setText(str(cfg.get("translation.baidu.appid", "")))
-        self.edit_baidu_key.setText(str(cfg.get("translation.baidu.api_key", "")))
-        self.edit_youdao_key.setText(str(cfg.get("translation.youdao.app_key", "")))
-        self.edit_youdao_secret.setText(str(cfg.get("translation.youdao.app_secret", "")))
-        self.edit_azure_key.setText(str(cfg.get("translation.azure.api_key", "")))
-        self.edit_azure_region.setText(str(cfg.get("translation.azure.region", "")))
 
         self._set_combo(self.combo_placement, cfg.get("overlay.placement", "below"))
         self._sync_placement()
@@ -1380,7 +1296,6 @@ class SettingsDialog(QWidget):
             cfg.set("ocr.merge_y_tolerance_ratio", self.spin_y_tol.value())
             cfg.set("ocr.merge_x_gap_ratio", self.spin_x_gap.value())
 
-            cfg.set("translation.service", self.combo_service.currentData() or "mock")
             cfg.set("translation.source_language", self.combo_source.currentData() or "auto")
             cfg.set("translation.target_language", TARGET_LANGUAGE)
             cfg.set("translation.keep_original", self.chk_keep_original.isChecked())
@@ -1392,20 +1307,6 @@ class SettingsDialog(QWidget):
             cfg.set("translation.retry_non_chinese", self.chk_retry_non_chinese.isChecked())
             cfg.set("overlay.min_hold_seconds", self.spin_min_hold.value())
             cfg.set("translation.cache_max_entries", self.spin_cache_entries.value())
-            cfg.set("translation.timeout_seconds", self.spin_timeout.value())
-            cfg.set("translation.max_retries", self.spin_retries.value())
-            cfg.set("translation.request_interval_seconds", self.spin_interval.value())
-            cfg.set("translation.openai.api_key", self.edit_openai_key.text().strip())
-            cfg.set("translation.openai.model", self.edit_openai_model.text().strip())
-            cfg.set("translation.openai.base_url", self.edit_openai_url.text().strip())
-            cfg.set("translation.deepl.api_key", self.edit_deepl_key.text().strip())
-            cfg.set("translation.google.api_key", self.edit_google_key.text().strip())
-            cfg.set("translation.baidu.appid", self.edit_baidu_appid.text().strip())
-            cfg.set("translation.baidu.api_key", self.edit_baidu_key.text().strip())
-            cfg.set("translation.youdao.app_key", self.edit_youdao_key.text().strip())
-            cfg.set("translation.youdao.app_secret", self.edit_youdao_secret.text().strip())
-            cfg.set("translation.azure.api_key", self.edit_azure_key.text().strip())
-            cfg.set("translation.azure.region", self.edit_azure_region.text().strip())
 
             cfg.set("overlay.placement", self.combo_placement.currentData() or "below")
             cfg.set("overlay.font_family", self.combo_font.currentData() or "")

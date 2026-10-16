@@ -60,7 +60,7 @@ def test_every_number_input_in_the_settings_dialog_ignores_the_wheel(qapp, tmp_p
     spins = dialog.findChildren(QAbstractSpinBox)
     sliders = dialog.findChildren(QSlider)
 
-    assert len(spins) >= 15 and len(sliders) >= 2  # 沒有找漏
+    assert len(spins) >= 14 and len(sliders) >= 2  # 沒有找漏
     assert all(isinstance(widget, (NoWheelSpinBox, NoWheelDoubleSpinBox)) for widget in spins), "有數值框沒有關閉滾輪"
     assert all(isinstance(widget, NoWheelSlider) for widget in sliders), "有滑桿沒有關閉滾輪"
     assert not [w for w in spins if type(w) in (QSpinBox, QDoubleSpinBox)]
@@ -102,7 +102,7 @@ def test_every_combo_box_in_the_settings_dialog_ignores_the_wheel(qapp, tmp_path
 
     combos = dialog.findChildren(QComboBox)
 
-    assert len(combos) >= 9  # 沒有找漏（輸入語言、目標語言、翻譯服務、離線模型、OCR…）
+    assert len(combos) >= 8  # 沒有找漏（輸入語言、目標語言、離線模型、OCR…）
     assert all(isinstance(widget, NoWheelComboBox) for widget in combos), "有下拉選單沒有關閉滾輪"
     assert dialog.combo_source.currentData() is not None
     before = (dialog.combo_source.currentIndex(), dialog.combo_target.currentIndex())
@@ -125,7 +125,7 @@ def test_the_combo_boxes_on_the_main_window_ignore_the_wheel_too(qapp, tmp_path)
 
     combos = window.findChildren(QComboBox)
 
-    assert len(combos) == 4 and all(isinstance(widget, NoWheelComboBox) for widget in combos)
+    assert len(combos) == 3 and all(isinstance(widget, NoWheelComboBox) for widget in combos)  # 輸入語言、目標語言、OCR
     window.deleteLater()
 
 

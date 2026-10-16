@@ -280,7 +280,6 @@ def test_saving_with_a_new_model_puts_the_loading_notice_in_the_saved_status(con
     for name in ("_refresh_appearance", "refresh_monitor_map", "_apply_hotkeys", "_apply_autostart"):
         monkeypatch.setattr(controller, name, lambda *a, **k: None)
     monkeypatch.setattr(controller, "_create_configured_ocr_engine", lambda: None)
-    monkeypatch.setattr(controller, "_resolve_translator_service", lambda: controller.config.get("translation.service", "mock"))
     monkeypatch.setattr(controller, "_rebuild_translator", lambda: 0)
     monkeypatch.setattr(controller, "_warmup", lambda: "翻譯模型更換中：正在載入 3B Q4_K_M，完成後自動繼續翻譯")
 
@@ -294,7 +293,6 @@ def test_the_real_save_path_starts_the_load_right_away(controller, monkeypatch):
     for name in ("_refresh_appearance", "refresh_monitor_map", "_apply_hotkeys", "_apply_autostart"):
         monkeypatch.setattr(controller, name, lambda *a, **k: None)
     monkeypatch.setattr(controller, "_create_configured_ocr_engine", lambda: None)
-    monkeypatch.setattr(controller, "_resolve_translator_service", lambda: controller.config.get("translation.service", "mock"))
     translator = _SlowTranslator("offline/qwen3-1.7b")
     _use(controller, translator)
     monkeypatch.setattr(controller, "_rebuild_translator", lambda: 0)

@@ -4,7 +4,6 @@ mss>=9.0
 Pillow>=10.0
 numpy>=1.26
 pynput>=1.7
-requests>=2.31
 winocr==0.0.15
 rapidocr>=3.10,<4
 onnxruntime>=1.20,<2

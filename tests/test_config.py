@@ -64,23 +64,6 @@ def test_explicit_versioned_ocr_language_is_preserved(tmp_path):
     assert AppConfig(path).get("ocr.lang") == "zh"
 
 
-def test_legacy_google_free_speed_settings_are_normalized(tmp_path):
-    path = tmp_path / "config.json"
-    path.write_text(
-        '{"translation":{"google_free_max_workers":8,'
-        '"google_free_interval":0,"google_free_partial_retries":2}}',
-        encoding="utf-8",
-    )
-
-    config = AppConfig(path)
-
-    # 并发上限 8、最小间隔 0.02s：大批量文本块的总耗时约为旧上限的一半
-    assert config.get("translation.google_free_max_workers") == 8
-    assert config.get("translation.google_free_interval") == 0.02
-    assert config.get("translation.google_free_partial_retries") == 0
-    assert config.get("translation.google_free_fallback_to_mymemory") is True
-
-
 def test_save_load_roundtrip(tmp_path):
     path = tmp_path / "config.json"
     config = AppConfig(path)
@@ -114,15 +97,6 @@ def test_invalid_appearance_values_fall_back_without_touching_other_sections(tmp
     assert config.get("appearance.surface") == "layered"
     assert config.get("appearance.reduce_motion") is False
     assert config.get("ocr.min_confidence") == 0.77
-
-
-def test_masked_snapshot_hides_keys(tmp_path):
-    path = tmp_path / "config.json"
-    path.write_text('{"translation": {"openai": {"api_key": "sk-secret-1234567890"}}}', encoding="utf-8")
-    config = AppConfig(path)
-    snapshot = config.masked_snapshot()
-    assert snapshot["translation"]["openai"]["api_key"] == "***"
-    assert "sk-secret-1234567890" not in str(snapshot)
 
 
 def test_corrupt_config_backed_up(tmp_path):
@@ -181,10 +155,10 @@ def test_old_ctranslate2_and_fast_translator_settings_are_migrated(tmp_path):
     assert offline["threads"] == 4 and offline["model_dir"] == "D:/models"  # 其餘使用者的設定照舊
 
 
-def test_gguf_model_names_and_other_services_are_left_alone(tmp_path):
-    config = _offline_config(tmp_path, {"service": "google_free", "offline": {"model_name": "qwen2.5-3b-instruct-gguf-q4_k_m", "gpu_layers": 20}})
+def test_gguf_model_names_are_left_alone(tmp_path):
+    config = _offline_config(tmp_path, {"offline": {"model_name": "qwen2.5-3b-instruct-gguf-q4_k_m", "gpu_layers": 20}})
 
-    assert config.get("translation.service") == "google_free"
+    assert config.get("translation.service") == "offline"
     assert config.get("translation.offline.model_name") == "qwen2.5-3b-instruct-gguf-q4_k_m"
     assert config.get("translation.offline.gpu_layers") == 20
 

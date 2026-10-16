@@ -121,7 +121,7 @@ def test_restore_defaults_only_resets_appearance_and_save_round_trips(qapp, tmp_
     path = tmp_path / "config.json"
     config = AppConfig(path)
     config.set("ocr.min_confidence", 0.83)
-    config.set("translation.openai.api_key", "keep-this-key")
+    config.set("translation.offline.threads", 5)
     dialog = SettingsDialog(config)
 
     dialog.palette_choices.set_value("midnight")
@@ -129,7 +129,7 @@ def test_restore_defaults_only_resets_appearance_and_save_round_trips(qapp, tmp_
     dialog._reset_personalization()
     assert dialog._personalization_state() == DEFAULTS["appearance"]
     assert config.get("ocr.min_confidence") == 0.83
-    assert config.get("translation.openai.api_key") == "keep-this-key"
+    assert config.get("translation.offline.threads") == 5
 
     dialog.palette_choices.set_value("mist")
     dialog.accent_choices.set_value("#168A82")
@@ -150,7 +150,7 @@ def test_restore_defaults_only_resets_appearance_and_save_round_trips(qapp, tmp_
     assert loaded.get("appearance.surface") == "clean"
     assert loaded.get("appearance.reduce_motion") is True
     assert loaded.get("ocr.min_confidence") == 0.83
-    assert loaded.get("translation.openai.api_key") == "keep-this-key"
+    assert loaded.get("translation.offline.threads") == 5
     dialog.deleteLater()
 
 

@@ -14,8 +14,8 @@ from utils.language_utils import display_name
 class MockTranslator(Translator):
     name = "mock"
 
-    def __init__(self, config_section: dict, cache=None, api_key: str = "") -> None:
-        super().__init__(config_section, cache, api_key)
+    def __init__(self, config_section: dict, cache=None) -> None:
+        super().__init__(config_section, cache)
         self.unsupported_direction = False
 
     def _translate_batch(self, texts: list[str], source_language: str | None, target_language: str) -> list[str]:

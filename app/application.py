@@ -22,13 +22,8 @@ import services.ocr.rapidocr_ocr  # noqa: F401
 
 # 确保各 OCR 引擎 / 翻译适配器已注册（顺序影响 UI 下拉框默认项）
 import services.ocr.windows_ocr  # noqa: F401
-import services.translation.deepl_translator  # noqa: F401
-import services.translation.google_free_translator  # noqa: F401
-import services.translation.google_translator  # noqa: F401
 import services.translation.mock_translator  # noqa: F401
-import services.translation.mymemory_translator  # noqa: F401
 import services.translation.offline_translator  # noqa: F401
-import services.translation.openai_translator  # noqa: F401
 
 # 各职责拆分为 Mixin，Application 只保留生命周期/更新并继承它们。
 from app.capture_mixin import CaptureMixin
@@ -51,7 +46,7 @@ from services.ocr.base import OCRUnavailableError, create_ocr_engine, list_ocr_e
 from services.screenshot_service import ScreenshotService
 from services.translation.base import Translator
 from services.translation.cache import TranslationCache
-from services.translation.factory import create_translator, list_translators
+from services.translation.factory import create_translator
 from services.window_capture_service import (
     WindowCaptureError,
     get_foreground_window,
@@ -193,16 +188,10 @@ class Application(
                 max_entries=self.config.get("translation.cache_max_entries", 2000),
             )
             self.ocr_engine = self._create_configured_ocr_engine()
-            resolved_service = self._resolve_translator_service()
-            if resolved_service != self.config.get("translation.service", "mock"):
-                self.config.set("translation.service", resolved_service)
-                self.config.save()
-                self.set_status(f"檢測到 API Key，已自動切換到 {resolved_service} 翻譯服務")
             self.translator = create_translator(
-                self.config.get("translation.service", "mock"),
+                self.config.get("translation.service", "offline"),
                 self.config.section("translation"),
                 cache=self.cache,
-                api_key_resolver=self.config.api_key,
             )
             if self.reconcile_cache_with_model():
                 self.set_status("翻譯模型和上次不同，已清空翻譯快取")

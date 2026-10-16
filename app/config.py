@@ -62,10 +62,7 @@ DEFAULTS: dict[str, Any] = {
         },
     },
     "translation": {
-        "service": "offline",
-        "auto_select_service": True,
-        "mock_mode": "dictionary",
-        "glossary": "",
+        "service": "offline",  # 只有離線翻譯；舊設定檔裡的其他值會被改回來（見 _purge_online_services）
         "source_language": "auto",
         "target_language": "zh-hant",
         "keep_original": False,
@@ -102,44 +99,10 @@ DEFAULTS: dict[str, Any] = {
             # 只有漢字、沒有假名的文字視為：ja（日文）或 空字串（不翻譯）
             "han_only_as": "ja",
         },
-        "google_free_max_workers": 6,
-        "google_free_interval": 0.02,
-        "google_free_partial_retries": 0,
-        "google_free_retry_backoff": 0.35,
-        "google_free_fallback_to_mymemory": True,
         "cache_ttl_days": 30,
         "cache_max_entries": 2000,
         # 翻譯快取是用哪個模型存的（程式自己記）：換了模型就清空快取
         "cache_model": "",
-        "openai": {
-            "api_key": "",
-            "base_url": "https://api.openai.com/v1",
-            "model": "gpt-4o-mini",
-        },
-        "deepl": {
-            "api_key": "",
-            "base_url": "https://api-free.deepl.com/v2",
-            "formality": "default",
-        },
-        "google": {
-            "api_key": "",
-            "base_url": "https://translation.googleapis.com/language/translate/v2",
-        },
-        "baidu": {
-            "appid": "",
-            "api_key": "",
-            "base_url": "https://fanyi-api.baidu.com/api/trans/vip/translate",
-        },
-        "youdao": {
-            "app_key": "",
-            "app_secret": "",
-            "base_url": "https://openapi.youdao.com/api",
-        },
-        "azure": {
-            "api_key": "",
-            "region": "",
-            "base_url": "https://api.cognitive.microsofttranslator.com",
-        },
     },
     "overlay": {
         "background_color": "#000000",
@@ -203,16 +166,41 @@ DEFAULTS: dict[str, Any] = {
     },
 }
 
-_KEY_SECTIONS = (
-    "translation.openai.api_key",
-    "translation.deepl.api_key",
-    "translation.google.api_key",
-    "translation.baidu.appid",
-    "translation.baidu.api_key",
-    "translation.youdao.app_key",
-    "translation.youdao.app_secret",
-    "translation.azure.api_key",
+# 這個程式只有離線翻譯，沒有任何線上翻譯服務，也不再儲存任何服務的憑據。舊版設定檔裡殘留的線上服務設定與憑據
+# （API Key、App Secret…）在載入時會被刪掉，並立刻把清乾淨的設定存回檔案。
+_ONLINE_TRANSLATION_KEYS = (
+    "openai",
+    "deepl",
+    "google",
+    "baidu",
+    "youdao",
+    "azure",
+    "mymemory",
+    "auto_select_service",
+    "mock_mode",
+    "glossary",
+    "google_free_max_workers",
+    "google_free_interval",
+    "google_free_partial_retries",
+    "google_free_retry_backoff",
+    "google_free_fallback_to_mymemory",
 )
+OFFLINE_SERVICE = "offline"
+
+
+def _purge_online_services(translation: Any) -> bool:
+    """從載入的 ``translation`` 區段刪掉線上服務的設定與憑據；有刪東西、或服務不是離線翻譯時回傳 True。"""
+    if not isinstance(translation, dict):
+        return False
+    purged = False
+    for key in _ONLINE_TRANSLATION_KEYS:
+        if key in translation:
+            del translation[key]
+            purged = True
+    if translation.get("service", OFFLINE_SERVICE) != OFFLINE_SERVICE:
+        purged = True
+    translation["service"] = OFFLINE_SERVICE
+    return purged
 
 
 def _deep_merge(base: dict, extra: dict) -> dict:
@@ -252,25 +240,11 @@ def _normalize_appearance(data: dict[str, Any]) -> None:
 
 
 def _normalize_translation(data: dict[str, Any]) -> None:
-    """Clamp legacy anonymous-Google tuning that made large captures slower."""
+    """Translation-section migrations: fixed target language, offline-only service, legacy offline settings."""
     translation = data.setdefault("translation", {})
     translation["target_language"] = TARGET_LANGUAGE  # 目標語言只有繁體中文：舊設定檔裡的其他值（簡體、英文…）改回來
-    try:
-        workers = int(translation.get("google_free_max_workers", 6) or 6)
-    except (TypeError, ValueError):
-        workers = 6
-    try:
-        interval = float(translation.get("google_free_interval", 0.02) or 0.0)
-    except (TypeError, ValueError):
-        interval = 0.02
-    translation["google_free_max_workers"] = max(1, min(8, workers))
-    translation["google_free_interval"] = max(0.02, interval)
-    # 旧版逐条重试会把 20 个失败尾项串行拖几十秒；失败尾巴现在直接批量兜底。
-    translation["google_free_partial_retries"] = 0
-    translation.setdefault("google_free_fallback_to_mymemory", True)
+    translation["service"] = OFFLINE_SERVICE
     # CTranslate2 引擎與 NLLB「快速翻譯」已移除：舊設定改成 llama.cpp 的對應設定（沿用 auto 的預設模型）
-    if translation.get("service") == "offline_fast":
-        translation["service"] = "offline"
     translation.pop("offline_fast", None)
     offline = translation.setdefault("offline", {})
     for obsolete in ("engine", "device", "compute_type", "beam_size"):
@@ -410,6 +384,7 @@ class AppConfig:
             with open(self.path, "r", encoding="utf-8-sig") as fp:
                 loaded = json.load(fp)
             if isinstance(loaded, dict):
+                purged = _purge_online_services(loaded.get("translation"))
                 _deep_merge(self.data, loaded)
                 _normalize_appearance(self.data)
                 _normalize_translation(self.data)
@@ -425,6 +400,8 @@ class AppConfig:
                 capture["select_border_color"] = "#2878E8"
                 if capture.get("select_mask_opacity") == 100:
                     capture["select_mask_opacity"] = 84
+                if purged:  # 把清乾淨的設定存回檔案：舊版留下的線上服務憑據不會繼續留在磁碟上
+                    self._save_after_purge()
         except (json.JSONDecodeError, OSError) as exc:
             backup = self.path.with_suffix(".json.bak")
             try:
@@ -434,6 +411,14 @@ class AppConfig:
             from app.logger import get_logger
 
             get_logger("config").warning("配置檔案損壞，已備份到 %s：%s", backup, exc)
+
+    def _save_after_purge(self) -> None:
+        try:
+            self.save()
+        except OSError as exc:
+            from app.logger import get_logger
+
+            get_logger("config").warning("無法把清掉線上服務設定的結果存回 %s：%s", self.path, exc)
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -461,35 +446,15 @@ class AppConfig:
         node = self.data
         for part in parts[:-1]:
             node = node.setdefault(part, {})
-        node[parts[-1]] = TARGET_LANGUAGE if dotted == "translation.target_language" else value
+        fixed = {"translation.target_language": TARGET_LANGUAGE, "translation.service": OFFLINE_SERVICE}
+        node[parts[-1]] = fixed.get(dotted, value)
 
     def hotkeys(self) -> dict[str, str]:
         return dict(self.section("hotkeys"))
 
     def masked_snapshot(self) -> dict:
-        snapshot = copy.deepcopy(self.data)
-        for key in _KEY_SECTIONS:
-            parts = key.split(".")
-            node = snapshot
-            for part in parts[:-1]:
-                node = node.get(part, {})
-            if parts[-1] in node and node[parts[-1]]:
-                node[parts[-1]] = "***"
-        return snapshot
-
-    def api_key(self, service: str) -> str:
-        env_map = {
-            "openai": "OPENAI_API_KEY",
-            "deepl": "DEEPL_API_KEY",
-            "google": "GOOGLE_TRANSLATE_API_KEY",
-            "baidu": "BAIDU_APP_KEY",
-            "youdao": "YOUDAO_APP_KEY",
-            "azure": "AZURE_TRANSLATOR_KEY",
-        }
-        env_value = os.environ.get(env_map.get(service, ""), "")
-        if env_value:
-            return env_value.strip()
-        return str(self.get(f"translation.{service}.api_key", "")).strip()
+        """給診斷包用的設定副本。程式不再儲存任何服務的憑據，所以這裡沒有要遮的欄位（診斷包另外會遮掉像金鑰的欄位名稱）。"""
+        return copy.deepcopy(self.data)
 
     def reset(self) -> None:
         self.data = copy.deepcopy(DEFAULTS)

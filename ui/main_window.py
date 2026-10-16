@@ -20,8 +20,6 @@ from PySide6.QtWidgets import (
 )
 
 from services.ocr.base import list_ocr_engines
-from services.translation.base import list_translators
-from services.translation.factory import service_display_name
 from ui.appearance import current_tokens
 from ui.motion import (
     BASE,
@@ -454,7 +452,7 @@ class MainWindow(QWidget):
         option_grid.setContentsMargins(22, 18, 22, 20)
         option_grid.setHorizontalSpacing(18)
         option_grid.setVerticalSpacing(9)
-        labels = ("輸入語言", "目標語言", "OCR", "翻譯服務")
+        labels = ("輸入語言", "目標語言", "OCR")
         for col, label in enumerate(labels):
             caption = QLabel(label)
             caption.setObjectName("SectionLabel")
@@ -462,14 +460,12 @@ class MainWindow(QWidget):
         self.combo_source = NoWheelComboBox()
         self.combo_target = NoWheelComboBox()
         self.combo_ocr = NoWheelComboBox()
-        self.combo_service = NoWheelComboBox()
-        for col, combo in enumerate((self.combo_source, self.combo_target, self.combo_ocr, self.combo_service)):
+        for col, combo in enumerate((self.combo_source, self.combo_target, self.combo_ocr)):
             combo.setMinimumHeight(48)
             option_grid.addWidget(combo, 1, col)
         option_grid.setColumnStretch(0, 1)
         option_grid.setColumnStretch(1, 1)
         option_grid.setColumnStretch(2, 1)
-        option_grid.setColumnStretch(3, 1.55)
         layout.addWidget(options_panel)
 
         footer_panel = QFrame()
@@ -514,7 +510,6 @@ class MainWindow(QWidget):
         self.combo_source.currentIndexChanged.connect(self._on_combo_changed)
         self.combo_target.currentIndexChanged.connect(self._on_combo_changed)
         self.combo_ocr.currentIndexChanged.connect(self._on_combo_changed)
-        self.combo_service.currentIndexChanged.connect(self._on_combo_changed)
         if hasattr(self.controller, "show_about"):
             QShortcut(QKeySequence("F1"), self).activated.connect(self.controller.show_about)
 
@@ -528,8 +523,6 @@ class MainWindow(QWidget):
         self.combo_target.setToolTip("譯文固定是繁體中文（台灣用語）。")
         for engine in list_ocr_engines():
             self.combo_ocr.addItem(engine, engine)
-        for service in list_translators():
-            self.combo_service.addItem(service_display_name(service), service)
         self._block_signals = False
         self.reload_values()
 
@@ -539,7 +532,6 @@ class MainWindow(QWidget):
         self.combo_source.setCurrentIndex(self._index_of(self.combo_source, self.controller.config.get("translation.source_language", "auto")))
         self.combo_target.setCurrentIndex(0)  # 只有繁體中文一個選項
         self.combo_ocr.setCurrentIndex(self._index_of(self.combo_ocr, self.controller.config.get("ocr.engine", "windows")))
-        self.combo_service.setCurrentIndex(self._index_of(self.combo_service, self.controller.config.get("translation.service", "mymemory")))
         self.check_keep_original.setChecked(bool(self.controller.config.get("translation.keep_original", False)))
         self.check_lyrics.setChecked(bool(self.controller.config.get("translation.lyrics_mode", False)))
         # 譯文放在框下方時原文本來就留在畫面上，「保留原文」只對蓋在原文上的模式有意義
@@ -563,7 +555,7 @@ class MainWindow(QWidget):
         self._option_layout.setHorizontalSpacing(max(12, tokens.main_spacing - 4))
         self._footer_layout.setSpacing(max(8, tokens.main_spacing - 12))
         self.btn_settings.setFixedHeight(button_height)
-        for combo in (self.combo_source, self.combo_target, self.combo_ocr, self.combo_service):
+        for combo in (self.combo_source, self.combo_target, self.combo_ocr):
             combo.setMinimumHeight(combo_height)
             combo.setMaximumHeight(combo_height)
         for button in (self.btn_edit, self.btn_refresh):
@@ -762,9 +754,7 @@ class MainWindow(QWidget):
             self.btn_refresh,
             self.btn_settings,
             self.combo_source,
-            self.combo_target,
-            self.combo_ocr,
-            self.combo_service,
+            self.combo_ocr,  # 目標語言（combo_target）固定只有繁體中文，一直是停用的，不跟著忙碌狀態開關
             self.check_keep_original,
             self.btn_edit,
         ):
@@ -905,7 +895,7 @@ class MainWindow(QWidget):
         if getattr(self, "_block_signals", False):
             return
         self.controller.apply_runtime_selection(
-            ocr_engine=self.combo_ocr.currentData(), service=self.combo_service.currentData(),
+            ocr_engine=self.combo_ocr.currentData(),
             source=self.combo_source.currentData(), target=self.combo_target.currentData(),
         )
 

@@ -28,7 +28,7 @@ def test_export_redacts_config_and_logs(tmp_path):
         json.dumps(
             {
                 "translation": {
-                    "openai": {"api_key": "sk-live-config-secret-123456"},
+                    "offline": {"api_key": "sk-live-config-secret-123456"},
                     "custom_token": "unwanted-secret",
                 }
             }
@@ -61,7 +61,7 @@ def test_export_redacts_config_and_logs(tmp_path):
     with zipfile.ZipFile(bundle) as archive:
         snapshot = json.loads(archive.read("config.json"))
         joined = "\n".join(archive.read(name).decode("utf-8") for name in archive.namelist())
-    assert snapshot["translation"]["openai"]["api_key"] == "***"
+    assert snapshot["translation"]["offline"]["api_key"] == "***"  # 任何長得像金鑰的欄位名稱都會被遮掉
     assert snapshot["translation"]["custom_token"] == "***"
     assert "sk-live-config-secret-123456" not in joined
     assert "sk-live-log-secret-123456" not in joined

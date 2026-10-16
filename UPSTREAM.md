@@ -14,6 +14,7 @@
 
 - **自動更新器**：`services/update_service.py`、`ui/update_tasks.py`、設定頁「軟件更新」區塊、`Application.install_update`、`updates.*` 設定。原本指向第三方 repo `nimbus-translate/screen-translator` 的 Releases。
 - **PaddleOCR 元件下載器與引擎**：`services/ocr/component_manager.py`、`services/ocr/paddle_ocr.py`、`ui/ocr_component_tasks.py`、`paddle_component_worker.py`、`paddle_runtime_hook.py`、`paddle_component.spec`、`requirements-paddle.txt`、相關 `scripts/*.ps1`、`ocr.paddle.*` 設定。OCR 後端改由 RapidOCR 取代。
+- **所有線上翻譯服務**（2026-10-15）：`services/translation/` 的 Google（免費與 API）、DeepL、OpenAI 相容、百度、有道、Azure、MyMemory 翻譯器與 `http_errors.py`，設定頁的「翻譯服務」下拉與「線上服務憑據」區塊，設定檔的 `translation.openai`／`deepl`／`google`／`baidu`／`youdao`／`azure` 區段，依 API Key 自動切換服務的邏輯，以及對應的測試。舊設定檔載入時會刪掉這些設定與憑據並存回檔案。
 - **Authenticode 驗證**：`services/authenticode.py`，僅供上述更新器與元件下載器使用。
 - **上游發佈流程與社群檔案**：`.github/workflows/release-windows.yml`、`.github/ISSUE_TEMPLATE/`、`.github/PULL_REQUEST_TEMPLATE.md`、完整版 `build.spec`（含 Paddle）。
 - 「關於」對話框的上游 repo 連結。

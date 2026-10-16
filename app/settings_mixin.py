@@ -145,11 +145,6 @@ class SettingsMixin:
                 self.config.get("translation.cache_max_entries", 2000),
             )
         self.ocr_engine = self._create_configured_ocr_engine()
-        resolved_service = self._resolve_translator_service()
-        if resolved_service != self.config.get("translation.service", "mock"):
-            self.config.set("translation.service", resolved_service)
-            self.config.save()
-            self.set_status(f"檢測到 API Key，已自動切換到 {resolved_service} 翻譯服務")
         cleared = self._rebuild_translator()
         self._forget_displayed_translations()  # 可能換了模型：畫面上舊模型的譯文不能被寫進新模型的快取
         loading = self._warmup() or ""  # 換了模型就馬上在背景載入；載入中的提示併進下面的狀態列文字
@@ -173,16 +168,12 @@ class SettingsMixin:
     def apply_runtime_selection(
         self,
         ocr_engine: str | None = None,
-        service: str | None = None,
         source: str | None = None,
         target: str | None = None,
     ) -> None:
         """主窗口下拉框变更时立即生效并保存。"""
         if ocr_engine:
             self.config.set("ocr.engine", ocr_engine)
-        if service:
-            self.config.set("translation.service", service)
-            self.config.set("translation.auto_select_service", False)
         previous_source = str(
             self.config.get("translation.source_language", "auto") or "auto"
         )
@@ -204,7 +195,7 @@ class SettingsMixin:
         if self.window is not None:
             self.window.reload_values()
         self.set_status(
-            f"已切換：OCR={self._active_ocr_engine_name} 翻譯={self.config.get('translation.service')} "
+            f"已切換：OCR={self._active_ocr_engine_name} "
             f"目標={self.config.get('translation.target_language')}"
             + (f"（換了翻譯模型，已清空翻譯快取 {cleared} 句）" if cleared else "")
             + (f"；{loading}" if loading else "")
@@ -254,7 +245,7 @@ class SettingsMixin:
 
     def _build_translator(self):
         """建立翻譯器；離線翻譯的設定沒變時重用現有實例，避免重複載入數 GB 的模型。"""
-        service = str(self.config.get("translation.service", "mock"))
+        service = str(self.config.get("translation.service", "offline"))
         section = self.config.section("translation")
         current = getattr(self, "translator", None)
         if (
@@ -265,12 +256,7 @@ class SettingsMixin:
         ):
             current.cache = self.cache
             return current
-        return create_translator(
-            service,
-            section,
-            cache=self.cache,
-            api_key_resolver=self.config.api_key,
-        )
+        return create_translator(service, section, cache=self.cache)
 
     def _create_configured_ocr_engine(self):
         """Resolve the requested backend without making a light build unbootable."""
@@ -302,21 +288,6 @@ class SettingsMixin:
                     log.warning("無法儲存 OCR 回退選擇：%s", exc)
             return engine
         raise OCRUnavailableError("沒有可用的 OCR 引擎：" + "; ".join(failures))
-
-    def _resolve_translator_service(self) -> str:
-        """启动时若当前是 mock 且检测到已配置的真实服务 Key，自动切换。"""
-        service = str(self.config.get("translation.service", "mock"))
-        if service != "mock" or not self.config.get("translation.auto_select_service", True):
-            return service
-        env_names = {
-            "openai": "OPENAI_API_KEY",
-            "deepl": "DEEPL_API_KEY",
-            "google": "GOOGLE_TRANSLATE_API_KEY",
-        }
-        for candidate in ("openai", "deepl", "google"):
-            if os.environ.get(env_names[candidate]) or self.config.api_key(candidate):
-                return candidate
-        return service
 
     def _apply_hotkeys(self) -> None:
         try:
