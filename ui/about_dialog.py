@@ -25,11 +25,11 @@ from ui.welcome_dialog import _hkfmt
 def _shortcut_rows(hotkeys: dict) -> list[tuple[str, str]]:
     rows = [
         ("框選翻譯", hotkeys.get("capture_region", "")),
-        ("全屏翻譯", hotkeys.get("capture_fullscreen", "")),
+        ("即時監控（開始 / 停止）", hotkeys.get("monitor_toggle", "")),
+        ("全螢幕翻譯", hotkeys.get("capture_fullscreen", "")),
         ("當前視窗翻譯", hotkeys.get("capture_window", "")),
         ("隱藏 / 顯示譯文", hotkeys.get("toggle_overlay", "")),
-        ("重新識別翻譯", hotkeys.get("refresh", "")),
-        ("即時監控", hotkeys.get("monitor_toggle", "")),
+        ("重新辨識翻譯", hotkeys.get("refresh", "")),
         ("檢視幫助（本頁）", "F1"),
         ("取消當前選區", "Esc"),
     ]
@@ -62,7 +62,7 @@ class AboutDialog(QDialog):
         name.setObjectName("AboutName")
         version = QLabel(f"版本 {__version__}")
         version.setObjectName("AboutVersion")
-        tagline = QLabel("把螢幕上任何文字，一鍵翻譯成你能讀懂的語言。")
+        tagline = QLabel("框選螢幕上的文字，在你的電腦上離線翻成繁體中文。")
         tagline.setObjectName("AboutTagline")
         info.addWidget(name)
         info.addWidget(version)

@@ -58,7 +58,7 @@ class WelcomeDialog(QDialog):
         hb.setSpacing(8)
         title = QLabel("歡迎使用 螢幕翻譯")
         title.setObjectName("WelcomeTitle")
-        sub = QLabel("三步上手，把螢幕上任何看不懂的文字，一鍵變成你能讀懂的語言。")
+        sub = QLabel("框選畫面上的文字，譯文馬上顯示在框的下方。翻譯全部在這台電腦上完成，不用網路帳號。")
         sub.setObjectName("WelcomeSubtitle")
         hb.addWidget(title)
         hb.addWidget(sub)
@@ -67,7 +67,7 @@ class WelcomeDialog(QDialog):
         self._stack = QStackedWidget()
         self._stack.setObjectName("WelcomeStack")
         self._stack.addWidget(self._page_capture())
-        self._stack.addWidget(self._page_language())
+        self._stack.addWidget(self._page_display())
         self._stack.addWidget(self._page_tray())
         root.addWidget(self._stack, 1)
 
@@ -132,45 +132,43 @@ class WelcomeDialog(QDialog):
         v = QVBoxLayout(page)
         v.setContentsMargins(36, 12, 36, 8)
         v.setSpacing(10)
-        intro = QLabel("先選一種截圖方式，框好範圍後即開始識別與翻譯：")
+        intro = QLabel("兩種用法，都是先用滑鼠圈出想翻譯的範圍：")
         intro.setObjectName("WelcomeBody")
         intro.setWordWrap(True)
         v.addWidget(intro)
         v.addWidget(
             self._mode_row(
                 "▦", "框選翻譯", self._hotkeys.get("capture_region", ""),
-                "拖曳滑鼠圈出任意螢幕區域，適合零散段落。",
+                "圈出一塊區域，翻一次。適合看一段文字、一張圖。",
             )
         )
         v.addWidget(
             self._mode_row(
-                "▣", "全屏翻譯", self._hotkeys.get("capture_fullscreen", ""),
-                "一次翻譯整個螢幕，適合網頁或長文件。",
-            )
-        )
-        v.addWidget(
-            self._mode_row(
-                "▢", "當前視窗", self._hotkeys.get("capture_window", ""),
-                "自動鎖定最前面的應用視窗，無需手動框選。",
+                "▶", "即時監控", self._hotkeys.get("monitor_toggle", ""),
+                "框會一直留在畫面上，字幕一換就自動翻下一句。適合看影片、看歌詞、玩遊戲。",
             )
         )
         v.addStretch(1)
         return page
 
-    def _page_language(self) -> QWidget:
+    def _page_display(self) -> QWidget:
         page = QWidget()
         v = QVBoxLayout(page)
         v.setContentsMargins(36, 12, 36, 8)
         v.setSpacing(12)
         body = QLabel(
-            "在主介面頂部選好<strong>輸入語言</strong>與<strong>目標語言</strong>，"
-            "點任意截圖方式即可翻譯。\n\n"
-            "預設使用內建詞典翻譯，<strong>開箱即用、無需任何配置</strong>；"
-            "想要更地道的線上翻譯，可在「設定 → 翻譯」填入對應服務的 API Key，"
-            "程式會自動切換到該服務。"
+            "<strong>譯文怎麼看</strong><br>"
+            "譯文顯示在框的下方，原文照常留在畫面上。框可以用滑鼠拖著移動、拉邊緣改大小；"
+            "滑鼠離開框超過 2 秒，框會變淡，免得擋住畫面，移回來就恢復。<br><br>"
+            "<strong>第一次使用</strong><br>"
+            "程式會先把翻譯模型載入記憶體，狀態列會顯示進度，載好就能翻。"
+            "辨識與翻譯都在這台電腦上完成，畫面和文字不會傳到網路上。<br><br>"
+            "翻過的字幕會依日期存成文字檔，位置可以在「設定 → 一般 → 文字輸出」查看與修改。"
         )
         body.setObjectName("WelcomeBody")
         body.setWordWrap(True)
+        body.setTextFormat(Qt.TextFormat.RichText)
+        body.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         v.addWidget(body, 1)
         return page
 
@@ -180,12 +178,19 @@ class WelcomeDialog(QDialog):
         v.setContentsMargins(36, 12, 36, 8)
         v.setSpacing(12)
         body = QLabel(
-            "翻譯時主視窗會最小化到系統托盤，譯文直接覆蓋在螢幕上原文的位置。\n\n"
-            "關閉主視窗不會退出程式——單擊托盤圖示即可隨時喚回；"
-            "按 <strong>F1</strong> 可隨時檢視本幫助與全部快捷鍵。"
+            "<strong>設定</strong><br>"
+            "主視窗右上角的「設定」可以換翻譯模型（越大越準，也越慢）、選用 CPU 或顯示卡來翻譯、"
+            "改輸入語言和譯文的外觀。譯文固定翻成繁體中文。<br><br>"
+            "<strong>系統匣</strong><br>"
+            "程式會停在螢幕右下角的系統匣（工作列右邊的小圖示）。預設按主視窗右上角的關閉鈕，只是把視窗收起來，"
+            "點圖示可以再打開，按右鍵可以快速操作或退出；這個行為可以在設定裡改。"
+            "全螢幕翻譯、當前視窗翻譯用快捷鍵或系統匣選單。<br><br>"
+            "按 <strong>F1</strong> 隨時查看全部快捷鍵。"
         )
         body.setObjectName("WelcomeBody")
         body.setWordWrap(True)
+        body.setTextFormat(Qt.TextFormat.RichText)
+        body.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         v.addWidget(body, 1)
         return page
 

@@ -15,7 +15,8 @@ from utils.language_utils import TARGET_LANGUAGE
 DEFAULTS: dict[str, Any] = {
     "general": {
         "startup_with_system": False,
-        "minimize_to_tray": True,
+        "minimize_to_tray": True,  # 關閉主視窗時：收到系統匣（True），或結束程式（False）
+        "minimize_hides_to_tray": False,  # 最小化主視窗時：收到系統匣、不佔工作列（True），或照一般視窗縮到工作列（False）
         "save_history": False,
         "history_dir": "",
     },

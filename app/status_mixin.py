@@ -61,5 +61,3 @@ class StatusMixin:
         if self.overlay_manager is None or self._busy:
             return
         self.overlay_manager.set_edit_mode(enabled)
-        if self.window is not None:
-            self.window.set_edit_mode_checked(enabled)

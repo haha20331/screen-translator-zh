@@ -4,22 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QAbstractAnimation, QPropertyAnimation, Qt, QTimer, QVariantAnimation
+from PySide6.QtCore import QAbstractAnimation, QEvent, QPropertyAnimation, Qt, QTimer, QVariantAnimation
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
-    QComboBox,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
 
-from services.ocr.base import list_ocr_engines
 from ui.appearance import current_tokens
 from ui.motion import (
     BASE,
@@ -31,9 +29,8 @@ from ui.motion import (
     RELEASE_EASING,
     motion_duration,
 )
-from ui.no_wheel import NoWheelComboBox
 from ui.settings_transition import SettingsTransitionGuard
-from utils.language_utils import LANGUAGES, TARGET_LANGUAGES
+from ui.welcome_dialog import _hkfmt
 
 
 class NativePageDeck(QWidget):
@@ -347,10 +344,12 @@ class CaptureActionCard(QPushButton):
             )
             painter.drawLine(line_x, rect.bottom() - 10, line_x + line_width, rect.bottom() - 10)
 
-MIN_WINDOW_SIZE = (900, 540)
-# 預設尺寸：980×580。（曾經放大到 1.3 倍＝754；刪掉主視窗的「譯文長這樣」範例卡之後內容變少，高度改回 580）
+# 主視窗的內容只剩標題、一張「框選翻譯」卡和底下的狀態列，約 404 px 高；設定頁也是嵌在這個視窗裡，
+# 440 px 時左邊六個分頁鈕還排得下、右邊的內容靠捲動
+MIN_WINDOW_SIZE = (900, 440)
+# 預設尺寸：980×460。（拿掉全屏／視窗翻譯卡、語言與 OCR 那一欄之後，原本的 580 太空）
 DEFAULT_WINDOW_WIDTH = 980
-DEFAULT_WINDOW_HEIGHT = 580
+DEFAULT_WINDOW_HEIGHT = 460
 _SCREEN_MARGIN = 80  # 留給工作列與視窗標題列
 
 
@@ -372,7 +371,6 @@ class MainWindow(QWidget):
         screen = QGuiApplication.primaryScreen()
         self.resize(*default_window_size(screen.availableGeometry().height() if screen is not None else None))
         self._faded_in = False
-        self._window_capture_available = True
         self._capture_departure_callback: Callable[[], None] | None = None
         self._visibility_action = ""
         self._settings_page_widget: QWidget | None = None
@@ -418,7 +416,7 @@ class MainWindow(QWidget):
         title_stack.setSpacing(7)
         title = QLabel("螢幕翻譯")
         title.setObjectName("TitleLabel")
-        hint = QLabel("框選、全屏或視窗，一鍵翻譯覆蓋")
+        hint = QLabel("框選螢幕上的字幕或文字，離線翻成繁體中文，譯文就顯示在框的下方")
         hint.setObjectName("HintLabel")
         title_stack.addStretch(1)
         title_stack.addWidget(title)
@@ -439,34 +437,8 @@ class MainWindow(QWidget):
         action_row.setContentsMargins(18, 16, 18, 16)
         action_row.setSpacing(16)
         self.btn_region = CaptureActionCard("框選翻譯", "拖曳選擇螢幕區域", "region", active=False)
-        self.btn_fullscreen = CaptureActionCard("全屏翻譯", "翻譯整個螢幕", "screen")
-        self.btn_window = CaptureActionCard("當前視窗", "翻譯當前活動視窗", "window")
-        for card in (self.btn_region, self.btn_fullscreen, self.btn_window):
-            action_row.addWidget(card, 1)
+        action_row.addWidget(self.btn_region, 1)
         layout.addWidget(action_panel)
-
-        options_panel = QFrame()
-        options_panel.setObjectName("OptionsPanel")
-        option_grid = QGridLayout(options_panel)
-        self._option_layout = option_grid
-        option_grid.setContentsMargins(22, 18, 22, 20)
-        option_grid.setHorizontalSpacing(18)
-        option_grid.setVerticalSpacing(9)
-        labels = ("輸入語言", "目標語言", "OCR")
-        for col, label in enumerate(labels):
-            caption = QLabel(label)
-            caption.setObjectName("SectionLabel")
-            option_grid.addWidget(caption, 0, col)
-        self.combo_source = NoWheelComboBox()
-        self.combo_target = NoWheelComboBox()
-        self.combo_ocr = NoWheelComboBox()
-        for col, combo in enumerate((self.combo_source, self.combo_target, self.combo_ocr)):
-            combo.setMinimumHeight(48)
-            option_grid.addWidget(combo, 1, col)
-        option_grid.setColumnStretch(0, 1)
-        option_grid.setColumnStretch(1, 1)
-        option_grid.setColumnStretch(2, 1)
-        layout.addWidget(options_panel)
 
         footer_panel = QFrame()
         footer_panel.setObjectName("FooterPanel")
@@ -474,66 +446,44 @@ class MainWindow(QWidget):
         self._footer_layout = bottom_row
         bottom_row.setContentsMargins(22, 14, 18, 14)
         bottom_row.setSpacing(10)
-        self.status_label = QLabel("就緒，選擇一種方式開始")
+        self.status_label = QLabel("就緒：按「框選翻譯」開始")
         self.status_label.setObjectName("StatusLabel")
         bottom_row.addWidget(self.status_label, 1)
         self.check_keep_original = QCheckBox("保留原文")
         self.check_lyrics = QCheckBox("歌詞")
         self.check_lyrics.setToolTip("告訴模型這是歌詞，譯得較通順有詩意。只對「離線翻譯」有效。")
-        self.btn_edit = QPushButton("編輯模式")
-        self.btn_edit.setCheckable(True)
-        self.btn_edit.setObjectName("ToggleButton")
-        self.btn_refresh = QPushButton("重新整理")
-        self.btn_refresh.setObjectName("RefreshButton")
         self.btn_monitor = QPushButton("即時監控")
         self.btn_monitor.setObjectName("MonitorButton")
         self.btn_monitor.setCheckable(True)
-        for button in (self.btn_edit, self.btn_refresh, self.btn_monitor):
-            button.setMinimumHeight(42)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_monitor.setMinimumHeight(42)
+        self.btn_monitor.setCursor(Qt.CursorShape.PointingHandCursor)
         bottom_row.addWidget(self.check_lyrics)
         bottom_row.addWidget(self.check_keep_original)
-        bottom_row.addWidget(self.btn_edit)
-        bottom_row.addWidget(self.btn_refresh)
         bottom_row.addWidget(self.btn_monitor)
         layout.addWidget(footer_panel)
 
         self.btn_region.clicked.connect(self.controller.start_region_capture)
-        self.btn_fullscreen.clicked.connect(lambda: self.controller.start_capture("fullscreen"))
-        self.btn_window.clicked.connect(lambda: self.controller.start_capture("window"))
         self.btn_settings.clicked.connect(self.controller.open_settings)
-        self.btn_edit.toggled.connect(self.controller.set_edit_mode)
-        self.btn_refresh.clicked.connect(self.controller.refresh)
         self.btn_monitor.clicked.connect(self.controller.toggle_monitor)
         self.check_keep_original.toggled.connect(self._on_keep_original)
         self.check_lyrics.toggled.connect(lambda checked: self._on_translation_flag("translation.lyrics_mode", checked))
-        self.combo_source.currentIndexChanged.connect(self._on_combo_changed)
-        self.combo_target.currentIndexChanged.connect(self._on_combo_changed)
-        self.combo_ocr.currentIndexChanged.connect(self._on_combo_changed)
         if hasattr(self.controller, "show_about"):
             QShortcut(QKeySequence("F1"), self).activated.connect(self.controller.show_about)
 
     def _load_values(self) -> None:
-        self._block_signals = True
-        for code, name in LANGUAGES:
-            self.combo_source.addItem(name, code)
-        for code, name in TARGET_LANGUAGES:  # 目標語言只有繁體中文，只是顯示出來（不能改）
-            self.combo_target.addItem(name, code)
-        self.combo_target.setEnabled(False)
-        self.combo_target.setToolTip("譯文固定是繁體中文（台灣用語）。")
-        for engine in list_ocr_engines():
-            self.combo_ocr.addItem(engine, engine)
-        self._block_signals = False
         self.reload_values()
 
     def reload_values(self) -> None:
         """Refresh duplicated quick controls after settings are saved."""
         self._block_signals = True
-        self.combo_source.setCurrentIndex(self._index_of(self.combo_source, self.controller.config.get("translation.source_language", "auto")))
-        self.combo_target.setCurrentIndex(0)  # 只有繁體中文一個選項
-        self.combo_ocr.setCurrentIndex(self._index_of(self.combo_ocr, self.controller.config.get("ocr.engine", "windows")))
         self.check_keep_original.setChecked(bool(self.controller.config.get("translation.keep_original", False)))
         self.check_lyrics.setChecked(bool(self.controller.config.get("translation.lyrics_mode", False)))
+        hotkey = ""
+        try:
+            hotkey = _hkfmt(self.controller.config.hotkeys().get("capture_region", ""))
+        except Exception:  # 測試用的假設定沒有快捷鍵
+            pass
+        self.btn_region.set_detail("拖曳選擇螢幕區域" + (f"　快捷鍵 {hotkey}" if hotkey else ""))
         # 譯文放在框下方時原文本來就留在畫面上，「保留原文」只對蓋在原文上的模式有意義
         self.check_keep_original.setVisible(self.controller.config.get("overlay.placement", "below") == "in_place")
         self._block_signals = False
@@ -547,28 +497,15 @@ class MainWindow(QWidget):
             "balanced": (40, 30, 40, 28),
             "compact": (32, 22, 32, 22),
         }[density]
-        combo_height = {"spacious": 54, "balanced": 48, "compact": 40}[density]
         button_height = {"spacious": 46, "balanced": 42, "compact": 38}[density]
         self._home_layout.setContentsMargins(*margins)
         self._home_layout.setSpacing(tokens.main_spacing)
         self._action_layout.setSpacing(max(12, tokens.main_spacing - 6))
-        self._option_layout.setHorizontalSpacing(max(12, tokens.main_spacing - 4))
         self._footer_layout.setSpacing(max(8, tokens.main_spacing - 12))
         self.btn_settings.setFixedHeight(button_height)
-        for combo in (self.combo_source, self.combo_target, self.combo_ocr):
-            combo.setMinimumHeight(combo_height)
-            combo.setMaximumHeight(combo_height)
-        for button in (self.btn_edit, self.btn_refresh):
-            button.setMinimumHeight(button_height)
-            button.setMaximumHeight(button_height)
-        for card in (self.btn_region, self.btn_fullscreen, self.btn_window):
-            card.update()
+        self.btn_region.update()
         self.btn_settings.update()
         self.update()
-
-    @staticmethod
-    def _index_of(combo: QComboBox, value: str) -> int:
-        return max(0, combo.findData(value))
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -748,29 +685,8 @@ class MainWindow(QWidget):
             callback()
 
     def set_busy(self, busy: bool) -> None:
-        for control in (
-            self.btn_region,
-            self.btn_fullscreen,
-            self.btn_refresh,
-            self.btn_settings,
-            self.combo_source,
-            self.combo_ocr,  # 目標語言（combo_target）固定只有繁體中文，一直是停用的，不跟著忙碌狀態開關
-            self.check_keep_original,
-            self.btn_edit,
-        ):
+        for control in (self.btn_region, self.btn_settings, self.check_keep_original):
             control.setEnabled(not busy)
-        self.btn_window.setEnabled(not busy and self._window_capture_available)
-
-    def set_window_capture_available(self, available: bool, reason: str = "") -> None:
-        self._window_capture_available = bool(available)
-        self.btn_window.setEnabled(
-            self._window_capture_available and not getattr(self.controller, "_busy", False)
-        )
-        self.btn_window.set_detail(
-            "翻譯當前活動視窗"
-            if self._window_capture_available
-            else (reason or "此平臺暫不支援視窗捕獲")
-        )
 
     def play_capture_departure(self, mode: str, callback: Callable[[], None]) -> None:
         """Confirm the chosen card, then remove the window before any screenshot."""
@@ -833,11 +749,8 @@ class MainWindow(QWidget):
             card.reset_launch()
 
     def _capture_card(self, mode: str) -> CaptureActionCard | None:
-        return {
-            "region": self.btn_region,
-            "fullscreen": self.btn_fullscreen,
-            "window": self.btn_window,
-        }.get(mode)
+        # 主視窗只有框選翻譯這一張卡；全屏、視窗翻譯只剩快捷鍵與系統匣選單
+        return {"region": self.btn_region}.get(mode)
 
     def _start_capture_departure(self) -> None:
         duration = motion_duration(FAST, large_surface=True)
@@ -873,11 +786,6 @@ class MainWindow(QWidget):
         self.btn_monitor.setText("停止監控" if active else "即時監控")
         self._block_signals = False
 
-    def set_edit_mode_checked(self, enabled: bool) -> None:
-        self._block_signals = True
-        self.btn_edit.setChecked(enabled)
-        self._block_signals = False
-
     def _on_translation_flag(self, key: str, checked: bool) -> None:
         """上下文、歌詞模式：勾選立即生效（翻譯器每次翻譯都讀設定），不必重新載入模型。"""
         if getattr(self, "_block_signals", False):
@@ -891,17 +799,28 @@ class MainWindow(QWidget):
         self.controller.config.set("translation.keep_original", checked)
         self.controller.config.save()
 
-    def _on_combo_changed(self, _index: int) -> None:
-        if getattr(self, "_block_signals", False):
-            return
-        self.controller.apply_runtime_selection(
-            ocr_engine=self.combo_ocr.currentData(),
-            source=self.combo_source.currentData(), target=self.combo_target.currentData(),
-        )
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized() and self._minimize_hides_to_tray():
+            # 在事件處理完之後再藏起來：這個事件還在處理視窗狀態時直接 hide 會和系統的最小化動作打架
+            QTimer.singleShot(0, self._hide_to_tray)
+
+    def _minimize_hides_to_tray(self) -> bool:
+        """設定「最小化主視窗時收到托盤」（預設關）；沒有系統匣可用時不能藏，不然視窗就找不回來了。"""
+        return bool(self.controller.config.get("general.minimize_hides_to_tray", False)) and QSystemTrayIcon.isSystemTrayAvailable()
+
+    def _hide_to_tray(self) -> None:
+        if self.isMinimized() and self._minimize_hides_to_tray():
+            self.hide()  # 系統匣圖示的點擊會 showNormal() 把它帶回來
 
     def closeEvent(self, event) -> None:
         if self.controller.config.get("general.minimize_to_tray", True):
             event.ignore()
             self.hide()
         else:
+            # 沒有選「關閉主視窗時最小化到托盤」：關掉主視窗就結束程式。
+            # main.py 設了「關掉最後一個視窗不結束」（給最小化到托盤用），所以這裡要自己呼叫 shutdown
             super().closeEvent(event)
+            shutdown = getattr(self.controller, "shutdown", None)
+            if callable(shutdown):
+                shutdown()

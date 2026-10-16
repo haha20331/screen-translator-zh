@@ -20,7 +20,7 @@ QLabel#AppMark {
     background: #FFFEFC; color: #252826; border: 1px solid #DEDCD5;
     border-radius: 12px; font-size: 21px; font-weight: 600;
 }
-QWidget#ActionPanel, QWidget#OptionsPanel, QWidget#FooterPanel {
+QWidget#ActionPanel, QWidget#FooterPanel {
     background: #FFFEFC; border: 1px solid #E1DFD9; border-radius: 14px;
 }
 QPushButton {
@@ -41,12 +41,7 @@ QPushButton#ActionButton {
     border-radius: 12px; padding: 12px 16px; font-size: 15px; font-weight: 600;
 }
 QPushButton#SettingsButton { font-size: 15px; }
-QPushButton#RefreshButton { color: #216FD6; border-color: #80B4F3; }
-QPushButton#RefreshButton:hover { background: #EDF5FF; border-color: #2878E8; }
 QPushButton#ActionButton:hover { background: #F8FAFD; border-color: #8CB8F4; color: #2878E8; }
-QPushButton#ToggleButton:checked {
-    background: #EDF5FF; color: #216FD6; border-color: #80B3F3;
-}
 QComboBox {
     min-height: 28px; background: #FFFEFC; color: #30322F;
     border: 1px solid #DCDAD3; border-radius: 9px; padding: 5px 28px 5px 10px;

@@ -69,13 +69,13 @@ class OfflineModel(NamedTuple):
 
 # 可選的模型，由小到大（Qwen2.5-Instruct 與 Qwen3 兩個系列；取得方式見 scripts/fetch_translation_models.py）
 OFFLINE_MODELS: tuple[OfflineModel, ...] = (
-    OfflineModel("qwen2.5-0.5b-instruct-gguf-q8_0", "Qwen2.5 0.5B・Q8_0（最小最快，日文品質較差）"),
-    OfflineModel("qwen2.5-1.5b-instruct-gguf-q4_k_m", "Qwen2.5 1.5B・Q4_K_M（最快的實用選擇，可隨程式散布）"),
-    OfflineModel("qwen2.5-1.5b-instruct-gguf-q8_0", "Qwen2.5 1.5B・Q8_0（較準，約慢 1.4 倍）"),
-    OfflineModel("qwen3-1.7b-gguf-q8_0", "Qwen3 1.7B・Q8_0（Apache-2.0，可隨程式散布；官方只有 Q8_0）"),
-    OfflineModel("qwen2.5-3b-instruct-gguf-q4_k_m", "Qwen2.5 3B・Q4_K_M（預設，較準，約慢 2 倍；非商用授權，需自行下載）"),
-    OfflineModel("qwen3-4b-gguf-q4_k_m", "Qwen3 4B・Q4_K_M（Apache-2.0，可隨程式散布；比 3B 再大一點）"),
-    OfflineModel("qwen2.5-7b-instruct-gguf-q4_k_m", "Qwen2.5 7B・Q4_K_M（最準，CPU 與內顯上很慢、要 7 GB 記憶體，建議有獨立顯示卡時用）"),
+    OfflineModel("qwen2.5-0.5b-instruct-gguf-q8_0", "Qwen2.5 0.5B（約 0.7 GB）：最小最快，但日文常翻錯，電腦很慢時才用"),
+    OfflineModel("qwen2.5-1.5b-instruct-gguf-q4_k_m", "Qwen2.5 1.5B（約 1.1 GB）：很快，翻得還可以，電腦比較慢時用這個"),
+    OfflineModel("qwen2.5-1.5b-instruct-gguf-q8_0", "Qwen2.5 1.5B 高精度版（約 1.9 GB）：比上一個準一些，慢約 4 成"),
+    OfflineModel("qwen3-1.7b-gguf-q8_0", "Qwen3 1.7B（約 1.8 GB）：新一代的小模型，大小在 1.5B 和 3B 之間"),
+    OfflineModel("qwen2.5-3b-instruct-gguf-q4_k_m", "Qwen2.5 3B（約 2.1 GB）：推薦，翻得準、速度也不慢，一般電腦夠用"),
+    OfflineModel("qwen3-4b-gguf-q4_k_m", "Qwen3 4B（約 2.5 GB）：比 3B 再大一點，更準但更慢"),
+    OfflineModel("qwen2.5-7b-instruct-gguf-q4_k_m", "Qwen2.5 7B（約 4.7 GB）：最準，但很慢、要約 7 GB 記憶體，有獨立顯示卡時才建議用"),
 )
 # 提示詞的版本：改了系統提示詞或示範，譯文就會不同；快取鍵帶著版本，舊提示詞留下的譯文不會被當成新的
 PROMPT_VERSION = 5  # 5：Qwen2.5 系列改用中文提示詞（Qwen3 維持英文）、譯文後處理（頓號、新字體、觸摸、SKIP 混入、客套回覆）；4：歌詞提示詞要求用白話文、不要文言文；3：生成時擋掉外文、原文沒有的英文字母與字間空格（見 token_filter）

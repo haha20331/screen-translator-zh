@@ -222,12 +222,12 @@ def test_density_changes_real_main_window_metrics(qapp, tmp_path):
 
     apply_style(qapp, {**DEFAULTS["appearance"], "density": "compact"})
     window.refresh_appearance()
-    compact_height = window.combo_source.minimumHeight()
+    compact_height = window.btn_settings.height()
     compact_spacing = window._home_layout.spacing()
 
     apply_style(qapp, {**DEFAULTS["appearance"], "density": "spacious"})
     window.refresh_appearance()
-    assert window.combo_source.minimumHeight() > compact_height
+    assert window.btn_settings.height() > compact_height
     assert window._home_layout.spacing() > compact_spacing
     window.deleteLater()
 

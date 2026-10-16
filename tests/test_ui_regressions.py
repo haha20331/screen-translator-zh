@@ -121,8 +121,6 @@ class _Controller:
     def toggle_monitor(self) -> None:
         pass
 
-    def apply_runtime_selection(self, **_values) -> None:
-        pass
 
 
 @pytest.mark.parametrize("size", [(980, 580), (900, 540)])
@@ -498,9 +496,9 @@ def test_settings_exit_restores_the_home_control_that_had_focus(
     window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
     window.show()
     window.activateWindow()
-    window.combo_source.setFocus()
+    window.check_lyrics.setFocus()
     qapp.processEvents()
-    assert window.focusWidget() is window.combo_source
+    assert window.focusWidget() is window.check_lyrics
 
     dialog = SettingsDialog(window.controller.config, parent=window)
     dialog.setWindowFlags(Qt.WindowType.Widget)
@@ -513,8 +511,8 @@ def test_settings_exit_restores_the_home_control_that_had_focus(
     _wait_until(qapp, lambda: window._settings_transition_state == "home")
 
     assert window._pages.currentWidget() is window._home_page
-    assert window.focusWidget() is window.combo_source
-    assert window.combo_source.hasFocus()
+    assert window.focusWidget() is window.check_lyrics
+    assert window.check_lyrics.hasFocus()
     window.hide()
     window.deleteLater()
 

@@ -202,7 +202,6 @@ class Application(
             self.tray = TrayIcon(self)
             capture_available = window_capture_available()
             capture_reason = "當前平臺暫不支援原生視窗捕獲"
-            self.window.set_window_capture_available(capture_available, capture_reason)
             self.tray.set_window_capture_available(capture_available, capture_reason)
             self.window.show()
             self.tray.show()

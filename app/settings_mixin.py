@@ -165,42 +165,6 @@ class SettingsMixin:
             + (f"；{loading}" if loading else "")
         )
 
-    def apply_runtime_selection(
-        self,
-        ocr_engine: str | None = None,
-        source: str | None = None,
-        target: str | None = None,
-    ) -> None:
-        """主窗口下拉框变更时立即生效并保存。"""
-        if ocr_engine:
-            self.config.set("ocr.engine", ocr_engine)
-        previous_source = str(
-            self.config.get("translation.source_language", "auto") or "auto"
-        )
-        if source:
-            self.config.set("translation.source_language", source)
-            # The main window exposes the source language but not the advanced
-            # OCR-language selector.  Keep them aligned when the user actually
-            # changes the visible source selector; stale Chinese-only settings
-            # must not silently poison English screenshots.
-            if source != previous_source:
-                self.config.set("ocr.lang", source)
-                self.config.set("ocr.language_mode_version", 2)
-        if target:
-            self.config.set("translation.target_language", target)
-        self.config.save()
-        self.ocr_engine = self._create_configured_ocr_engine()
-        cleared = self._rebuild_translator()
-        loading = self._warmup() or ""
-        if self.window is not None:
-            self.window.reload_values()
-        self.set_status(
-            f"已切換：OCR={self._active_ocr_engine_name} "
-            f"目標={self.config.get('translation.target_language')}"
-            + (f"（換了翻譯模型，已清空翻譯快取 {cleared} 句）" if cleared else "")
-            + (f"；{loading}" if loading else "")
-        )
-
     def _translator_label(self) -> str:
         """目前翻譯器用的模型（``offline/<模型名稱>``、``openai/<model>``…）；沒有翻譯器就是空字串。"""
         translator = getattr(self, "translator", None)

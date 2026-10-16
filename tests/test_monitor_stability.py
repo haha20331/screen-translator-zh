@@ -772,14 +772,14 @@ def test_the_main_window_no_longer_has_a_hide_translation_button(qapp, tmp_path)
 
 
 # ----------------------------------------------------------------------------- 主視窗預設高度
-def test_the_main_window_default_size_is_980_by_580_and_shrinks_to_fit_small_screens():
+def test_the_main_window_default_size_is_980_by_460_and_shrinks_to_fit_small_screens():
     from ui.main_window import DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH, MIN_WINDOW_SIZE, default_window_size
 
-    # 曾經放大到 1.3 倍（754）；刪掉主視窗的範例卡之後內容變少，使用者把高度改回 580
-    assert (DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT) == (980, 580)
-    assert default_window_size() == (980, 580)
-    assert default_window_size(1080) == (980, 580)  # 螢幕夠高：照預設
-    assert default_window_size(600) == (980, MIN_WINDOW_SIZE[1])  # 放不下：縮到螢幕可用高度內，但不低於最小尺寸
+    # 拿掉全屏／視窗翻譯卡與語言、OCR 那一欄之後，內容約 404 px 高，原本的 580 太空
+    assert (DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT) == (980, 460)
+    assert default_window_size() == (980, 460)
+    assert default_window_size(1080) == (980, 460)  # 螢幕夠高：照預設
+    assert default_window_size(480) == (980, MIN_WINDOW_SIZE[1])  # 放不下：縮到螢幕可用高度內，但不低於最小尺寸
     assert default_window_size(300) == (980, MIN_WINDOW_SIZE[1])
 
 
@@ -791,5 +791,5 @@ def test_a_new_main_window_uses_the_default_size(qapp, tmp_path):
     screen = qapp.primaryScreen()
 
     assert (window.width(), window.height()) == default_window_size(screen.availableGeometry().height())
-    assert window.minimumHeight() == 540
+    assert window.minimumHeight() == 440
     window.deleteLater()

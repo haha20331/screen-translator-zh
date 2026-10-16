@@ -56,15 +56,11 @@ def test_setting_another_target_does_not_stick_and_is_never_saved(tmp_path):
     assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))["translation"]["target_language"] == "zh-hant"
 
 
-def test_the_main_window_shows_traditional_chinese_as_the_fixed_target(qapp, tmp_path):
+def test_the_main_window_has_no_language_choices_at_all(qapp, tmp_path):
     config = AppConfig(tmp_path / "config.json")
     window = MainWindow(_Controller(config))
 
-    items = [(window.combo_target.itemText(i), window.combo_target.itemData(i)) for i in range(window.combo_target.count())]
-
-    assert items == [("繁體中文", "zh-hant")]
-    assert window.combo_target.currentData() == "zh-hant" and not window.combo_target.isEnabled()
-    assert window.combo_source.count() > 1  # 輸入語言照樣可以選
+    assert not any(hasattr(window, name) for name in ("combo_source", "combo_target", "combo_ocr"))
     window.deleteLater()
 
 
@@ -79,18 +75,3 @@ def test_the_settings_dialog_shows_the_fixed_target_and_saves_only_that(qapp, tm
 
     assert AppConfig(tmp_path / "config.json").get("translation.target_language") == "zh-hant"
     dialog.deleteLater()
-
-
-def test_picking_a_target_at_runtime_is_ignored(tmp_path, monkeypatch):
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setenv("SCREEN_TRANSLATOR_CONFIG", str(tmp_path / "config.json"))
-    controller = Application(app)
-    monkeypatch.setattr(controller, "_create_configured_ocr_engine", lambda: None)
-    monkeypatch.setattr(controller, "_rebuild_translator", lambda: 0)
-    monkeypatch.setattr(controller, "_warmup", lambda: None)
-    controller.set_status = lambda text: None
-
-    controller.apply_runtime_selection(target="en")
-
-    assert controller.config.get("translation.target_language") == "zh-hant"
-    controller.floating_status.deleteLater()

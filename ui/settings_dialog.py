@@ -130,7 +130,7 @@ class SettingsGlyph(QLabel):
 
 # 離線翻譯模型的選項：(顯示名稱, model_name)；auto 由翻譯器依硬體挑模型
 OFFLINE_MODEL_CHOICES = (
-    ("自動（預設 3B Q4_K_M，沒有下載就用 1.5B；有獨立顯示卡且放了 7B 時用 7B）", "auto"),
+    ("自動（一般用 3B，沒有 3B 就用 1.5B）", "auto"),
     *((model.label, model.name) for model in OFFLINE_MODELS),
 )
 
@@ -609,10 +609,20 @@ class SettingsDialog(QWidget):
         tab, layout = self._new_page()
         self.chk_autostart = QCheckBox("開機自動啟動")
         self.chk_tray = QCheckBox("關閉主視窗時最小化到托盤")
+        self.chk_tray.setToolTip(
+            "勾選（預設）：按主視窗右上角的關閉鈕，只是把它收到系統匣（工作列右邊的小圖示），程式繼續在背景執行，點圖示可以再打開；要結束請用系統匣選單的「退出」。\n"
+            "沒勾選：關掉主視窗就結束程式。"
+        )
+        self.chk_minimize_tray = QCheckBox("最小化主視窗時收到托盤")
+        self.chk_minimize_tray.setToolTip(
+            "勾選：按主視窗的「最小化」鈕時，視窗直接收到系統匣，不留在工作列上；點系統匣圖示可以再打開。\n"
+            "沒勾選（預設）：像一般視窗一樣縮到工作列。"
+        )
         self.chk_history = QCheckBox("儲存截圖與識別歷史")
         startup_form = self._new_form()
         startup_form.addRow(self.chk_autostart)
         startup_form.addRow(self.chk_tray)
+        startup_form.addRow(self.chk_minimize_tray)
         layout.addWidget(self._card("啟動與後臺", "決定應用如何進入工作狀態與停留在系統托盤。", startup_form))
 
         self.spin_scan_interval = NoWheelDoubleSpinBox()
@@ -919,11 +929,12 @@ class SettingsDialog(QWidget):
         for label, name in OFFLINE_MODEL_CHOICES:
             self.combo_offline_model.addItem(label, name)
         self.combo_offline_model.setToolTip(
-            "「離線翻譯」用哪個模型（越大越準也越慢、越吃記憶體）。放進模型資料夾的其他 GGUF 模型會列在最後面（「自訂：…」）。\n"
-            "0.5B 最快但日文品質差；1.5B 是速度與品質的平衡；3B、7B 較準，在 CPU 上明顯變慢。\n"
-            f"灰色的選項代表缺少模型檔，{how_to_get('<名稱>')}下載。\n"
-            "改了之後下次翻譯會重新載入模型；換了模型，翻譯快取會自動清空。\n"
-            "不確定這台電腦跑得動哪個，按下面的「測試速度」，會用 3 句測資量每個已下載模型的翻譯時間。"
+            "離線翻譯用哪個「模型」。名字裡的 0.5B、1.5B、3B 是模型的大小：數字越大，翻得越準，但也越慢、越吃記憶體。\n"
+            "一般電腦用 3B（預設）就好；電腦比較慢就換 1.5B；有獨立顯示卡可以試 7B。\n"
+            f"灰色的選項是還沒下載的模型，{how_to_get('<名稱>')}下載。\n"
+            "換了模型，下次翻譯會重新載入，翻譯快取也會自動清空。\n"
+            "不確定哪個適合這台電腦，按下面的「測試速度」，會量每個已下載的模型翻一句要多久。\n"
+            "放進模型資料夾的其他 GGUF 模型會列在最後面（「自訂：…」）。"
         )
         self.chk_keep_original = QCheckBox("譯文上方同時保留原文")
         self.chk_use_context = QCheckBox("使用上下文：記住前面的句子，協助翻譯這一句")
@@ -1151,6 +1162,7 @@ class SettingsDialog(QWidget):
         self._set_combo(self.combo_display_mode, bool(cfg.get("translation.keep_original", False)))
         self.chk_autostart.setChecked(bool(cfg.get("general.startup_with_system", False)))
         self.chk_tray.setChecked(bool(cfg.get("general.minimize_to_tray", True)))
+        self.chk_minimize_tray.setChecked(bool(cfg.get("general.minimize_hides_to_tray", False)))
         self.chk_history.setChecked(bool(cfg.get("general.save_history", False)))
         self.history_dir.setText(str(cfg.get("general.history_dir", "")))
         self.chk_output.setChecked(bool(cfg.get("output.enabled", True)))
@@ -1299,6 +1311,7 @@ class SettingsDialog(QWidget):
         try:
             cfg.set("general.startup_with_system", self.chk_autostart.isChecked())
             cfg.set("general.minimize_to_tray", self.chk_tray.isChecked())
+            cfg.set("general.minimize_hides_to_tray", self.chk_minimize_tray.isChecked())
             cfg.set("general.save_history", self.chk_history.isChecked())
             cfg.set("general.history_dir", self.history_dir.text().strip())
             cfg.set("output.enabled", self.chk_output.isChecked())
@@ -1567,7 +1580,7 @@ class SettingsDialog(QWidget):
             combo.model().item(index).setEnabled(usable)
             combo.setItemData(
                 index,
-                "" if usable else f"找不到 llama-cpp-python 或模型檔：{how_to_get(name)}",
+                "" if usable else f"這個模型還沒下載：{how_to_get(name)}",
                 Qt.ItemDataRole.ToolTipRole,
             )
         for model in (item for item in found if item.name not in known):
@@ -1588,7 +1601,7 @@ class SettingsDialog(QWidget):
         self.lbl_model_folders.setText(
             "翻譯模型放在下面的資料夾，每個模型一個子資料夾、裡面放 .gguf 檔，例如 "
             f"{folders[0] / '模型名稱' / '檔名.gguf'}：\n" + "\n".join(lines)
-            + "\n自訂的模型要是 Qwen 系列（ChatML 對話格式）的 GGUF；其他格式的模型可能翻不好。"
+            + "\n自訂的模型請用 Qwen 系列的 GGUF 檔；其他種類的模型可能翻不好。"
         )
         found = discover_models(self._model_dir)
         if not found:
@@ -1597,7 +1610,7 @@ class SettingsDialog(QWidget):
             status = f"找到 {len(found)} 個模型。"
             name = self.combo_offline_model.currentData()
             if name == "auto":
-                status += "目前選「自動」：預設用 3B，沒有 3B 就用 1.5B（有獨立顯示卡且放了 7B 時用 7B）。"
+                status += "目前選「自動」：一般用 3B，沒有 3B 就用 1.5B；有獨立顯示卡又裝了 7B 時會改用 7B。"
             elif name:
                 file = find_model_file(str(name), self._model_dir)
                 status += f"目前選的模型檔案：{file}" if file else f"目前選的模型「{name}」找不到檔案。"

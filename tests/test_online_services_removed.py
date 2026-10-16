@@ -174,12 +174,13 @@ def test_the_settings_dialog_has_no_service_choice_and_no_credential_fields(qapp
     dialog.deleteLater()
 
 
-def test_the_main_window_has_no_service_dropdown_and_the_locked_target_stays_locked(qapp, tmp_path):
+def test_the_main_window_has_no_service_or_language_dropdowns(qapp, tmp_path):
     window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
 
-    assert not hasattr(window, "combo_service")
+    for name in ("combo_service", "combo_source", "combo_target", "combo_ocr"):
+        assert not hasattr(window, name)  # 輸入語言、OCR 只在設定裡；目標語言固定繁體中文
     window.set_busy(True)
+    assert not window.btn_region.isEnabled() and not window.btn_settings.isEnabled()
     window.set_busy(False)
-    assert not window.combo_target.isEnabled()  # 忙完不能把「固定繁體中文」的選單重新打開
-    assert window.combo_source.isEnabled() and window.combo_ocr.isEnabled()
+    assert window.btn_region.isEnabled() and window.btn_settings.isEnabled()
     window.deleteLater()

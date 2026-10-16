@@ -1,6 +1,6 @@
 # 打包成 Windows 安裝程式
 
-產物是一個 `ScreenTranslator-<版本>-Setup.exe`（約 115 MB）加一個 `.sha256` 檔。**翻譯模型不在安裝程式裡**：使用者在安裝精靈的「選擇元件」頁勾選要下載的模型（推薦 Qwen2.5 3B，預設勾選），安裝時才從 Hugging Face 下載並驗證 SHA-256。
+產物是一個 `ScreenTranslator-<版本>-Setup.exe`（約 125 MB）加一個 `.sha256` 檔。**翻譯模型不在安裝程式裡**：使用者在安裝精靈的「選擇元件」頁勾選要下載的模型（推薦 Qwen2.5 3B，預設勾選），安裝時才從 Hugging Face 下載並驗證 SHA-256。
 
 為什麼模型不內附：3B 的授權（Qwen Research License）只准研究與評估、不可商用，不能隨程式散布，由使用者自己的電腦下載；其他模型雖然是 Apache-2.0，但每個 0.7～4.7 GB，一起包進去安裝程式會變成好幾 GB。
 
