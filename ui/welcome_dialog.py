@@ -148,6 +148,10 @@ class WelcomeDialog(QDialog):
                 "框會一直留在畫面上，字幕一換就自動翻下一句。適合看影片、看歌詞、玩遊戲。",
             )
         )
+        note = QLabel("文字是直排的（例如日文直書）？先把主視窗的「文字方向」改成「直向」，再框選。")
+        note.setObjectName("WelcomeBody")
+        note.setWordWrap(True)
+        v.addWidget(note)
         v.addStretch(1)
         return page
 

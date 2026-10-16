@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 
 from app.logger import get_logger
 from app.models import CaptureInfo, TextRegion
+from services.ocr.base import create_ocr_engine
 from ui.motion import STATUS_HOLD
 from utils.stability import CONFIRMED, PENDING
 from workers.translation_worker import PipelineTask
@@ -28,6 +29,33 @@ class PipelineMixin:
         if self.translator is not None:
             self.translator.reset_context()
 
+    def set_text_direction(self, vertical: bool) -> None:
+        """主視窗的「文字方向」：這次要翻的文字是直排（由上往下、欄由右往左）還是橫排（預設）。
+
+        只在這次執行有效，不存進設定檔，下次啟動又是橫排。即時監控中換方向，下一輪就照新的方向辨識。"""
+        vertical = bool(vertical)
+        if vertical == self._text_vertical:
+            return
+        self._text_vertical = vertical
+        if self._monitor_active:
+            self._forget_displayed_translations()  # 同一格畫面換個方向會讀出不同的文字，不能被「畫面沒變」略過
+        self.set_status("文字方向：直向（由上往下、由右往左）" if vertical else "文字方向：橫向")
+
+    def _ocr_engine_for_direction(self):
+        """這一輪要用的 OCR 引擎：直向文字需要能辨識直排的引擎；目前選的不行（例如 Windows 內建 OCR）就改用 RapidOCR。"""
+        engine = self.ocr_engine
+        if not self._text_vertical or getattr(engine, "supports_vertical", False):
+            return engine
+        if self._vertical_ocr_engine is None:
+            try:
+                import services.ocr.rapidocr_ocr  # noqa: F401  （確保已註冊）
+
+                self._vertical_ocr_engine = create_ocr_engine("rapidocr", self.config.section("ocr"), self.config)
+            except Exception as exc:  # RapidOCR 沒裝：交給管線回報「目前的 OCR 引擎不能辨識直向文字」
+                log.warning("無法建立直向文字用的 RapidOCR：%s", exc)
+                return engine
+        return self._vertical_ocr_engine
+
     def _start_pipeline(self, capture: CaptureInfo) -> None:
         if not self._monitor_active:  # 監控期間每一輪都是同一段內容的延續，要保留上下文
             self._reset_translation_context()
@@ -44,10 +72,11 @@ class PipelineMixin:
             config_snapshot.data = copy.deepcopy(self.config.data)
             self.worker = PipelineTask(
                 capture=capture,
-                ocr_engine=self.ocr_engine,
+                ocr_engine=self._ocr_engine_for_direction(),
                 translator=self.translator,
                 config=config_snapshot,
                 gate=self._monitor_stabilizer.observe if self._monitor_active and self._monitor_stabilizer else None,
+                vertical=self._text_vertical,
             )
             self.worker.status.connect(self._on_worker_status)
             self.worker.error.connect(self._on_worker_error)

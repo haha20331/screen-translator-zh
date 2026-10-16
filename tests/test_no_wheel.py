@@ -125,7 +125,7 @@ def test_the_combo_boxes_on_the_main_window_ignore_the_wheel_too(qapp, tmp_path)
 
     combos = window.findChildren(QComboBox)
 
-    assert combos == []  # 主視窗已經沒有下拉選單（輸入語言與 OCR 只在設定裡）；以後再加的話也要用 NoWheelComboBox
+    assert combos == [window.combo_direction]  # 主視窗只剩「文字方向」一個下拉選單（輸入語言與 OCR 只在設定裡）
     assert all(isinstance(widget, NoWheelComboBox) for widget in combos)
     window.deleteLater()
 

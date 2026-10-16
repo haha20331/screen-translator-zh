@@ -145,6 +145,7 @@ class SettingsMixin:
                 self.config.get("translation.cache_max_entries", 2000),
             )
         self.ocr_engine = self._create_configured_ocr_engine()
+        self._vertical_ocr_engine = None  # OCR 設定可能改了，直向文字用的備用引擎下次重建
         cleared = self._rebuild_translator()
         self._forget_displayed_translations()  # 可能換了模型：畫面上舊模型的譯文不能被寫進新模型的快取
         loading = self._warmup() or ""  # 換了模型就馬上在背景載入；載入中的提示併進下面的狀態列文字

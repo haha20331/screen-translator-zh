@@ -25,6 +25,8 @@ class OCREngine(ABC):
     # 小图放大后再识别是否有帮助。Windows OCR 这类对小字很弱的引擎需要，
     # 自带缩放的检测模型（RapidOCR）则不需要，放大只会拖慢速度。
     benefits_from_upscale: bool = True
+    # 能不能辨識直排文字（由上往下、欄由右往左）。RapidOCR 的偵測與辨識不分方向，Windows 內建 OCR 只認橫排
+    supports_vertical: bool = False
 
     def __init__(self, ocr_config: dict, app_config: Any = None, logger: Any = None) -> None:
         self.config = ocr_config or {}

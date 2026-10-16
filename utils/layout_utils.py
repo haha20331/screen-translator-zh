@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Iterable
 
 from app.models import TextRegion
@@ -112,6 +113,57 @@ def ocr_lines_to_regions(
                 screen_index=screen_index,
             )
         )
+    return regions
+
+
+def vertical_regions(
+    lines: list[OCRLine],
+    *,
+    image_width: int,
+    image_height: int,
+    offset_x: int,
+    offset_y: int,
+    min_confidence: float,
+    y_tolerance_ratio: float,
+    x_gap_ratio: float,
+    target_language: str,
+    max_width_ratio: float,
+    merge_centered: bool,
+    han_is_source: bool,
+) -> list[TextRegion]:
+    """直排文字（由上往下讀、欄由右往左）的版面：把每一欄當成「一行」，沿用橫排的分行與合併。
+
+    座標轉成「順時針轉 90 度」的空間：原圖的上→下變成左→右（一欄變成一行），右→左變成上→下
+    （右邊的欄排在前面）。橫排的規則（同一行內相鄰的接起來、靠左對齊的相鄰行併成一段）在這個空間裡
+    剛好就是「同一欄內相鄰的接起來、頂端對齊的相鄰欄併成一段」。算完再轉回原圖座標。
+
+    ``image_width``／``image_height``：擷取影像的尺寸（OCR 座標是影像內的座標）；
+    ``offset_x``／``offset_y``：影像左上角在螢幕上的位置。
+    """
+    turned = [
+        replace(line, box=(line.box[1], image_width - (line.box[0] + line.box[2]), line.box[3], line.box[2]))
+        for line in lines
+    ]
+    regions = ocr_lines_to_regions(
+        turned, 0, 0,
+        min_confidence=min_confidence,
+        y_tolerance_ratio=y_tolerance_ratio,
+        x_gap_ratio=x_gap_ratio,
+    )
+    regions = merge_wrapped_labels(
+        regions,
+        target_language=target_language,
+        capture_width=image_height,  # 轉過之後的「寬」就是原圖的高
+        max_width_ratio=max_width_ratio,
+        merge_centered=merge_centered,
+        han_is_source=han_is_source,
+    )
+    for region in regions:
+        turned_x, turned_y, turned_width, turned_height = region.x, region.y, region.width, region.height
+        region.x = offset_x + image_width - turned_y - turned_height
+        region.y = offset_y + turned_x
+        region.width, region.height = turned_height, turned_width
+        region.vertical = True
     return regions
 
 
@@ -270,7 +322,7 @@ def uses_translation_panel(placement: str | None, capture_mode: str | None) -> b
 
 
 def translation_lines(regions: Iterable[TextRegion]) -> list[str]:
-    """譯文面板要顯示的文字，依閱讀順序（由上到下，同一列由左到右）。
+    """譯文面板要顯示的文字，依閱讀順序（由上到下，同一列由左到右；直排文字是由右到左）。
 
     略過空白，以及沒翻成功（譯文與原文相同）的文字塊：原文本來就在畫面上，重複顯示只是雜訊。
     同一列的多個文字塊接成一行。
@@ -281,6 +333,10 @@ def translation_lines(regions: Iterable[TextRegion]) -> list[str]:
         if (region.translated_text or "").strip()
         and region.translated_text.strip() != region.text.strip()
     ]
+    if any(region.vertical for region in translated):
+        # 直排：欄由右往左讀，每一欄（段）各佔一行
+        ordered = sorted(translated, key=lambda item: (-(item.x + item.width), item.y))
+        return [region.translated_text.strip() for region in ordered]
     rows: list[list[TextRegion]] = []
     for region in sorted(translated, key=lambda item: (item.y, item.x)):
         middle = region.y + region.height / 2

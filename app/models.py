@@ -29,6 +29,8 @@ class TextRegion:
     source_luminance: float = 0.5
     text_color: str = "#FFFFFF"
     background_color: str = ""
+    # 直排文字（由上往下、欄由右往左）：譯文面板依「由右到左」排序，框的長寬是欄的長寬
+    vertical: bool = False
 
     @property
     def right(self) -> int:
@@ -57,6 +59,7 @@ class TextRegion:
             "source_line_count": self.source_line_count,
             "confidence": self.confidence,
             "screen_index": self.screen_index,
+            "vertical": self.vertical,
         }
 
     @classmethod

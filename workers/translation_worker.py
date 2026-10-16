@@ -24,6 +24,7 @@ from utils.layout_utils import (
     merge_wrapped_labels,
     ocr_lines_to_regions,
     uses_translation_panel,
+    vertical_regions,
 )
 from utils.stability import CONFIRMED
 from utils.text_utils import clean_text, normalize_ocr_text, protect_texts, restore_texts
@@ -44,6 +45,7 @@ class PipelineTask(QThread):
         config: AppConfig,
         parent=None,
         gate: Callable[[list[str]], str] | None = None,
+        vertical: bool = False,
     ) -> None:
         super().__init__(parent)
         self.capture = capture
@@ -52,6 +54,8 @@ class PipelineTask(QThread):
         self.config = config
         # 即時監控的穩定化：拿要翻譯的文字問「該不該翻」，回傳 stability.SAME / PENDING / CONFIRMED
         self.gate = gate
+        # 這次擷取的文字是直排（由上往下、欄由右往左）：版面照直排處理，需要能辨識直排的 OCR 引擎
+        self.vertical = bool(vertical)
         self._stop = False
 
     def cancel(self) -> None:
@@ -59,6 +63,9 @@ class PipelineTask(QThread):
 
     def run(self) -> None:
         try:
+            if self.vertical and not getattr(self.ocr_engine, "supports_vertical", False):
+                self.error.emit("目前的 OCR 引擎不能辨識直向文字，請到「設定 → OCR」改用 rapidocr")
+                return
             self._emit_status("正在識別...")
             # 小图先放大再 OCR：游戏截图/弹窗内的小字识别率提升数倍。
             # 放大倍数越高识别率越好但 OCR 更慢，可在设置里调小换速度。
@@ -100,28 +107,52 @@ class PipelineTask(QThread):
                 self.error.emit("沒有識別到文字（檢查 OCR 引擎設定或置信度閾值）")
                 return
 
-            regions = ocr_lines_to_regions(
-                lines,
-                offset_x=self.capture.offset_x,
-                offset_y=self.capture.offset_y,
-                min_confidence=float(self.config.get("ocr.min_confidence", 0.6)),
-                y_tolerance_ratio=float(self.config.get("ocr.merge_y_tolerance_ratio", 0.5)),
-                x_gap_ratio=float(self.config.get("ocr.merge_x_gap_ratio", 0.8)),
-            )
-            if not regions:
-                self.error.emit("沒有識別到文字（置信度過濾後為空）")
-                return
-
             target = str(self.config.get("translation.target_language", "zh-hant"))
             han_is_source = bool(getattr(self.translator, "han_is_source", False))
-            regions = merge_wrapped_labels(
-                regions,
-                target_language=target,
-                capture_width=self.capture.bbox[2] - self.capture.bbox[0],
-                max_width_ratio=float(self.config.get("ocr.merge_wrapped_max_width_ratio", 0.36)),
-                merge_centered=bool(self.config.get("ocr.merge_centered_lines", False)),
-                han_is_source=han_is_source,
-            )
+            min_confidence = float(self.config.get("ocr.min_confidence", 0.6))
+            y_tolerance_ratio = float(self.config.get("ocr.merge_y_tolerance_ratio", 0.5))
+            x_gap_ratio = float(self.config.get("ocr.merge_x_gap_ratio", 0.8))
+            max_width_ratio = float(self.config.get("ocr.merge_wrapped_max_width_ratio", 0.36))
+            merge_centered = bool(self.config.get("ocr.merge_centered_lines", False))
+            if self.vertical:
+                image_height, image_width = self.capture.image.shape[:2]
+                regions = vertical_regions(
+                    lines,
+                    image_width=image_width,
+                    image_height=image_height,
+                    offset_x=self.capture.offset_x,
+                    offset_y=self.capture.offset_y,
+                    min_confidence=min_confidence,
+                    y_tolerance_ratio=y_tolerance_ratio,
+                    x_gap_ratio=x_gap_ratio,
+                    target_language=target,
+                    max_width_ratio=max_width_ratio,
+                    merge_centered=merge_centered,
+                    han_is_source=han_is_source,
+                )
+                if not regions:
+                    self.error.emit("沒有識別到文字（置信度過濾後為空）")
+                    return
+            else:
+                regions = ocr_lines_to_regions(
+                    lines,
+                    offset_x=self.capture.offset_x,
+                    offset_y=self.capture.offset_y,
+                    min_confidence=min_confidence,
+                    y_tolerance_ratio=y_tolerance_ratio,
+                    x_gap_ratio=x_gap_ratio,
+                )
+                if not regions:
+                    self.error.emit("沒有識別到文字（置信度過濾後為空）")
+                    return
+                regions = merge_wrapped_labels(
+                    regions,
+                    target_language=target,
+                    capture_width=self.capture.bbox[2] - self.capture.bbox[0],
+                    max_width_ratio=max_width_ratio,
+                    merge_centered=merge_centered,
+                    han_is_source=han_is_source,
+                )
 
             source = str(self.config.get("translation.source_language", "auto"))
             texts = [region.text for region in regions]

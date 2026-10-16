@@ -140,6 +140,8 @@ class Application(
         self._shutdown_finalized = False
         self._init_model_loading()
         self._init_model_release()
+        self._text_vertical = False  # 主視窗的「文字方向」：只在這次執行有效，預設橫向
+        self._vertical_ocr_engine = None  # 目前的 OCR 引擎不能辨識直排時，直向文字改用的 RapidOCR（第一次用到才建立）
 
         self._capture_timer = QTimer(self)
         self._capture_timer.setSingleShot(True)

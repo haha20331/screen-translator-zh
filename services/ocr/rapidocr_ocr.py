@@ -34,6 +34,8 @@ class RapidOCREngine(OCREngine):
     name = "rapidocr"
     # 管線不需要替我們放大；小圖的放大由本引擎自己決定並還原座標（見 upscale_factor）。
     benefits_from_upscale = False
+    # 偵測的框不分方向，辨識前會把又高又窄的框轉成橫的再讀（實測日文直排的字元錯誤率約 4%）
+    supports_vertical = True
 
     def __init__(self, ocr_config: dict, app_config: Any = None, logger: Any = None) -> None:
         super().__init__(ocr_config, app_config, logger)

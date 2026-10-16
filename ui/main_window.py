@@ -29,6 +29,7 @@ from ui.motion import (
     RELEASE_EASING,
     motion_duration,
 )
+from ui.no_wheel import NoWheelComboBox
 from ui.settings_transition import SettingsTransitionGuard
 from ui.welcome_dialog import _hkfmt
 
@@ -449,6 +450,17 @@ class MainWindow(QWidget):
         self.status_label = QLabel("就緒：按「框選翻譯」開始")
         self.status_label.setObjectName("StatusLabel")
         bottom_row.addWidget(self.status_label, 1)
+        direction_caption = QLabel("文字方向")
+        direction_caption.setObjectName("SectionLabel")
+        self.combo_direction = NoWheelComboBox()
+        self.combo_direction.addItem("橫向", False)
+        self.combo_direction.addItem("直向", True)
+        self.combo_direction.setMinimumWidth(92)
+        self.combo_direction.setToolTip(
+            "這次要翻的文字是橫排還是直排（日文直書：由上往下讀，欄由右往左）。\n"
+            "預設橫向；要翻直排的字幕或文字，先改成直向再框選。即時監控中也可以直接改，下一輪就照新的方向辨識。\n"
+            "只在這次執行有效，下次啟動又是橫向。直向需要 rapidocr 辨識引擎。"
+        )
         self.check_keep_original = QCheckBox("保留原文")
         self.check_lyrics = QCheckBox("歌詞")
         self.check_lyrics.setToolTip("告訴模型這是歌詞，譯得較通順有詩意。只對「離線翻譯」有效。")
@@ -457,6 +469,8 @@ class MainWindow(QWidget):
         self.btn_monitor.setCheckable(True)
         self.btn_monitor.setMinimumHeight(42)
         self.btn_monitor.setCursor(Qt.CursorShape.PointingHandCursor)
+        bottom_row.addWidget(direction_caption)
+        bottom_row.addWidget(self.combo_direction)
         bottom_row.addWidget(self.check_lyrics)
         bottom_row.addWidget(self.check_keep_original)
         bottom_row.addWidget(self.btn_monitor)
@@ -465,6 +479,7 @@ class MainWindow(QWidget):
         self.btn_region.clicked.connect(self.controller.start_region_capture)
         self.btn_settings.clicked.connect(self.controller.open_settings)
         self.btn_monitor.clicked.connect(self.controller.toggle_monitor)
+        self.combo_direction.currentIndexChanged.connect(self._on_direction_changed)
         self.check_keep_original.toggled.connect(self._on_keep_original)
         self.check_lyrics.toggled.connect(lambda checked: self._on_translation_flag("translation.lyrics_mode", checked))
         if hasattr(self.controller, "show_about"):
@@ -478,6 +493,8 @@ class MainWindow(QWidget):
         self._block_signals = True
         self.check_keep_original.setChecked(bool(self.controller.config.get("translation.keep_original", False)))
         self.check_lyrics.setChecked(bool(self.controller.config.get("translation.lyrics_mode", False)))
+        vertical = getattr(self.controller, "_text_vertical", False) is True  # 假的控制器對任何屬性都回傳函式，不能直接當布林用
+        self.combo_direction.setCurrentIndex(1 if vertical else 0)
         hotkey = ""
         try:
             hotkey = _hkfmt(self.controller.config.hotkeys().get("capture_region", ""))
@@ -785,6 +802,11 @@ class MainWindow(QWidget):
         self.btn_monitor.setChecked(active)
         self.btn_monitor.setText("停止監控" if active else "即時監控")
         self._block_signals = False
+
+    def _on_direction_changed(self, _index: int) -> None:
+        if getattr(self, "_block_signals", False):
+            return
+        self.controller.set_text_direction(bool(self.combo_direction.currentData()))
 
     def _on_translation_flag(self, key: str, checked: bool) -> None:
         """上下文、歌詞模式：勾選立即生效（翻譯器每次翻譯都讀設定），不必重新載入模型。"""
