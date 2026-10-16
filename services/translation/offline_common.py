@@ -6,9 +6,10 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from app.logger import app_data_dir
+from services.translation import llama_backend
 from services.translation.base import TranslationError, Translator
 from utils import chinese
 from utils.language_utils import (
@@ -40,17 +41,86 @@ def _app_roots() -> list[Path]:
 
 
 def model_search_paths(model_name: str, model_dir: str = "") -> list[Path]:
-    """依優先順序列出可能放模型的位置：設定指定 → 程式資料夾 ``models/translation`` → 使用者資料夾。"""
+    """依優先順序列出可能放模型的位置：設定指定的資料夾（先找它底下以模型名稱命名的子資料夾，再把它本身當成模型資料夾）
+    → 程式資料夾 ``models/translation/<名稱>`` → 使用者資料夾。"""
     candidates: list[Path] = []
     if model_dir:
         configured = Path(model_dir).expanduser()
-        candidates.append(configured)
-        if not configured.is_absolute():
-            candidates.extend(root / configured for root in _app_roots())
+        bases = [configured] if configured.is_absolute() else [configured, *(root / configured for root in _app_roots())]
+        for base in bases:
+            candidates.extend([base / model_name, base])
     for root in _app_roots():
         candidates.append(root / "models" / "translation" / model_name)
     candidates.append(app_data_dir() / "models" / "translation" / model_name)
     return candidates
+
+
+def custom_model_folder(model_dir: str) -> Path | None:
+    """設定裡自訂的模型資料夾（沒設定回傳 None）；相對路徑從程式資料夾算起。"""
+    if not model_dir:
+        return None
+    configured = Path(model_dir).expanduser()
+    return configured if configured.is_absolute() else _app_roots()[-1] / configured
+
+
+def model_folders(model_dir: str = "") -> list[Path]:
+    """放模型的資料夾（每個模型一個子資料夾，裡面放 ``.gguf``），給使用者看、也給掃描用：
+    程式資料夾的 ``models/translation``、使用者資料夾的 ``models/translation``、設定裡自訂的資料夾（有設定才有）。"""
+    root = _app_roots()[-1]  # 安裝版是 exe 所在的資料夾（不是 _internal），從原始碼執行是專案資料夾
+    folders = [root / "models" / "translation", app_data_dir() / "models" / "translation"]
+    custom = custom_model_folder(model_dir)
+    if custom is not None:
+        folders.append(custom)
+    unique: list[Path] = []
+    for folder in folders:
+        if all(str(folder).lower() != str(other).lower() for other in unique):
+            unique.append(folder)
+    return unique
+
+
+class FoundModel(NamedTuple):
+    name: str  # 資料夾名稱，也是 ``model_name`` 設定值
+    folder: Path
+    file: Path  # 資料夾裡的 .gguf（分片的取第一片）
+    size: int  # 位元組；分片的只算找到的那一片
+
+
+def discover_models(model_dir: str = "") -> list[FoundModel]:
+    """掃描 ``model_folders`` 底下每個含 ``.gguf`` 的子資料夾；自訂的資料夾本身若直接放著 ``.gguf``，也算一個模型
+    （名稱取資料夾名稱）。同名的只算先找到的那個。"""
+    found: dict[str, FoundModel] = {}
+
+    def add(name: str, folder: Path) -> None:
+        gguf = llama_backend.find_gguf(folder)
+        if gguf is not None and name not in found:
+            try:
+                size = gguf.stat().st_size
+            except OSError:
+                size = 0
+            found[name] = FoundModel(name, folder, gguf, size)
+
+    custom = custom_model_folder(model_dir)
+    for folder in model_folders(model_dir):
+        if not folder.is_dir():
+            continue
+        if folder == custom:
+            add(folder.name, folder)  # 自訂資料夾本身就是一個模型資料夾（直接放著 .gguf）
+        try:
+            children = sorted(child for child in folder.iterdir() if child.is_dir())
+        except OSError:
+            continue
+        for child in children:
+            add(child.name, child)
+    return list(found.values())
+
+
+def find_model_file(model_name: str, model_dir: str = "") -> Path | None:
+    """這個名稱的模型實際會讀的 GGUF 檔；找不到回傳 None。"""
+    for directory in model_search_paths(model_name, model_dir):
+        gguf = llama_backend.find_gguf(directory)
+        if gguf is not None:
+            return gguf
+    return None
 
 
 # ----------------------------------------------------------------------------- 執行緒

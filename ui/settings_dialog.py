@@ -55,6 +55,7 @@ from services.diagnostics import DiagnosticsExportError, export_diagnostics
 from services.ocr.base import list_ocr_engines
 from services.transcript import resolve_directory
 from services.translation.model_names import how_to_get
+from services.translation.offline_common import discover_models, find_model_file, model_folders
 from services.translation.offline_translator import OFFLINE_MODELS, OfflineTranslator, llama_model_available
 from services.translation.speed_test import (
     SPEED_TEST_SENTENCES,
@@ -899,7 +900,7 @@ class SettingsDialog(QWidget):
         for label, name in OFFLINE_MODEL_CHOICES:
             self.combo_offline_model.addItem(label, name)
         self.combo_offline_model.setToolTip(
-            "「離線翻譯」用哪個模型（同一個 Qwen2.5 系列，越大越準也越慢、越吃記憶體）。\n"
+            "「離線翻譯」用哪個模型（越大越準也越慢、越吃記憶體）。放進模型資料夾的其他 GGUF 模型會列在最後面（「自訂：…」）。\n"
             "0.5B 最快但日文品質差；1.5B 是速度與品質的平衡；3B、7B 較準，在 CPU 上明顯變慢。\n"
             f"灰色的選項代表缺少模型檔，{how_to_get('<名稱>')}下載。\n"
             "改了之後下次翻譯會重新載入模型；換了模型，翻譯快取會自動清空。\n"
@@ -954,6 +955,7 @@ class SettingsDialog(QWidget):
         form.addRow("輸入語言", self.combo_source)
         form.addRow("目標語言", self.combo_target)
         form.addRow("離線翻譯模型", self.combo_offline_model)
+        form.addRow("　模型路徑", self._build_model_folder_row())
         form.addRow("　速度測試", self._build_speed_test_row())
         form.addRow(self.chk_keep_original)
         form.addRow(self.chk_use_context)
@@ -1479,31 +1481,141 @@ class SettingsDialog(QWidget):
             control.setToolTip("" if enabled else reason)
         self._refresh_overlay_preview()
 
-    def _load_offline_model(self, cfg) -> None:
-        """依設定選好模型；缺少模型檔的選項停用（並說明怎麼補）。"""
-        model_dir = str(cfg.get("translation.offline.model_dir", "") or "")
-        for index, (_label, name) in enumerate(OFFLINE_MODEL_CHOICES):
-            item = self.combo_offline_model.model().item(index)
-            usable = name == "auto" or llama_model_available(name, model_dir)
-            item.setEnabled(usable)
-            self.combo_offline_model.setItemData(
+    # ------------------------------------------------------------- 模型與模型資料夾
+    def _build_model_folder_row(self) -> QWidget:
+        """離線翻譯模型下面：模型放在哪些資料夾（沒有任何模型時也寫清楚）、目前用哪個檔案，以及掃描／開啟／自訂資料夾的按鈕。"""
+        self._model_dir = ""
+        self._loaded_model_dir = ""
+        self._model_choice_changed = False
+        self.lbl_model_folders = QLabel()
+        self.lbl_model_folders.setObjectName("SettingsCardDescription")
+        self.lbl_model_folders.setWordWrap(True)
+        self.lbl_model_folders.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.lbl_model_status = QLabel()
+        self.lbl_model_status.setObjectName("SettingsCardDescription")
+        self.lbl_model_status.setWordWrap(True)
+        self.lbl_model_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.btn_open_models = QPushButton("開啟資料夾")
+        self.btn_open_models.setToolTip("在檔案總管打開放模型的資料夾（還不存在就先建立）。")
+        self.btn_open_models.clicked.connect(self._open_model_folder)
+        self.btn_rescan_models = QPushButton("重新掃描")
+        self.btn_rescan_models.setToolTip("重新讀一次資料夾裡有哪些模型（剛放進新的模型檔後按這個）。")
+        self.btn_rescan_models.clicked.connect(lambda: self._refresh_model_choices())
+        self.btn_pick_models = QPushButton("選擇其他資料夾…")
+        self.btn_pick_models.setToolTip("多加一個放模型的資料夾：裡面每個子資料夾放一個模型（或資料夾本身就放著一個 .gguf）。按「儲存」後生效。")
+        self.btn_pick_models.clicked.connect(self._pick_model_folder)
+        self.btn_clear_models = QPushButton("不用自訂資料夾")
+        self.btn_clear_models.clicked.connect(lambda: self._set_model_dir(""))
+        buttons = QHBoxLayout()
+        buttons.setSpacing(10)
+        for button in (self.btn_open_models, self.btn_rescan_models, self.btn_pick_models, self.btn_clear_models):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        holder = QWidget()
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(8)
+        column.addWidget(self.lbl_model_folders)
+        column.addWidget(self.lbl_model_status)
+        column.addLayout(buttons)
+        self.combo_offline_model.currentIndexChanged.connect(self._on_model_choice_changed)
+        return holder
+
+    def _on_model_choice_changed(self, _index: int) -> None:
+        self._model_choice_changed = True
+        self._update_model_labels()
+
+    @staticmethod
+    def _size_text(size: int) -> str:
+        return f"{size / 1e9:.1f} GB" if size >= 1e8 else f"{size / 1e6:.0f} MB"
+
+    def _refresh_model_choices(self, selected: str | None = None) -> None:
+        """重建模型選單：固定的幾個模型（缺檔的停用並說明怎麼補）＋資料夾裡找到的其他模型（「自訂：…」）。
+        選取的項目盡量保留；原本選的模型不在了（資料夾被移走）就顯示「自動」。"""
+        combo = self.combo_offline_model
+        wanted = selected if selected is not None else combo.currentData()
+        found = discover_models(self._model_dir)
+        known = {name for _label, name in OFFLINE_MODEL_CHOICES}
+        combo.blockSignals(True)
+        combo.clear()
+        for index, (label, name) in enumerate(OFFLINE_MODEL_CHOICES):
+            combo.addItem(label, name)
+            usable = name == "auto" or llama_model_available(name, self._model_dir)
+            combo.model().item(index).setEnabled(usable)
+            combo.setItemData(
                 index,
                 "" if usable else f"找不到 llama-cpp-python 或模型檔：{how_to_get(name)}",
                 Qt.ItemDataRole.ToolTipRole,
             )
-        saved = str(cfg.get("translation.offline.model_name", "auto") or "auto")
-        chosen = 0  # 自訂的模型名稱等其他情況一律顯示成「自動」
-        for index, (_label, name) in enumerate(OFFLINE_MODEL_CHOICES):
-            if name == saved:
-                chosen = index
-        self.combo_offline_model.setCurrentIndex(chosen)
-        self._loaded_offline_model = chosen
+        for model in (item for item in found if item.name not in known):
+            combo.addItem(f"自訂：{model.name}（{self._size_text(model.size)}）", model.name)
+            combo.setItemData(combo.count() - 1, str(model.file), Qt.ItemDataRole.ToolTipRole)
+        chosen = combo.findData(wanted) if wanted is not None else -1
+        combo.setCurrentIndex(chosen if chosen >= 0 else 0)  # 找不到的名稱一律顯示成「自動」
+        combo.blockSignals(False)
+        self._update_model_labels()
+
+    def _update_model_labels(self) -> None:
+        """寫出每個放模型的資料夾（有沒有模型都寫）、找到幾個模型、目前選的模型實際讀哪個檔。"""
+        folders = model_folders(self._model_dir)
+        tags = ["程式資料夾", "使用者資料夾"] + (["自訂資料夾"] if len(folders) > 2 else [])
+        lines = []
+        for folder, tag in zip(folders, tags):
+            lines.append(f"{folder}　（{tag}{'' if folder.is_dir() else '，目前還沒有這個資料夾'}）")
+        self.lbl_model_folders.setText(
+            "翻譯模型放在下面的資料夾，每個模型一個子資料夾、裡面放 .gguf 檔，例如 "
+            f"{folders[0] / '模型名稱' / '檔名.gguf'}：\n" + "\n".join(lines)
+            + "\n自訂的模型要是 Qwen 系列（ChatML 對話格式）的 GGUF；其他格式的模型可能翻不好。"
+        )
+        found = discover_models(self._model_dir)
+        if not found:
+            status = f"目前沒有找到任何翻譯模型。{how_to_get()}，或把模型放進上面任一個資料夾，再按「重新掃描」。"
+        else:
+            status = f"找到 {len(found)} 個模型。"
+            name = self.combo_offline_model.currentData()
+            if name == "auto":
+                status += "目前選「自動」：預設用 3B，沒有 3B 就用 1.5B（有獨立顯示卡且放了 7B 時用 7B）。"
+            elif name:
+                file = find_model_file(str(name), self._model_dir)
+                status += f"目前選的模型檔案：{file}" if file else f"目前選的模型「{name}」找不到檔案。"
+        self.lbl_model_status.setText(status)
+        self.btn_clear_models.setVisible(bool(self._model_dir))
+
+    def _set_model_dir(self, directory: str) -> None:
+        self._model_dir = directory
+        self._refresh_model_choices()
+
+    def _pick_model_folder(self) -> None:
+        start = self._model_dir or str(model_folders("")[0])
+        directory = QFileDialog.getExistingDirectory(self, "選擇放翻譯模型的資料夾", start)
+        if directory:
+            self._set_model_dir(directory)
+
+    def _open_model_folder(self) -> None:
+        """打開放模型的資料夾：自訂的、或第一個已經存在的；都還沒有就建立使用者資料夾那個。"""
+        folders = model_folders(self._model_dir)
+        target = next((folder for folder in reversed(folders) if folder.is_dir()), folders[1])
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "模型資料夾", f"無法建立資料夾：{exc}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    def _load_offline_model(self, cfg) -> None:
+        """依設定選好模型；缺少模型檔的選項停用（並說明怎麼補）；資料夾裡找到的其他模型一併列出。"""
+        self._model_dir = str(cfg.get("translation.offline.model_dir", "") or "")
+        self._loaded_model_dir = self._model_dir
+        self._refresh_model_choices(selected=str(cfg.get("translation.offline.model_name", "auto") or "auto"))
+        self._model_choice_changed = False
 
     def _save_offline_model(self, cfg) -> None:
         """使用者沒動過這個選單就不寫入，避免把自訂的模型名稱蓋掉。"""
-        if self.combo_offline_model.currentIndex() == self._loaded_offline_model:
-            return
-        cfg.set("translation.offline.model_name", self.combo_offline_model.currentData())
+        if self._model_dir != self._loaded_model_dir:
+            cfg.set("translation.offline.model_dir", self._model_dir)
+        if self._model_choice_changed:
+            cfg.set("translation.offline.model_name", self.combo_offline_model.currentData())
 
     # ------------------------------------------------------------- 速度測試
     def _build_speed_test_row(self) -> QHBoxLayout:

@@ -250,7 +250,9 @@ def _normalize_translation(data: dict[str, Any]) -> None:
     for obsolete in ("engine", "device", "compute_type", "beam_size"):
         offline.pop(obsolete, None)
     name = str(offline.get("model_name") or "auto")
-    if name != "auto" and "gguf" not in name.lower():  # CTranslate2 的模型名稱（qwen2.5-…-ct2-int8）
+    lowered = name.lower()
+    # 舊版 CTranslate2 時期的模型名稱（qwen2.5-…-ct2-int8、nllb-…）已經沒有意義；其他名稱（包括使用者放在模型資料夾裡的自訂模型）照舊
+    if name != "auto" and "gguf" not in lowered and any(tag in lowered for tag in ("ct2", "nllb", "opus-mt")):
         offline["model_name"] = "auto"
 
 
