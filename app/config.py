@@ -89,7 +89,10 @@ DEFAULTS: dict[str, Any] = {
             # auto：有獨立顯示卡（可用顯示卡記憶體至少 5.5 GB）且放了 7B 就用 7B，否則用 3B Q4_K_M，沒有下載 3B 就用 1.5B Q4_K_M（內顯與 CPU 共用記憶體，不算）
             "model_name": "auto",
             "model_dir": "",
-            # 交給 GPU 的層數：-1 = 有 GPU 版的 llama.cpp 就全部（預設 CPU 版沒有），0 = 只用 CPU
+            # 運算裝置（設定頁「運算裝置」）：auto = 有可用的 GPU 就用（沒有 GPU 版的 llama.cpp 或載入失敗就用 CPU）、
+            # cpu = 不使用 GPU，或指定的那顆 GPU 的名稱（例如 "NVIDIA GeForce RTX 3060"；同型號的第二顆是 "… #2"）
+            "gpu_device": "auto",
+            # 用 GPU 時交給它的層數：-1 = 全部。（舊版用 0 表示只用 CPU，現在改成上面選 cpu；載入舊設定檔時會自動轉換）
             "gpu_layers": -1,
             # GPU 載入失敗（顯示卡記憶體不足）時是否改用 CPU。預設是；只有速度測試在電腦記憶體也不夠時才會關掉
             "cpu_fallback": True,
@@ -239,7 +242,7 @@ def _normalize_appearance(data: dict[str, Any]) -> None:
         appearance["reduce_motion"] = defaults["reduce_motion"]
 
 
-def _normalize_translation(data: dict[str, Any]) -> None:
+def _normalize_translation(data: dict[str, Any], loaded: dict[str, Any] | None = None) -> None:
     """Translation-section migrations: fixed target language, offline-only service, legacy offline settings."""
     translation = data.setdefault("translation", {})
     translation["target_language"] = TARGET_LANGUAGE  # 目標語言只有繁體中文：舊設定檔裡的其他值（簡體、英文…）改回來
@@ -249,6 +252,13 @@ def _normalize_translation(data: dict[str, Any]) -> None:
     offline = translation.setdefault("offline", {})
     for obsolete in ("engine", "device", "compute_type", "beam_size"):
         offline.pop(obsolete, None)
+    # 舊版用 gpu_layers = 0 表示只用 CPU：檔案裡沒有 gpu_device 時轉成 gpu_device = "cpu"（之後 gpu_layers 只管層數）
+    loaded_offline = ((loaded or {}).get("translation") or {}).get("offline")
+    if isinstance(loaded_offline, dict) and "gpu_device" not in loaded_offline and loaded_offline.get("gpu_layers") == 0:
+        offline["gpu_device"] = "cpu"
+        offline["gpu_layers"] = DEFAULTS["translation"]["offline"]["gpu_layers"]
+    if not isinstance(offline.get("gpu_device"), str) or not offline["gpu_device"].strip():
+        offline["gpu_device"] = DEFAULTS["translation"]["offline"]["gpu_device"]
     name = str(offline.get("model_name") or "auto")
     lowered = name.lower()
     # 舊版 CTranslate2 時期的模型名稱（qwen2.5-…-ct2-int8、nllb-…）已經沒有意義；其他名稱（包括使用者放在模型資料夾裡的自訂模型）照舊
@@ -389,7 +399,7 @@ class AppConfig:
                 purged = _purge_online_services(loaded.get("translation"))
                 _deep_merge(self.data, loaded)
                 _normalize_appearance(self.data)
-                _normalize_translation(self.data)
+                _normalize_translation(self.data, loaded)
                 _normalize_ocr(self.data, loaded)
                 _normalize_monitor(self.data, loaded)
                 _normalize_monitor_stability(self.data, loaded)

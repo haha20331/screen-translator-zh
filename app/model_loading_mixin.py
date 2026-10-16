@@ -117,6 +117,9 @@ class ModelLoadingMixin:
             self._finish_model_bubble(_BUBBLE_FAILED, hold_ms=STATUS_HOLD * 3)
             return
         device = {"gpu": "GPU", "cpu": "CPU"}.get(str(getattr(translator, "device", "") or ""), "")
+        gpu_name = str(getattr(translator, "device_name", "") or "")
+        if device == "GPU" and gpu_name:  # 使用者指定了哪一顆 GPU：說出是哪一顆
+            device = f"GPU：{gpu_name}"
         detail = "，".join(part for part in (device, f"{seconds:.0f} 秒") if part)
         self.set_status(f"翻譯模型已就緒：{name}（{detail}）")
         self._finish_model_bubble(_BUBBLE_READY, hold_ms=STATUS_HOLD)

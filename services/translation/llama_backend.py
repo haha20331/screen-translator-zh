@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import importlib.util
 import os
@@ -54,7 +55,7 @@ DEVICE_TYPE_IGPU = 2
 
 
 def _query_devices() -> list[dict]:
-    """問 ggml 有哪些運算裝置：``[{"name", "description", "type", "free", "total"}]``（位元組）。
+    """問 ggml 有哪些運算裝置：``[{"handle", "name", "description", "type", "free", "total"}]``（位元組）。
     llama-cpp-python 沒有提供這個介面，所以直接呼叫它附帶的 ggml 動態函式庫（``ggml_backend_dev_*``）。"""
     import llama_cpp
 
@@ -86,6 +87,7 @@ def _query_devices() -> list[dict]:
         free, total = ctypes.c_size_t(), ctypes.c_size_t()
         memory(device, ctypes.byref(free), ctypes.byref(total))
         devices.append({
+            "handle": int(device or 0),  # ggml_backend_dev_t：載入模型時用它指定要用哪個裝置
             "name": (name(device) or b"").decode("utf-8", "replace"),
             "description": (description(device) or b"").decode("utf-8", "replace"),
             "type": int(kind(device)),
@@ -105,11 +107,67 @@ def gpu_devices() -> list[dict]:
         return []
 
 
-def discrete_gpu_free_bytes() -> int:
+def device_label(device: dict) -> str:
+    """裝置給人看（也存進設定）的名稱：型號（``description``，例如 NVIDIA GeForce RTX 3060）；沒有型號才用 ggml 的代號（Vulkan0）。"""
+    return str(device.get("description") or device.get("name") or "").strip()
+
+
+def unique_labels(devices: list[dict]) -> list[str]:
+    """每個裝置的名稱；同型號的第二顆起加「 #2」「 #3」，設定裡存的名稱才分得出是哪一顆。"""
+    seen: dict[str, int] = {}
+    labels = []
+    for device in devices:
+        label = device_label(device)
+        seen[label] = seen.get(label, 0) + 1
+        labels.append(label if seen[label] == 1 else f"{label} #{seen[label]}")
+    return labels
+
+
+def find_gpu_device(label: str, devices: list[dict] | None = None) -> dict | None:
+    """設定裡存的 GPU 名稱 → ggml 裝置；這台電腦（或安裝的 llama.cpp）看不到這顆就是 None。"""
+    devices = gpu_devices() if devices is None else devices
+    for name, device in zip(unique_labels(devices), devices):
+        if name == label:
+            return device
+    return None
+
+
+def discrete_gpu_free_bytes(choice: str = "auto") -> int:
     """獨立顯示卡目前可用的顯示卡記憶體（位元組）；沒有獨立顯示卡（只有內顯）或查不到回傳 0。
 
-    內顯和 CPU 共用系統記憶體，沒有「自己的」顯示卡記憶體可以放大模型，所以不算。"""
-    return max((device["free"] for device in gpu_devices() if device["type"] == DEVICE_TYPE_GPU), default=0)
+    內顯和 CPU 共用系統記憶體，沒有「自己的」顯示卡記憶體可以放大模型，所以不算。
+    ``choice`` 是使用者選的運算裝置：``cpu`` 不用 GPU（0）、``auto`` 取記憶體最多的獨立顯示卡、
+    其他是指定的那顆 GPU 的名稱（它是獨立顯示卡才有值）。"""
+    if choice == "cpu":
+        return 0
+    if choice in ("", "auto"):
+        return max((device["free"] for device in gpu_devices() if device["type"] == DEVICE_TYPE_GPU), default=0)
+    device = find_gpu_device(choice)
+    return device["free"] if device is not None and device["type"] == DEVICE_TYPE_GPU else 0
+
+
+@contextlib.contextmanager
+def _only_device(handle: int):
+    """這次載入模型只用 ``handle`` 這個 ggml 裝置。
+
+    llama-cpp-python 沒有提供「指定裝置」的參數（只有 ``main_gpu``，而它的編號不含「有獨立顯示卡時被略過的內顯」，
+    選不到內顯），但 llama.cpp 的載入參數裡有 ``devices``（以 NULL 結尾的裝置清單）。
+    ``Llama()`` 載入前才用 ``llama_model_default_params()`` 建立參數，所以在這段期間讓它回傳已經填好 ``devices`` 的參數。"""
+    import llama_cpp.llama_cpp as binding
+
+    original = binding.llama_model_default_params
+    devices = (ctypes.c_void_p * 2)(handle, None)
+
+    def with_device():
+        params = original()
+        params.devices = ctypes.cast(devices, ctypes.c_void_p).value
+        return params
+
+    binding.llama_model_default_params = with_device
+    try:
+        yield
+    finally:
+        binding.llama_model_default_params = original
 
 
 def find_gguf(directory: Path) -> Path | None:
@@ -130,14 +188,28 @@ class LlamaCppEngine:
         context_tokens: int = DEFAULT_CONTEXT_TOKENS,
         gpu_layers: int = 0,
         cpu_fallback: bool = True,
+        gpu_device: str | None = None,
     ) -> None:
         """``gpu_layers``：交給 GPU 的層數（-1 = 全部，0 = 只用 CPU）。GPU 載入失敗（顯示卡記憶體不足等）會退回 CPU；
-        ``cpu_fallback=False`` 時不退回、直接丟例外（例如電腦的記憶體也載不進這個模型，退回 CPU 只會把電腦拖垮）。"""
+        ``cpu_fallback=False`` 時不退回、直接丟例外（例如電腦的記憶體也載不進這個模型，退回 CPU 只會把電腦拖垮）。
+
+        ``gpu_device``：指定用哪一顆 GPU（名稱見 ``unique_labels``）；不指定（或找不到這顆）就交給 llama.cpp 自己選
+        （有獨立顯示卡就用獨立顯示卡，沒有才用內顯）。``device_name`` 是指定成功的那顆的名稱。"""
         self.model_path = Path(model_path)
         self.gpu_layers = 0
+        self.device_name = ""
+        self._gpu_handle = 0
+        if gpu_layers and gpu_device:
+            device = find_gpu_device(gpu_device)
+            if device is None or not device.get("handle"):
+                log.warning("找不到指定的 GPU「%s」，改交給 llama.cpp 自動選擇", gpu_device)
+            else:
+                self._gpu_handle = int(device["handle"])
         try:
             self._llama = self._open(threads, context_tokens, gpu_layers)
             self.gpu_layers = gpu_layers
+            if self._gpu_handle:
+                self.device_name = str(gpu_device)
         except Exception as exc:
             if not gpu_layers:
                 raise
@@ -151,16 +223,18 @@ class LlamaCppEngine:
     def _open(self, threads: int, context_tokens: int, gpu_layers: int):
         from llama_cpp import Llama
 
-        return Llama(
-            model_path=str(self.model_path),
-            n_ctx=context_tokens,
-            n_threads=threads,
-            n_threads_batch=threads,
-            n_batch=512,
-            n_gpu_layers=gpu_layers,
-            use_mmap=True,
-            verbose=False,
-        )
+        pinned = _only_device(self._gpu_handle) if gpu_layers and self._gpu_handle else contextlib.nullcontext()
+        with pinned:
+            return Llama(
+                model_path=str(self.model_path),
+                n_ctx=context_tokens,
+                n_threads=threads,
+                n_threads_batch=threads,
+                n_batch=512,
+                n_gpu_layers=gpu_layers,
+                use_mmap=True,
+                verbose=False,
+            )
 
     def _init_prefix_cache(self) -> None:
         # 固定前綴（系統提示 + 示範，約 300 個 token）的 KV 快取：前綴 → 序列狀態位元組。

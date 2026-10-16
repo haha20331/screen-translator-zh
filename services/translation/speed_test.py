@@ -25,7 +25,7 @@ from typing import Any
 from app.logger import get_logger
 from services.translation import llama_backend
 from services.translation.model_names import display_name
-from services.translation.offline_common import default_threads, model_search_paths
+from services.translation.offline_common import GPU_CPU, default_threads, gpu_choice, model_search_paths
 
 log = get_logger("translation.speedtest")
 
@@ -156,15 +156,12 @@ def _section_for(translation_section: dict, name: str) -> dict:
 
 
 def gpu_requested(translation_section: dict) -> bool:
-    """這份設定載入模型時會不會用 GPU：安裝的 llama-cpp-python 要有 GPU 版，而且 ``gpu_layers`` 不是 0
-    （預設 -1 = 全部交給 GPU；預設安裝的 CPU 版沒有 GPU 支援，永遠是 False）。"""
+    """這份設定載入模型時會不會用 GPU：安裝的 llama-cpp-python 要有 GPU 版，而且運算裝置不是「只用 CPU」
+    （預設自動 = 有 GPU 就用；預設安裝的 CPU 版沒有 GPU 支援，永遠是 False）。"""
     if not llama_backend.gpu_offload_supported():
         return False
     offline = (translation_section or {}).get("offline", {}) or {}
-    try:
-        return int(offline.get("gpu_layers", -1)) != 0
-    except (TypeError, ValueError):
-        return True
+    return gpu_choice(offline) != GPU_CPU
 
 
 def _default_translator(translation_section: dict, name: str, cpu_fallback: bool = True):
@@ -211,7 +208,8 @@ def run_speed_test(
     factory = make_translator or (lambda name: _default_translator(translation_section, name, fallback["ok"]))
     use_gpu = gpu_requested(translation_section) if gpu is None else gpu
     # 只有獨立顯示卡有自己的記憶體；內顯和 CPU 共用系統記憶體，載入模型一樣要吃系統記憶體，記憶體檢查照做
-    own_memory = use_gpu and ((llama_backend.discrete_gpu_free_bytes() > 0) if discrete is None else discrete)
+    choice = gpu_choice((translation_section or {}).get("offline", {}))
+    own_memory = use_gpu and ((llama_backend.discrete_gpu_free_bytes(choice) > 0) if discrete is None else discrete)
     size_of = sizes or model_bytes
     results: list[dict[str, Any]] = []
     for name, label in models:
@@ -282,6 +280,9 @@ def _measure(name: str, label: str, factory, say, cancelled, clock, rounds: int,
         if device:  # 實際用的裝置：要求用 GPU 卻載入失敗退回 CPU 時，數字是 CPU 的，要讓人看得出來
             measured["device"] = "gpu" if device == "gpu" and gpu_wanted else "cpu"
             measured["gpu_fallback"] = bool(gpu_wanted and measured["device"] == "cpu")
+            gpu_name = str(getattr(translator, "device_name", "") or "")
+            if measured["device"] == "gpu" and gpu_name:
+                measured["gpu_name"] = gpu_name  # 指定了哪一顆 GPU：不同顆的速度差很多，結果要記下是哪一顆量的
         return measured
     except Exception as exc:  # 檔案損毀、記憶體不足、函式庫載入失敗…：記下來，繼續測下一個
         log.warning("速度測試 %s 失敗：%s", name, exc)

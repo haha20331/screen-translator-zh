@@ -124,6 +124,26 @@ def find_model_file(model_name: str, model_dir: str = "") -> Path | None:
 
 
 # ----------------------------------------------------------------------------- 執行緒
+GPU_AUTO = "auto"
+GPU_CPU = "cpu"
+
+
+def gpu_choice(settings: dict | None) -> str:
+    """使用者選的運算裝置：``auto``（有可用的 GPU 就用）、``cpu``（不用 GPU），或指定的 GPU 名稱（設定 ``gpu_device``）。
+
+    舊版只有 ``gpu_layers``：0 = 只用 CPU。設定裡沒有 ``gpu_device`` 時還是照這個意思走（載入設定檔時會一次轉成 ``gpu_device``）。"""
+    settings = settings or {}
+    choice = str(settings.get("gpu_device") or "").strip()
+    if not choice and "gpu_device" not in settings:
+        try:
+            return GPU_CPU if int(settings.get("gpu_layers", -1)) == 0 else GPU_AUTO
+        except (TypeError, ValueError):
+            return GPU_AUTO
+    if not choice or choice.lower() == GPU_AUTO:
+        return GPU_AUTO
+    return GPU_CPU if choice.lower() == GPU_CPU else choice
+
+
 def default_threads(setting: int = 0) -> int:
     return setting if setting > 0 else min(DEFAULT_MAX_THREADS, os.cpu_count() or 1)
 

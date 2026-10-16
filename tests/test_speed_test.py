@@ -785,10 +785,10 @@ def test_an_integrated_gpu_shares_the_system_memory_so_the_memory_check_still_ap
 def test_the_discrete_gpu_is_looked_up_when_not_told(monkeypatch):
     clock = _Clock()
     monkeypatch.setattr(module, "_default_translator", lambda *a, **k: _DeviceTranslator(clock, "gpu"))
-    monkeypatch.setattr(module.llama_backend, "discrete_gpu_free_bytes", lambda: 8_000_000_000)
+    monkeypatch.setattr(module.llama_backend, "discrete_gpu_free_bytes", lambda choice="auto": 8_000_000_000)
 
     results = run_speed_test({}, [("m", "m")], sizes=lambda name: 7_000_000_000, memory_available=lambda: 1_000_000_000, clock=clock, gpu=True)
-    monkeypatch.setattr(module.llama_backend, "discrete_gpu_free_bytes", lambda: 0)
+    monkeypatch.setattr(module.llama_backend, "discrete_gpu_free_bytes", lambda choice="auto": 0)
     skipped = run_speed_test({}, [("m", "m")], sizes=lambda name: 7_000_000_000, memory_available=lambda: 1_000_000_000, clock=clock, gpu=True)
 
     assert results[0]["status"] == STATUS_OK and skipped[0]["status"] == STATUS_MEMORY

@@ -53,3 +53,12 @@ def _really_delete_widgets_after_each_test():
     app = QCoreApplication.instance()
     if app is not None:
         app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_gpu_scan(monkeypatch):
+    """設定頁開啟時會在背景偵測 GPU（DXGI 與 Vulkan 初始化，這台電腦第一次要半秒以上）；測試一律用固定的結果，
+    不碰真正的顯示卡，結果才不會因電腦而異。要測偵測本身的測試在模組載入時就先拿到真正的函式。"""
+    from services.translation import gpu_info
+
+    monkeypatch.setattr(gpu_info, "detect_gpus", lambda: gpu_info.GpuReport((), False))

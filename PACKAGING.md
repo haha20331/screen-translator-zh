@@ -67,5 +67,6 @@ python scripts\serve_models.py                       # 127.0.0.1:8765；--tamper
 ## 已知限制
 
 - **網路**：下載由 Inno Setup 進行，用 Windows 的網路設定（Inno 文件：會自動使用系統的代理設定）。已實測：在這台公司網路的電腦上，不經任何額外設定直接從 `huggingface.co` 下載 0.5B 模型（676 MB）約 84 秒，SHA-256 驗證通過。環境變數 `HTTPS_PROXY` **沒有驗證**會不會被讀，不要依賴它；網路需要代理又沒設進 Windows 時，安裝程式下不了模型，可以事後用 `scripts/fetch_translation_models.py`（認 `HTTPS_PROXY`）下載再放進 `models\translation\`。
+- **安裝版只有 CPU 版 llama.cpp，不能用 GPU**：設定 →「運算裝置」仍會列出這台電腦的顯示卡，但都標成「不能用」並說明原因（要改裝 Vulkan 版，見 `requirements-vulkan.txt`）。要不要把 Vulkan 版放進安裝程式（做成可勾選的元件）還沒決定。
 - 安裝精靈的畫面（元件頁的文字、勾選預設）只用靜默安裝與紀錄檔驗證過，沒有逐頁用眼睛看過。
 - 沒有自動更新：新版要重新下載安裝程式（使用者資料與已下載的模型會保留）。

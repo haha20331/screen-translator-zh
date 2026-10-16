@@ -43,6 +43,7 @@
     "offline": {
       "model_name": "auto",
       "model_dir": "",
+      "gpu_device": "auto",
       "gpu_layers": -1,
       "threads": 0
     },

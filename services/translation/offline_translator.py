@@ -45,9 +45,12 @@ from services.translation.model_names import (
     strip_thinking,
 )
 from services.translation.offline_common import (
+    GPU_AUTO,
+    GPU_CPU,
     SKIP_MARKER,
     ChineseTargetTranslator,
     default_threads,
+    gpu_choice,
     is_skip_output,
     looks_not_chinese,
     model_search_paths,
@@ -306,6 +309,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         self._history_lock = threading.Lock()
         self._resolved_model: str | None = None
         self.device = ""
+        self.device_name = ""  # 使用者指定的 GPU 載入成功時，是哪一顆
         self.model_name = ""  # 實際載入的模型（auto 模式下可能和設定不同）
         self._warmups_running = 0  # 背景預熱的執行緒數（預熱期間 is_ready 是 False）
         self._warmup_count_lock = threading.Lock()
@@ -329,7 +333,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         name = str(settings.get("model_name") or "auto")
         if name == "auto":
             model_dir = str(settings.get("model_dir") or "")
-            if llama_backend.discrete_gpu_free_bytes() >= LARGE_MODEL_MIN_GPU_BYTES and llama_model_available(LARGE_MODEL_NAME, model_dir):
+            if llama_backend.discrete_gpu_free_bytes(self.gpu_choice()) >= LARGE_MODEL_MIN_GPU_BYTES and llama_model_available(LARGE_MODEL_NAME, model_dir):
                 name = LARGE_MODEL_NAME
             elif not llama_model_available(DEFAULT_MODEL_NAME, model_dir) and llama_model_available(FALLBACK_MODEL_NAME, model_dir):
                 name = FALLBACK_MODEL_NAME
@@ -353,13 +357,19 @@ class OfflineTranslator(ChineseTargetTranslator):
             f"或把 .gguf 檔放到下列任一資料夾：\n{listing}"
         )
 
+    def gpu_choice(self) -> str:
+        """設定 ``gpu_device``：``auto``、``cpu``，或指定的 GPU 名稱（見 ``offline_common.gpu_choice``）。"""
+        return gpu_choice(self._settings())
+
     def gpu_layers(self) -> int:
-        """要交給 GPU 的層數：設定 -1（預設）= 有 GPU 版的 llama.cpp 就全部，否則 0（只用 CPU）。"""
+        """要交給 GPU 的層數：選「只用 CPU」是 0；否則設定 -1（預設）= 有 GPU 版的 llama.cpp 就全部，沒有 GPU 版也是 0。"""
+        if self.gpu_choice() == GPU_CPU:
+            return 0
         try:
             setting = int(self._settings().get("gpu_layers", -1))
         except (TypeError, ValueError):
             setting = -1
-        if setting < 0:
+        if setting <= 0:  # 0 是舊版「只用 CPU」的寫法；現在選 GPU 又留著 0 的話，當成全部
             return -1 if llama_backend.gpu_offload_supported() else 0
         return setting
 
@@ -464,17 +474,22 @@ class OfflineTranslator(ChineseTargetTranslator):
         path = self.llama_model_path()
         threads = default_threads(int(self._settings().get("threads", 0)))
         layers = self.gpu_layers()
-        log.info("載入離線翻譯模型 %s（threads=%d, gpu_layers=%d）", path, threads, layers)
+        choice = self.gpu_choice()
+        log.info("載入離線翻譯模型 %s（threads=%d, gpu_layers=%d, 運算裝置=%s）", path, threads, layers, choice)
         extra = {} if bool(self._settings().get("cpu_fallback", True)) else {"cpu_fallback": False}
+        if layers and choice not in (GPU_AUTO, GPU_CPU):
+            extra["gpu_device"] = choice  # 使用者指定了哪一顆 GPU；沒指定就不傳，交給 llama.cpp 選
         try:
             self._llama = llama_backend.LlamaCppEngine(path, threads, gpu_layers=layers, **extra)
         except Exception as exc:  # 檔案損毀、記憶體不足等
             raise TranslationError(f"載入 {path.name} 失敗：{exc}") from exc
         # 只有安裝的 llama-cpp-python 真的支援 GPU，才算在 GPU 上（CPU 版收到 gpu_layers > 0 只是忽略）
         self.device = "gpu" if self._llama.gpu_layers and llama_backend.gpu_offload_supported() else "cpu"
+        self.device_name = str(getattr(self._llama, "device_name", "") or "") if self.device == "gpu" else ""
         self.model_name = path.parent.name
         fell_back = " （要求用 GPU 但載入失敗，已改用 CPU）" if layers and self.device == "cpu" and llama_backend.gpu_offload_supported() else ""
-        log.info("離線翻譯模型已載入：%s，裝置＝%s%s", path.name, "GPU" if self.device == "gpu" else "CPU", fell_back)
+        shown = "CPU" if self.device == "cpu" else f"GPU（{self.device_name}）" if self.device_name else "GPU"
+        log.info("離線翻譯模型已載入：%s，裝置＝%s%s", path.name, shown, fell_back)
 
     def close(self) -> None:
         """釋放模型佔用的記憶體（速度測試一個接一個載入不同的模型時需要）；之後再翻譯會重新載入。"""

@@ -119,8 +119,10 @@ python -m pip install -r requirements-core.txt
 python -m pip install -r requirements-vulkan.txt      # 換成 Vulkan 版；換回 CPU 版的指令寫在這個檔案的開頭
 ```
 
-裝好後 `translation.offline.gpu_layers`（預設 -1）會把整個模型交給 GPU，GPU 載入失敗時自動退回 CPU；設成 0 就只用 CPU。
-確認有沒有用到 GPU：看 `%LOCALAPPDATA%\ScreenTranslator\logs\app.log` 裡的「裝置＝GPU」，或設定 → 翻譯 →「測試速度」表格模型名稱後面的「· GPU」。
+裝好後，設定 → 翻譯 →「運算裝置」下拉選單會列出這台電腦的每一顆 GPU（型號、獨立顯示卡或內顯、顯示卡記憶體），可以選：**自動**（預設：有可用的 GPU 就用，有獨立顯示卡用獨立顯示卡，沒有才用內顯）、**只用 CPU**，或**指定某一顆 GPU**（模型只放在那顆上）。按「重新偵測」會重新查一次。這台電腦有、但目前安裝的 llama.cpp 用不到的顯示卡（預設的 CPU 版、驅動程式不支援 Vulkan）也會列出來，標灰色並寫明原因。GPU 載入失敗（顯示卡記憶體不足）時自動退回 CPU。
+設定值是 `translation.offline.gpu_device`：`"auto"`、`"cpu"`，或 GPU 的名稱（同型號的第二顆是 `"… #2"`；存的是名稱不是編號，換了插槽或驅動程式順序也不會選錯）；選的那顆這次找不到（外接顯示卡拔掉了）就改用自動，設定不會被改掉。`gpu_layers`（預設 -1 = 全部）只管交給 GPU 幾層；舊版用 `gpu_layers: 0` 表示只用 CPU，載入舊設定檔時會自動轉成 `gpu_device: "cpu"`。
+指定 GPU 的做法：llama-cpp-python 沒有「指定裝置」的參數（只有 `main_gpu`，編號不含「有獨立顯示卡時被略過的內顯」），所以載入模型的那一瞬間讓 `llama_model_default_params()` 回傳已填好 `devices`（以 NULL 結尾的 ggml 裝置清單）的參數（`llama_backend._only_device`）。已用載入時的日誌（`using device …`）驗證 llama.cpp 照這份清單選裝置。
+確認有沒有用到 GPU：看 `%LOCALAPPDATA%\ScreenTranslator\logs\app.log` 裡的「裝置＝GPU（名稱）」、模型載入完成時狀態列的「GPU：名稱」，或設定 → 翻譯 →「測試速度」表格模型名稱後面的「· GPU」（滑鼠移上去看是哪一顆）。
 
 實測（Intel Iris Xe 內顯、i7-13700H）：3B 約快 10～25%、1.5B 約慢 10%，整條管線（OCR＋翻譯）的每張耗時幾乎一樣；差別在 CPU 用量：3B 在 CPU 上約用掉 6 顆邏輯核心，在內顯上只要約 0.4 顆，OCR 與其他程式幾乎不受影響（OCR 約 0.25 秒，CPU 版翻譯時約 0.36 秒）。
 內顯和 CPU 共用記憶體，7B 不適合；`auto` 只有偵測到獨立顯示卡（可用顯示卡記憶體至少 5.5 GB）才會自動選 7B。

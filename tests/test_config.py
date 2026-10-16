@@ -166,6 +166,6 @@ def test_gguf_model_names_are_left_alone(tmp_path):
 def test_the_default_offline_settings_only_have_llama_cpp_options():
     offline = DEFAULTS["translation"]["offline"]
 
-    assert set(offline) == {"model_name", "model_dir", "gpu_layers", "cpu_fallback", "threads", "max_new_tokens", "han_only_as"}
+    assert set(offline) == {"model_name", "model_dir", "gpu_device", "gpu_layers", "cpu_fallback", "threads", "max_new_tokens", "han_only_as"}
     assert offline["model_name"] == "auto" and offline["gpu_layers"] == -1 and offline["cpu_fallback"] is True
     assert "offline_fast" not in DEFAULTS["translation"]

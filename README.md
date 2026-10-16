@@ -130,7 +130,7 @@ Get-Content .\ScreenTranslator-0.3.0-beta-Setup.exe.sha256     # 兩個要完全
 - 開發環境、測試與模型下載：[DEVELOPMENT.md](DEVELOPMENT.md)。
 - 打包成安裝程式：[PACKAGING.md](PACKAGING.md)。
 - 設計與開發紀錄：[PLAN.md](PLAN.md)；提示詞調整的過程與數字：[PROMPT_TUNING.md](PROMPT_TUNING.md)。
-- 只在 CPU 上跑就夠用；有顯示卡（含內顯）時可改裝 Vulkan 版 llama.cpp 減輕 CPU 負擔，見 `requirements-vulkan.txt`。
+- 只在 CPU 上跑就夠用；有顯示卡（含內顯）時可改裝 Vulkan 版 llama.cpp 減輕 CPU 負擔，見 `requirements-vulkan.txt`。裝好之後，設定 → 翻譯 →「運算裝置」可以選用 CPU、自動、或指定哪一顆 GPU；那裡也會列出這台電腦有哪些顯示卡。
 
 ## 授權
 

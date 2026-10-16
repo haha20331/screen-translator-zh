@@ -190,18 +190,18 @@ def test_auto_uses_the_3b_default_then_falls_back_to_the_1_5b_that_can_ship_with
 def test_auto_uses_the_large_model_only_with_a_discrete_gpu_that_has_room_and_the_model_file(tmp_path, monkeypatch):
     models = _isolate(tmp_path, monkeypatch)
     monkeypatch.setattr(llama_backend, "available", lambda: True)
-    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda: 8_000_000_000)
+    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda choice="auto": 8_000_000_000)
     _make_gguf(models / DEFAULT_MODEL_NAME)
 
     assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 有獨立顯示卡但沒放 7B：用預設的
     _make_gguf(models / LARGE_MODEL_NAME)
     assert _translator().resolved_model_name() == LARGE_MODEL_NAME  # 有獨立顯示卡且放了 7B：用 7B
 
-    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda: 4_000_000_000)
+    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda choice="auto": 4_000_000_000)
     assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 顯示卡記憶體放不下 7B：不自動用
-    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda: LARGE_MODEL_MIN_GPU_BYTES)
+    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda choice="auto": LARGE_MODEL_MIN_GPU_BYTES)
     assert _translator().resolved_model_name() == LARGE_MODEL_NAME  # 剛好夠
-    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda: 0)
+    monkeypatch.setattr(llama_backend, "discrete_gpu_free_bytes", lambda choice="auto": 0)
     assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 只有 CPU 或內顯（內顯和 CPU 共用記憶體，7B 又吃記憶體又慢）：不自動用
 
 

@@ -54,8 +54,17 @@ from app.version import __version__
 from services.diagnostics import DiagnosticsExportError, export_diagnostics
 from services.ocr.base import list_ocr_engines
 from services.transcript import resolve_directory
+from services.translation import gpu_info
+from services.translation.gpu_info import GpuReport
 from services.translation.model_names import how_to_get
-from services.translation.offline_common import discover_models, find_model_file, model_folders
+from services.translation.offline_common import (
+    GPU_AUTO,
+    GPU_CPU,
+    discover_models,
+    find_model_file,
+    gpu_choice,
+    model_folders,
+)
 from services.translation.offline_translator import OFFLINE_MODELS, OfflineTranslator, llama_model_available
 from services.translation.speed_test import (
     SPEED_TEST_SENTENCES,
@@ -176,6 +185,16 @@ class SettingsDialog(QWidget):
         self._speed_timer = QTimer(self)
         self._speed_timer.setInterval(150)
         self._speed_timer.timeout.connect(self._poll_speed_test)
+        # 「運算裝置」選單：偵測 GPU 要初始化 Vulkan（第一次約半秒），在背景執行緒做，結果丟進佇列、由計時器搬回畫面
+        self._gpu_report: GpuReport | None = None
+        self._gpu_wanted = GPU_AUTO  # 選單要顯示的選擇（設定檔裡的值，使用者改了就是新選的）
+        self._gpu_loaded = GPU_AUTO  # 設定檔裡的值
+        self._gpu_changed = False
+        self._gpu_scanning = False
+        self._gpu_results: queue.Queue = queue.Queue()
+        self._gpu_timer = QTimer(self)
+        self._gpu_timer.setInterval(100)
+        self._gpu_timer.timeout.connect(self._poll_gpu_scan)
         self.setObjectName("SettingsDialog")
         self.setWindowTitle("設定")
         self.setMinimumSize(900, 610)
@@ -956,6 +975,7 @@ class SettingsDialog(QWidget):
         form.addRow("目標語言", self.combo_target)
         form.addRow("離線翻譯模型", self.combo_offline_model)
         form.addRow("　模型路徑", self._build_model_folder_row())
+        form.addRow("　運算裝置", self._build_device_row())
         form.addRow("　速度測試", self._build_speed_test_row())
         form.addRow(self.chk_keep_original)
         form.addRow(self.chk_use_context)
@@ -1175,6 +1195,7 @@ class SettingsDialog(QWidget):
         self.spin_context_size.setEnabled(self.chk_use_context.isChecked())
         self.chk_lyrics_mode.setChecked(bool(cfg.get("translation.lyrics_mode", False)))
         self._load_offline_model(cfg)
+        self._load_gpu_device(cfg)
         self.chk_skip_sounds.setChecked(bool(cfg.get("translation.skip_sounds", True)))
         self.chk_retry_non_chinese.setChecked(bool(cfg.get("translation.retry_non_chinese", True)))
         self.spin_min_hold.setValue(float(cfg.get("overlay.min_hold_seconds", 0.5)))
@@ -1305,6 +1326,7 @@ class SettingsDialog(QWidget):
             cfg.set("translation.context_size", self.spin_context_size.value())
             cfg.set("translation.lyrics_mode", self.chk_lyrics_mode.isChecked())
             self._save_offline_model(cfg)
+            self._save_gpu_device(cfg)
             cfg.set("translation.skip_sounds", self.chk_skip_sounds.isChecked())
             cfg.set("translation.retry_non_chinese", self.chk_retry_non_chinese.isChecked())
             cfg.set("overlay.min_hold_seconds", self.spin_min_hold.value())
@@ -1617,6 +1639,138 @@ class SettingsDialog(QWidget):
         if self._model_choice_changed:
             cfg.set("translation.offline.model_name", self.combo_offline_model.currentData())
 
+    # ------------------------------------------------------------- 運算裝置（CPU／GPU）
+    def _build_device_row(self) -> QWidget:
+        """離線翻譯模型下面的「運算裝置」：下拉選單（自動／只用 CPU／這台電腦偵測到的每一顆 GPU）與偵測結果。"""
+        self.combo_device = NoWheelComboBox()
+        self.combo_device.setToolTip(
+            "翻譯模型用哪個裝置跑。\n"
+            "自動：有可用的 GPU 就用（有獨立顯示卡用獨立顯示卡，只有內顯才用內顯），沒有就用 CPU。\n"
+            "只用 CPU：不使用 GPU。\n"
+            "指定某一顆 GPU：模型只放在那顆上；載入失敗（顯示卡記憶體不夠等）時自動改用 CPU。\n"
+            "內顯和 CPU 共用記憶體，速度提升有限（大模型約快一成到兩成），但 CPU 用量低很多，翻譯時其他程式比較不卡；獨立顯示卡通常快很多。\n"
+            "灰色的選項是這台電腦有、但目前安裝的 llama.cpp 用不到的顯示卡（說明在下面）。按「儲存」後生效，會重新載入模型。"
+        )
+        self.btn_rescan_gpu = QPushButton("重新偵測")
+        self.btn_rescan_gpu.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_rescan_gpu.setToolTip("重新查一次這台電腦有哪些顯示卡（剛裝好驅動程式、接上外接顯示卡後按這個）。")
+        self.btn_rescan_gpu.clicked.connect(self._scan_gpus)
+        self.lbl_device_status = QLabel()
+        self.lbl_device_status.setObjectName("SettingsCardDescription")
+        self.lbl_device_status.setWordWrap(True)
+        self.lbl_device_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        top = QHBoxLayout()
+        top.setSpacing(10)
+        top.addWidget(self.combo_device, 1)
+        top.addWidget(self.btn_rescan_gpu)
+        holder = QWidget()
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(8)
+        column.addLayout(top)
+        column.addWidget(self.lbl_device_status)
+        self._fill_device_combo()
+        self.combo_device.currentIndexChanged.connect(self._on_device_choice_changed)
+        return holder
+
+    def _on_device_choice_changed(self, _index: int) -> None:
+        data = self.combo_device.currentData()
+        if data is None:
+            return
+        self._gpu_wanted = str(data)
+        self._gpu_changed = True
+        self._update_device_status()
+
+    def _fill_device_combo(self) -> None:
+        """重建選單：自動、只用 CPU、偵測到的每一顆 GPU（用不到的停用並說明）；設定檔裡指定、但現在找不到的 GPU 也留著，不會悄悄被改掉。"""
+        combo = self.combo_device
+        report = self._gpu_report
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("自動（有可用的 GPU 就用，沒有就用 CPU）", GPU_AUTO)
+        combo.addItem("只用 CPU（不使用 GPU）", GPU_CPU)
+        known = {GPU_AUTO, GPU_CPU}
+        for entry in report.entries if report is not None else ():
+            combo.addItem(entry.describe(), entry.name)
+            index = combo.count() - 1
+            known.add(entry.name)
+            combo.model().item(index).setEnabled(entry.usable)
+            combo.setItemData(index, entry.note, Qt.ItemDataRole.ToolTipRole)
+        if self._gpu_wanted not in known:
+            combo.addItem(f"{self._gpu_wanted}（目前找不到這顆，載入時改用自動選擇）", self._gpu_wanted)
+        combo.setCurrentIndex(max(0, combo.findData(self._gpu_wanted)))
+        combo.blockSignals(False)
+        self._update_device_status()
+
+    def _update_device_status(self) -> None:
+        report = self._gpu_report
+        if self._gpu_scanning:
+            self.lbl_device_status.setText("正在偵測這台電腦的顯示卡…")
+            return
+        if report is None:
+            self.lbl_device_status.setText("無法偵測這台電腦的顯示卡，翻譯會用 CPU。")
+            return
+        if report.entries:
+            lines = [f"這台電腦偵測到 {len(report.entries)} 顆顯示卡："]
+            lines += [f"　• {entry.summary()}" + ("" if entry.usable else f"　不能用：{entry.note}") for entry in report.entries]
+        else:
+            lines = ["這台電腦沒有偵測到顯示卡。"]
+        if report.entries and not report.usable:
+            lines.append("沒有任何一顆能用，翻譯用 CPU。" if report.engine_supports_gpu else "翻譯只能用 CPU。")
+        wanted = self._gpu_wanted
+        if wanted == GPU_CPU:
+            lines.append("目前選「只用 CPU」：不使用 GPU。")
+        elif wanted == GPU_AUTO:
+            lines.append("目前選「自動」：" + ("會用 GPU。" if report.usable else "用 CPU。"))
+        self.lbl_device_status.setText("\n".join(lines))
+
+    def _scan_gpus(self) -> None:
+        """在背景查這台電腦的顯示卡與 llama.cpp 能用的 GPU；查完由計時器更新選單。"""
+        if self._gpu_scanning:
+            return
+        self._gpu_scanning = True
+        self.btn_rescan_gpu.setEnabled(False)
+        self._update_device_status()
+
+        def work() -> None:
+            try:
+                self._gpu_results.put(gpu_info.detect_gpus())
+            except Exception as exc:  # 偵測不能讓設定頁壞掉
+                self._gpu_results.put(exc)
+
+        threading.Thread(target=work, name="gpu-scan", daemon=True).start()
+        self._gpu_timer.start()
+
+    def _poll_gpu_scan(self) -> None:
+        try:
+            result = self._gpu_results.get_nowait()
+        except queue.Empty:
+            return
+        self._gpu_timer.stop()
+        self._gpu_scanning = False
+        self.btn_rescan_gpu.setEnabled(True)
+        if isinstance(result, Exception):
+            log.warning("偵測 GPU 失敗：%s", result)
+            self._gpu_report = None
+        else:
+            self._gpu_report = result
+        self._fill_device_combo()
+
+    def _load_gpu_device(self, cfg) -> None:
+        self._gpu_loaded = gpu_choice(cfg.section("translation").get("offline"))
+        self._gpu_wanted = self._gpu_loaded
+        self._gpu_changed = False
+        self._fill_device_combo()
+        self._scan_gpus()
+
+    def _save_gpu_device(self, cfg) -> None:
+        """使用者沒動過選單就不寫入（設定檔裡舊的寫法、或現在找不到的 GPU 名稱不會被洗掉）。"""
+        if not self._gpu_changed or self._gpu_wanted == self._gpu_loaded:
+            return
+        cfg.set("translation.offline.gpu_device", self._gpu_wanted)
+        if self._gpu_wanted != GPU_CPU and cfg.get("translation.offline.gpu_layers", -1) == 0:
+            cfg.set("translation.offline.gpu_layers", -1)  # 舊版用 0 表示只用 CPU；選了 GPU 就不能留著 0
+
     # ------------------------------------------------------------- 速度測試
     def _build_speed_test_row(self) -> QHBoxLayout:
         """離線翻譯模型下面的「測試速度」：左邊按鈕與狀態，右邊是每個模型的結果表（存檔，下次開設定還在）。"""
@@ -1713,6 +1867,8 @@ class SettingsDialog(QWidget):
                 # 這筆數字是用 CPU 還是 GPU 量的：換了裝置重測會覆蓋舊的，所以要標清楚
                 if result["device"] == "gpu":
                     title += " · GPU"
+                    if result.get("gpu_name"):
+                        tip += f"\n用 GPU 測的：{result['gpu_name']}"
                 elif result.get("gpu_fallback"):
                     title += " · CPU（GPU 失敗）"
                     tip += "\n要求用 GPU，但載入失敗，改用 CPU 測，這是 CPU 的時間。"
@@ -1810,6 +1966,7 @@ class SettingsDialog(QWidget):
         self._speed_messages = queue.Queue()
         self._call_speed_hook(0)
         section = copy.deepcopy(self.config.section("translation"))
+        section.setdefault("offline", {})["gpu_device"] = self._gpu_wanted  # 量的是選單現在顯示的裝置（還沒按儲存也算）
         self._speed_thread = threading.Thread(
             target=_speed_test_thread,
             args=(section, models, self._speed_cancel, self._speed_messages, self._speed_store),
