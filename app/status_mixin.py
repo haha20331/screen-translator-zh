@@ -37,6 +37,8 @@ class StatusMixin:
             self.tray.set_busy(busy)
         if self._settings_page is not None:
             self._settings_page.setEnabled(not busy)
+        if not busy:
+            self._resume_model_release()
         if not busy and self._reopen_settings_after_close:
             from PySide6.QtCore import QTimer
 

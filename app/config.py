@@ -15,7 +15,7 @@ from utils.language_utils import TARGET_LANGUAGE
 DEFAULTS: dict[str, Any] = {
     "general": {
         "startup_with_system": False,
-        "minimize_to_tray": True,  # 關閉主視窗時：收到系統匣（True），或結束程式（False）
+        "minimize_to_tray": False,  # 關閉主視窗時：結束程式（False，預設），或收到系統匣繼續在背景執行（True）
         "minimize_hides_to_tray": False,  # 最小化主視窗時：收到系統匣、不佔工作列（True），或照一般視窗縮到工作列（False）
         "save_history": False,
         "history_dir": "",
@@ -150,6 +150,8 @@ DEFAULTS: dict[str, Any] = {
         "max_wait_seconds": 2.5,
         # 監控中 OCR 連續這麼多秒都抓不到字幕，就自動關閉譯文（推薦 1 秒，0 = 不自動關閉）
         "hide_after_no_text_seconds": 1.0,
+        # 停止即時監控超過這麼多秒，就把翻譯模型從記憶體放掉（3B 約 2.8 GB）；下次擷取或監控時自動載回。0 = 不釋放
+        "release_model_after_seconds": 10,
     },
     # 文字輸出：每句字幕（開始、結束時間、原文、譯文、四角點、模型）附加寫進一份 txt，一天一檔。
     # 字幕結束（被下一句取代、消失、停止監控、離開程式）時才寫，寫下的是最完整的那一版。
@@ -331,6 +333,11 @@ def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
     except (TypeError, ValueError):
         hide_after = DEFAULTS["monitor"]["hide_after_no_text_seconds"]
     monitor["hide_after_no_text_seconds"] = max(0.0, min(30.0, hide_after))
+    try:
+        release_after = float(monitor.get("release_model_after_seconds", DEFAULTS["monitor"]["release_model_after_seconds"]))
+    except (TypeError, ValueError):
+        release_after = DEFAULTS["monitor"]["release_model_after_seconds"]
+    monitor["release_model_after_seconds"] = max(0.0, min(3600.0, release_after))
 
 
 def _normalize_output(data: dict[str, Any]) -> None:

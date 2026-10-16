@@ -212,6 +212,9 @@ class CaptureMixin:
     ) -> bool:
         if self._busy or self.window is None or self.overlay_manager is None:
             return False
+        loading = self._ensure_model_loaded()  # 模型被釋放了就趁使用者框選的時間先載回來
+        if loading:
+            self.set_status(loading)
         self.window.settle_settings_transition_for_capture()
         try:
             self.refresh_monitor_map()

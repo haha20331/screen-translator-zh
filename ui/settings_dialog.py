@@ -610,8 +610,8 @@ class SettingsDialog(QWidget):
         self.chk_autostart = QCheckBox("開機自動啟動")
         self.chk_tray = QCheckBox("關閉主視窗時最小化到托盤")
         self.chk_tray.setToolTip(
-            "勾選（預設）：按主視窗右上角的關閉鈕，只是把它收到系統匣（工作列右邊的小圖示），程式繼續在背景執行，點圖示可以再打開；要結束請用系統匣選單的「退出」。\n"
-            "沒勾選：關掉主視窗就結束程式。"
+            "沒勾選（預設）：按主視窗右上角的關閉鈕就結束程式。\n"
+            "勾選：關閉鈕只是把主視窗收到系統匣（工作列右邊的小圖示），程式繼續在背景執行，點圖示可以再打開；要結束請在圖示上按右鍵選「退出」。"
         )
         self.chk_minimize_tray = QCheckBox("最小化主視窗時收到托盤")
         self.chk_minimize_tray.setToolTip(
@@ -654,6 +654,14 @@ class SettingsDialog(QWidget):
             "監控中，OCR 連續這麼久都抓不到任何文字（字幕消失了、換成沒有字的畫面），就自動把譯文關掉，"
             "不會一直留著上一句。字幕再出現時會重新翻譯顯示。0 = 不自動關閉。"
         )
+        self.spin_release_model = NoWheelSpinBox()
+        self.spin_release_model.setRange(0, 3600)
+        self.spin_release_model.setSuffix(" 秒")
+        self.spin_release_model.setSpecialValueText("不釋放")
+        self.spin_release_model.setToolTip(
+            "停止即時監控超過這麼久，就把翻譯模型從記憶體放掉（預設 3B 約佔 2.8 GB），別的程式可以用。\n"
+            "下次框選或開始監控時會自動載回來，載入要幾秒到十幾秒（載好之前不會送翻譯）。0 = 不釋放，模型一直留在記憶體裡，隨時馬上能翻。"
+        )
         self.spin_confirm_rounds = NoWheelSpinBox()
         self.spin_confirm_rounds.setRange(stability.MIN_ROUNDS, stability.MAX_ROUNDS)
         self.spin_confirm_rounds.setSuffix(" 次")
@@ -688,6 +696,7 @@ class SettingsDialog(QWidget):
         monitor_form.addRow(self.chk_auto_monitor)
         monitor_form.addRow("辨識間隔", scan_row)
         monitor_form.addRow("無字幕時關閉譯文", self.spin_hide_no_text)
+        monitor_form.addRow("停止監控後釋放模型", self.spin_release_model)
         monitor_form.addRow("確認次數", self.spin_confirm_rounds)
         monitor_form.addRow("最久等待", self.spin_max_wait)
         monitor_form.addRow(preset_row)
@@ -1161,7 +1170,7 @@ class SettingsDialog(QWidget):
         cfg = self.config
         self._set_combo(self.combo_display_mode, bool(cfg.get("translation.keep_original", False)))
         self.chk_autostart.setChecked(bool(cfg.get("general.startup_with_system", False)))
-        self.chk_tray.setChecked(bool(cfg.get("general.minimize_to_tray", True)))
+        self.chk_tray.setChecked(bool(cfg.get("general.minimize_to_tray", False)))
         self.chk_minimize_tray.setChecked(bool(cfg.get("general.minimize_hides_to_tray", False)))
         self.chk_history.setChecked(bool(cfg.get("general.save_history", False)))
         self.history_dir.setText(str(cfg.get("general.history_dir", "")))
@@ -1188,6 +1197,7 @@ class SettingsDialog(QWidget):
         self._set_combo(self.combo_engine, cfg.get("ocr.engine", "windows"))
         self._set_combo(self.combo_lang, cfg.get("ocr.lang", "auto"))
         self.chk_auto_monitor.setChecked(bool(cfg.get("monitor.auto_start", True)))
+        self.spin_release_model.setValue(int(float(cfg.get("monitor.release_model_after_seconds", 10))))
         self.spin_scan_interval.setValue(int(cfg.get("monitor.interval_ms", stability.RECOMMENDED_INTERVAL_MS)) / 1000)
         self._refresh_scan_rate()
         self.spin_hide_no_text.setValue(
@@ -1326,6 +1336,7 @@ class SettingsDialog(QWidget):
             cfg.set("monitor.auto_start", self.chk_auto_monitor.isChecked())
             cfg.set("monitor.interval_ms", int(round(self.spin_scan_interval.value() * 1000)))
             cfg.set("monitor.hide_after_no_text_seconds", self.spin_hide_no_text.value())
+            cfg.set("monitor.release_model_after_seconds", self.spin_release_model.value())
             cfg.set("monitor.confirm_rounds", self.spin_confirm_rounds.value())
             cfg.set("monitor.max_wait_seconds", self.spin_max_wait.value())
             cfg.set("ocr.min_confidence", self.spin_confidence.value())

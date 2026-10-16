@@ -63,7 +63,6 @@ QCheckBox::indicator {
 }
 QCheckBox::indicator:hover { border-color: #2878E8; }
 QCheckBox::indicator:checked { background: #2878E8; border-color: #2878E8; }
-QToolTip { background: #252826; color: #FFFFFF; border: none; border-radius: 7px; padding: 6px 9px; }
 QMenu { background: #FFFEFC; border: 1px solid #DEDCD5; border-radius: 10px; padding: 6px; }
 QMenu::item { padding: 8px 26px 8px 11px; border-radius: 7px; color: #30322F; }
 QMenu::item:selected { background: #EDF5FF; color: #216FD6; }
@@ -257,6 +256,7 @@ def build_stylesheet(tokens: AppearanceTokens) -> str:
     vertical_padding = {"spacious": 10, "balanced": 8, "compact": 6}[tokens.density]
     input_height = max(24, tokens.control_height - 14)
     sheet += f"""
+QToolTip {{ background: {tokens.ink}; color: {tokens.root}; border: none; border-radius: 7px; padding: 6px 9px; }}
 QPushButton {{ padding-top: {vertical_padding}px; padding-bottom: {vertical_padding}px; }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QKeySequenceEdit, QComboBox {{ min-height: {input_height}px; }}
 """
@@ -278,6 +278,8 @@ def build_palette(tokens: AppearanceTokens) -> QPalette:
         (QPalette.ColorRole.Text, tokens.ink),
         (QPalette.ColorRole.Button, tokens.surface),
         (QPalette.ColorRole.ButtonText, tokens.ink),
+        # 浮動說明用「反色」：底是主題的文字色、字是主題的底色，任何主題對比都夠（淺色主題深底淺字，深色主題淺底深字）。
+        # 樣式表的 QToolTip 規則與這裡要同一組顏色；以前樣式表寫死白字，深色主題的淺底就變成白底白字
         (QPalette.ColorRole.ToolTipBase, tokens.ink),
         (QPalette.ColorRole.ToolTipText, tokens.root),
         (QPalette.ColorRole.Highlight, tokens.accent_soft),

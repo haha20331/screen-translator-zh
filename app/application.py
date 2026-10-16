@@ -34,6 +34,7 @@ from app.history_mixin import HistoryMixin
 from app.hotkeys import HotkeyError, HotkeyManager
 from app.logger import app_data_dir, get_logger
 from app.model_loading_mixin import ModelLoadingMixin
+from app.model_release_mixin import ModelReleaseMixin
 from app.models import CaptureInfo, TextRegion
 from app.monitor_mixin import MonitorMixin
 from app.pipeline_mixin import PipelineMixin
@@ -86,6 +87,7 @@ class Application(
     PipelineMixin,
     TranscriptMixin,
     ModelLoadingMixin,
+    ModelReleaseMixin,
 ):
     """顶层控制器（生命周期 + 更新；其余职责见各 Mixin）。"""
 
@@ -137,6 +139,7 @@ class Application(
         self._shutting_down = False
         self._shutdown_finalized = False
         self._init_model_loading()
+        self._init_model_release()
 
         self._capture_timer = QTimer(self)
         self._capture_timer.setSingleShot(True)
@@ -232,6 +235,7 @@ class Application(
         self._selection_timer.stop()
         self._monitor_timer.stop()
         self._no_text_timer.stop()
+        self._model_release_timer.stop()
         self._monitor_active = False
         self._transcript_shutdown()
         self._dispose_monitor_region()

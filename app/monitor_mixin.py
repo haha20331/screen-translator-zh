@@ -66,6 +66,8 @@ class MonitorMixin:
         if self._last_capture.mode == "region":
             self._create_monitor_region_selector()
         self._reset_translation_context()
+        self._cancel_model_release()
+        loading = self._ensure_model_loaded()  # 停止監控一陣子後模型被釋放了：先在背景載回來，載好之前監控不送翻譯
         self._monitor_active = True
         self._no_text_timer.stop()
         self._monitor_errors = 0
@@ -77,7 +79,7 @@ class MonitorMixin:
         self._monitor_stabilizer = TextStabilizer()
         self._configure_stabilizer()
         self._transcript_note_monitor(started=True)
-        self.set_status("即時監控已開啟，頁面一動就會自動重譯")
+        self.set_status("即時監控已開啟，頁面一動就會自動重譯" + (f"；{loading}" if loading else ""))
         if self.window is not None:
             self.window.set_monitor_checked(True)
         if self.tray is not None:
@@ -110,6 +112,7 @@ class MonitorMixin:
         if self.tray is not None:
             self.tray.set_monitor_checked(False)
         self.set_status(reason or "已停止即時監控")
+        self._arm_model_release()  # 停止超過 monitor.release_model_after_seconds 秒就釋放模型的記憶體
 
     def _monitor_cycle(self) -> None:
         from utils.image_utils import frame_fingerprint

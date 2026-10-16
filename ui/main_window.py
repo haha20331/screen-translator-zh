@@ -814,7 +814,7 @@ class MainWindow(QWidget):
             self.hide()  # 系統匣圖示的點擊會 showNormal() 把它帶回來
 
     def closeEvent(self, event) -> None:
-        if self.controller.config.get("general.minimize_to_tray", True):
+        if self.controller.config.get("general.minimize_to_tray", False):
             event.ignore()
             self.hide()
         else:

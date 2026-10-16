@@ -94,34 +94,34 @@ def test_a_fullscreen_or_window_capture_from_a_hotkey_still_gets_through_the_mai
 
 
 # ----------------------------------------------------------------------------- 托盤的兩個選項
-def test_the_tray_options_default_to_close_to_tray_on_and_minimize_to_tray_off(tmp_path):
+def test_both_tray_options_are_off_by_default(tmp_path):
     config = AppConfig(tmp_path / "config.json")
 
-    assert config.get("general.minimize_to_tray") is True
-    assert config.get("general.minimize_hides_to_tray") is False
+    assert config.get("general.minimize_to_tray") is False  # 關閉主視窗：結束程式
+    assert config.get("general.minimize_hides_to_tray") is False  # 最小化主視窗：縮到工作列
 
 
-def test_closing_the_main_window_goes_to_the_tray_by_default(qapp, tmp_path):
+def test_closing_the_main_window_ends_the_program_by_default(qapp, tmp_path):
     controller = _Controller(AppConfig(tmp_path / "config.json"))
     window = MainWindow(controller)
     window.show()
 
     window.close()
 
-    assert not window.isVisible() and controller.shutdowns == 0  # 只是收起來，程式繼續跑
+    assert controller.shutdowns == 1  # main.py 設了「關掉最後一個視窗不結束」，所以要自己結束
     window.deleteLater()
 
 
-def test_with_the_tray_option_off_closing_the_main_window_ends_the_program(qapp, tmp_path):
+def test_with_the_tray_option_on_closing_the_main_window_only_hides_it(qapp, tmp_path):
     config = AppConfig(tmp_path / "config.json")
-    config.set("general.minimize_to_tray", False)
+    config.set("general.minimize_to_tray", True)
     controller = _Controller(config)
     window = MainWindow(controller)
     window.show()
 
     window.close()
 
-    assert controller.shutdowns == 1  # main.py 設了「關掉最後一個視窗不結束」，所以要自己結束
+    assert not window.isVisible() and controller.shutdowns == 0  # 只是收起來，程式繼續跑
     window.deleteLater()
 
 
@@ -171,15 +171,15 @@ def test_the_window_is_never_hidden_when_there_is_no_tray_to_bring_it_back_from(
 def test_the_settings_page_saves_both_tray_options(qapp, tmp_path):
     config = AppConfig(tmp_path / "config.json")
     dialog = SettingsDialog(config)
-    assert dialog.chk_tray.isChecked() and not dialog.chk_minimize_tray.isChecked()
+    assert not dialog.chk_tray.isChecked() and not dialog.chk_minimize_tray.isChecked()
 
-    dialog.chk_tray.setChecked(False)
+    dialog.chk_tray.setChecked(True)
     dialog.chk_minimize_tray.setChecked(True)
     dialog._commit_accept(dialog._validated_hotkeys())
     dialog._save_close_timer.stop()
 
     saved = AppConfig(tmp_path / "config.json")
-    assert saved.get("general.minimize_to_tray") is False and saved.get("general.minimize_hides_to_tray") is True
+    assert saved.get("general.minimize_to_tray") is True and saved.get("general.minimize_hides_to_tray") is True
     dialog.deleteLater()
 
 
