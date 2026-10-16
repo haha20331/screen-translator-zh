@@ -112,7 +112,9 @@ python scripts/fetch_translation_models.py
 
 ## 用 GPU 加速（選用，Windows）
 
-預設安裝的是 CPU 版 llama-cpp-python。內顯（例如 Intel Iris Xe）或獨立顯示卡可以改裝 Vulkan 版，不需要編譯器：
+預設安裝的是 CPU 版 llama-cpp-python（`requirements-core.txt` 釘 0.3.33）。**注意：官方的 CPU wheel 0.3.33 的 `ggml-cpu.dll` 含 AVX-512 指令，在沒有 AVX-512 的 CPU（多數 Intel 12～14 代、AMD Zen4 以前）載入模型會「非法指令」（0xC000001D）當掉**；安裝版不受影響（它用 Vulkan wheel 的 AVX2 版核心）。開發環境遇到這個問題有兩個辦法：改裝下面的 Vulkan 版（有 Vulkan 載入器的電腦才載得進），或先執行 `python scripts/fetch_vulkan_library.py` 再設環境變數 `LLAMA_CPP_LIB_PATH=<專案>\build\cpu_lib`（安裝版的 CPU 版那一套，不需要 Vulkan）。
+安裝版同時附 CPU 版與 GPU 版（見 `PACKAGING.md`），不需要照這一節做。
+內顯（例如 Intel Iris Xe）或獨立顯示卡可以改裝 Vulkan 版，不需要編譯器：
 
 ```powershell
 python -m pip install -r requirements-core.txt

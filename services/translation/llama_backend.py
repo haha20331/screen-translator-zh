@@ -32,6 +32,99 @@ DEFAULT_CONTEXT_TOKENS = 2048
 MAX_PREFIX_STATES = 6
 
 
+# 打包版附兩套 llama.cpp 函式庫：預設的 CPU 版（llama_cpp/lib），和 GPU 版（Vulkan，llama_cpp/lib_vulkan）。
+# GPU 版的 ggml.dll 直接連結 ggml-vulkan.dll、再連結 vulkan-1.dll（顯示卡驅動程式附的 Vulkan 載入器）：
+# 沒有 vulkan-1.dll 的電腦（虛擬機器、遠端桌面、只有基本顯示驅動程式）載入 GPU 版會整個失敗，連 CPU 都不能翻譯，
+# 所以只有確定這台電腦載得進 vulkan-1.dll 才用 GPU 版。GPU 版也能只用 CPU 跑（速度與 CPU 版相同），
+# 因此選了它之後，設定頁在 CPU 與各顆 GPU 之間切換不必重新啟動程式。
+VULKAN_LIBRARY_DIR = "lib_vulkan"
+CPU_ONLY_ENV = "SCREEN_TRANSLATOR_CPU_ONLY"  # 設成 1：一律用 CPU 版（顯示卡驅動程式有問題、一啟動就當掉時的退路）
+_LIBRARY_PATH_ENV = "LLAMA_CPP_LIB_PATH"  # llama-cpp-python 認的環境變數：函式庫在哪個資料夾
+KIND_DEFAULT = "default"  # 沒動：用 llama-cpp-python 自己的 lib（開發環境、或打包版沒附 GPU 版）
+KIND_VULKAN = "vulkan"  # 選了附的 GPU 版
+KIND_CPU_FORCED = "cpu-forced"
+KIND_NO_VULKAN_RUNTIME = "no-vulkan-runtime"
+_library = {"kind": KIND_DEFAULT}
+
+
+def _package_dir() -> Path | None:
+    try:
+        spec = importlib.util.find_spec("llama_cpp")
+    except (ImportError, ValueError):
+        return None
+    locations = list(spec.submodule_search_locations or []) if spec is not None else []
+    return Path(locations[0]) if locations else None
+
+
+def vulkan_runtime_present() -> bool:
+    """這台電腦載得進 Vulkan 載入器（vulkan-1.dll，由顯示卡驅動程式安裝）嗎。"""
+    if os.name != "nt":
+        return False
+    try:
+        ctypes.WinDLL("vulkan-1.dll")  # type: ignore[attr-defined]
+    except OSError:
+        return False
+    return True
+
+
+def select_library(runtime_present=vulkan_runtime_present) -> str:
+    """在 llama_cpp 第一次被匯入之前決定用哪一套函式庫；回傳 ``KIND_*``。
+
+    有附 GPU 版、這台電腦有 Vulkan 載入器、而且沒有被要求只用 CPU，就讓 llama-cpp-python 改從 GPU 版的資料夾載入；
+    其他情況不動。使用者自己設了 ``LLAMA_CPP_LIB_PATH`` 就尊重它。"""
+    _library["kind"] = KIND_DEFAULT
+    if os.environ.get(_LIBRARY_PATH_ENV):
+        return KIND_DEFAULT
+    package = _package_dir()
+    vulkan_dir = package / VULKAN_LIBRARY_DIR if package is not None else None
+    if vulkan_dir is None or not vulkan_dir.is_dir():
+        return KIND_DEFAULT
+    if os.environ.get(CPU_ONLY_ENV, "").strip().lower() in ("1", "true", "yes"):
+        _library["kind"] = KIND_CPU_FORCED
+    elif not runtime_present():
+        _library["kind"] = KIND_NO_VULKAN_RUNTIME
+    else:
+        os.environ[_LIBRARY_PATH_ENV] = str(vulkan_dir)
+        _library["kind"] = KIND_VULKAN
+    return _library["kind"]
+
+
+def library_dir() -> Path | None:
+    """llama.cpp 的 DLL 實際在哪個資料夾（``select_library`` 選的、或 llama-cpp-python 預設的 ``lib``）。"""
+    override = os.environ.get(_LIBRARY_PATH_ENV)
+    if override:
+        return Path(override)
+    package = _package_dir()
+    return package / "lib" if package is not None else None
+
+
+def library_description() -> str:
+    """寫進日誌：這次用的是哪一套 llama.cpp 函式庫、在哪。"""
+    kind = _library["kind"]
+    label = {
+        KIND_VULKAN: "附的 GPU 版（Vulkan）",
+        KIND_CPU_FORCED: f"附的 CPU 版（環境變數 {CPU_ONLY_ENV}）",
+        KIND_NO_VULKAN_RUNTIME: "附的 CPU 版（這台電腦沒有 Vulkan）",
+    }.get(kind, "預設")
+    return f"{label}，{library_dir()}"
+
+
+def gpu_unavailable_reason() -> str:
+    """目前這份 llama.cpp 用不到 GPU 的原因（給設定頁看）。"""
+    kind = _library["kind"]
+    if kind == KIND_CPU_FORCED:
+        return f"已設定環境變數 {CPU_ONLY_ENV}，程式只用 CPU 版"
+    if kind == KIND_NO_VULKAN_RUNTIME:
+        return "這台電腦沒有 Vulkan 執行環境（找不到 vulkan-1.dll）：安裝或更新顯示卡驅動程式後，重新啟動程式"
+    directory = library_dir()
+    if kind == KIND_VULKAN or (directory is not None and (directory / "ggml-vulkan.dll").exists()):
+        return "GPU 版 llama.cpp 載入了，但找不到可以運算的 GPU（顯示卡驅動程式不支援 Vulkan，或太舊）"
+    return "目前安裝的 llama.cpp 是 CPU 版，不能使用 GPU（要改裝 Vulkan 版，見 requirements-vulkan.txt）"
+
+
+select_library()
+
+
 def available() -> bool:
     """有沒有安裝 llama-cpp-python（pip install llama-cpp-python）。"""
     return importlib.util.find_spec("llama_cpp") is not None
@@ -59,7 +152,7 @@ def _query_devices() -> list[dict]:
     llama-cpp-python 沒有提供這個介面，所以直接呼叫它附帶的 ggml 動態函式庫（``ggml_backend_dev_*``）。"""
     import llama_cpp
 
-    lib_dir = Path(llama_cpp.__file__).parent / "lib"
+    lib_dir = library_dir() or Path(llama_cpp.__file__).parent / "lib"  # 載入的是哪一套，就問哪一套的 ggml
     names = ("ggml.dll", "ggml-base.dll") if os.name == "nt" else ("libggml.so", "libggml-base.so", "libggml.dylib", "libggml-base.dylib")
     libs = [ctypes.CDLL(str(lib_dir / name)) for name in names if (lib_dir / name).exists()]
 

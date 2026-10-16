@@ -12,5 +12,7 @@ onnxruntime>=1.20,<2
 # the project's own index, so point pip at it and accept wheels only.
 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 --only-binary=llama-cpp-python
-llama-cpp-python>=0.3,<0.4
+# Pinned to the version of the Vulkan (GPU) build that the installer ships next to the CPU build
+# (scripts/fetch_vulkan_library.py WHEEL_VERSION): both sets of DLLs must match the Python bindings.
+llama-cpp-python==0.3.33
 opencc>=1.1

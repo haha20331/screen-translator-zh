@@ -475,7 +475,10 @@ class OfflineTranslator(ChineseTargetTranslator):
         threads = default_threads(int(self._settings().get("threads", 0)))
         layers = self.gpu_layers()
         choice = self.gpu_choice()
-        log.info("載入離線翻譯模型 %s（threads=%d, gpu_layers=%d, 運算裝置=%s）", path, threads, layers, choice)
+        log.info(
+            "載入離線翻譯模型 %s（threads=%d, gpu_layers=%d, 運算裝置=%s, llama.cpp=%s）",
+            path, threads, layers, choice, llama_backend.library_description(),
+        )
         extra = {} if bool(self._settings().get("cpu_fallback", True)) else {"cpu_fallback": False}
         if layers and choice not in (GPU_AUTO, GPU_CPU):
             extra["gpu_device"] = choice  # 使用者指定了哪一顆 GPU；沒指定就不傳，交給 llama.cpp 選

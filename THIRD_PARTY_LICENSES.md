@@ -18,7 +18,7 @@
 | winocr、winrt（Windows 執行階段的 Python 繫結） | MIT | Windows OCR 備援引擎 |
 | rapidocr | Apache-2.0 | |
 | onnxruntime | MIT | |
-| llama-cpp-python（含 llama.cpp / ggml，離線翻譯的推論引擎） | MIT | 預編譯 wheel 內含 llama.cpp 與 ggml 的動態函式庫；索引寫在 `requirements-core.txt` |
+| llama-cpp-python（含 llama.cpp / ggml，離線翻譯的推論引擎） | MIT | 預編譯 wheel 內含 llama.cpp 與 ggml 的動態函式庫；索引寫在 `requirements-core.txt`。安裝版另附同一版本的 GPU 版（Vulkan）DLL（`llama_cpp\lib_vulkan`，來自同一個專案的 Vulkan wheel，授權相同），不附 `vulkan-1.dll`（用電腦上顯示卡驅動程式安裝的） |
 | OpenCC | Apache-2.0 | 簡繁轉換與台灣用語詞典 |
 
 ## 模型

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from app.config import AppConfig
 from services.translation import gpu_info, llama_backend, offline_translator, speed_test
-from services.translation.gpu_info import NOTE_CPU_BUILD, NOTE_NOT_VISIBLE, GpuEntry, GpuReport
+from services.translation.gpu_info import NOTE_NOT_VISIBLE, GpuEntry, GpuReport
 from services.translation.offline_common import gpu_choice
 from services.translation.offline_translator import OfflineTranslator
 from ui.settings_dialog import SettingsDialog
@@ -38,6 +38,12 @@ def _device(description: str, kind: int, free: int, total: int | None = None, ha
 
 
 DISCRETE, INTEGRATED = llama_backend.DEVICE_TYPE_GPU, llama_backend.DEVICE_TYPE_IGPU
+REASON = "測試用的原因：沒有 GPU 版"
+
+
+@pytest.fixture(autouse=True)
+def _fixed_reason(monkeypatch):
+    monkeypatch.setattr(llama_backend, "gpu_unavailable_reason", lambda: REASON)
 
 
 def _machine(monkeypatch, adapters, engine, supported=True):
@@ -86,8 +92,8 @@ def test_with_the_cpu_build_every_gpu_is_listed_but_none_can_be_used(monkeypatch
 
     assert report.engine_supports_gpu is False and report.usable == ()
     assert [(e.name, e.kind, e.usable, e.note) for e in report.entries] == [
-        (INTEL, gpu_info.KIND_INTEGRATED, False, NOTE_CPU_BUILD),
-        (NVIDIA, gpu_info.KIND_DISCRETE, False, NOTE_CPU_BUILD),
+        (INTEL, gpu_info.KIND_INTEGRATED, False, REASON),
+        (NVIDIA, gpu_info.KIND_DISCRETE, False, REASON),
     ]
     assert report.entries[1].memory == 6 * GIB
 
@@ -510,12 +516,12 @@ def test_the_menu_lists_auto_cpu_and_every_gpu_of_the_machine(qapp, monkeypatch,
 
 
 def test_with_the_cpu_build_the_gpus_are_shown_but_cannot_be_chosen(qapp, monkeypatch, tmp_path):
-    report = _report(GpuEntry(NVIDIA, gpu_info.KIND_DISCRETE, 6 * GIB, False, NOTE_CPU_BUILD), supported=False)
+    report = _report(GpuEntry(NVIDIA, gpu_info.KIND_DISCRETE, 6 * GIB, False, REASON), supported=False)
     dialog, _ = _dialog(qapp, monkeypatch, tmp_path, report)
 
     assert _device_items(dialog) == [("auto", True), ("cpu", True), (NVIDIA, False)]
     text = dialog.lbl_device_status.text()
-    assert NVIDIA in text and "CPU 版" in text and "翻譯只能用 CPU" in text
+    assert NVIDIA in text and REASON in text and "翻譯只能用 CPU" in text
     dialog.deleteLater()
 
 

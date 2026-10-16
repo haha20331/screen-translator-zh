@@ -57,6 +57,30 @@ for package in (
 
 hiddenimports += collect_submodules("pynput", filter=lambda name: "._win32" in name or name.endswith("._base"))
 
+# llama.cpp 附兩套函式庫，都由 scripts/fetch_vulkan_library.py 準備好（原因與做法見它的說明與 PACKAGING.md）：
+#   llama_cpp\lib        = build\cpu_lib     CPU 版（不用建置環境裝的 CPU wheel 的 DLL：它的 ggml-cpu.dll 含 AVX-512，
+#                                              沒有 AVX-512 的 CPU 載入模型會「非法指令」當掉）
+#   llama_cpp\lib_vulkan = build\vulkan_lib  GPU 版（Vulkan）；ggml.dll 直接連結 vulkan-1.dll，只在載得進 vulkan-1.dll 的電腦用
+# 程式啟動時依這台電腦有沒有 Vulkan 選一套（llama_backend.select_library）。
+# 用 datas（單純複製）而不是 binaries：不要讓 PyInstaller 去分析 DLL 相依、順手把系統的 vulkan-1.dll 也收進來。
+cpu_library = Path("build") / "cpu_lib"
+vulkan_library = Path("build") / "vulkan_lib"
+if not (cpu_library / "ggml-cpu.dll").exists() or not (vulkan_library / "ggml-vulkan.dll").exists():
+    raise SystemExit("找不到 build\\cpu_lib 或 build\\vulkan_lib：先執行 python scripts/fetch_vulkan_library.py（build_installer.ps1 會自動做）。")
+
+
+def _is_default_llama_library(entry):
+    # collect_all 給的是 (來源檔, 放進程式的哪個資料夾)；建置環境裝的 CPU wheel 的 DLL 全部不要，換成上面準備好的
+    return entry[1].replace("\\", "/").lower().rstrip("/") == "llama_cpp/lib"
+
+
+binaries[:] = [entry for entry in binaries if not _is_default_llama_library(entry)]
+datas[:] = [entry for entry in datas if not _is_default_llama_library(entry)]
+for dll in sorted(cpu_library.glob("*.dll")):
+    datas.append((str(dll), "llama_cpp/lib"))
+for dll in sorted(vulkan_library.glob("*.dll")):
+    datas.append((str(dll), "llama_cpp/lib_vulkan"))
+
 a = Analysis(
     ["main.py"],
     pathex=[],
@@ -89,6 +113,15 @@ a = Analysis(
     ],
     noarchive=False,
 )
+
+# PyInstaller 會分析 llama_cpp\lib 與 llama_cpp\lib_vulkan 裡的 DLL 的相依檔，把找到的 ggml*.dll／llama.dll 另外複製一份放在最上層
+# （_internal\）。Windows 載入 DLL 時先找程式資料夾與 _internal，再找 PATH（llama_cpp 載入函式庫時才把選好的那套資料夾放進 PATH），
+# 所以最上層的這幾份會蓋掉我們選的那套：實測「只用 CPU 版」時照樣載進 GPU 版的 ggml.dll，沒有 Vulkan 的電腦會整個載入失敗。
+# 全部拿掉，只留 lib 與 lib_vulkan 底下各自成套的那兩份。
+_LLAMA_DLLS = {"ggml.dll", "ggml-base.dll", "ggml-cpu.dll", "ggml-vulkan.dll", "llama.dll", "mtmd.dll"}
+a.binaries[:] = [entry for entry in a.binaries if entry[0].replace("\\", "/").lower() not in _LLAMA_DLLS]
+a.datas[:] = [entry for entry in a.datas if entry[0].replace("\\", "/").lower() not in _LLAMA_DLLS]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(

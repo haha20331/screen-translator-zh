@@ -58,11 +58,27 @@ try {
 
     # 2. 程式本體（PyInstaller，資料夾式）
     if (-not $SkipAppBuild) {
+        # GPU 版（Vulkan）的 llama.cpp 函式庫：下載（核對 SHA-256）並確認建置環境的 llama-cpp-python 版本與它相同
+        & $python scripts\fetch_vulkan_library.py --check-installed
+        if ($LASTEXITCODE -ne 0) { throw "準備 GPU 版 llama.cpp 失敗。" }
         $env:SCREEN_TRANSLATOR_BUILD_VERSION = $Version
         & $python -m PyInstaller --noconfirm --clean --distpath $distDirectory --workpath (Join-Path $root "build") $specPath
         if ($LASTEXITCODE -ne 0) { throw "PyInstaller 建置失敗。" }
     }
     if (-not (Test-Path -LiteralPath $applicationPath -PathType Leaf)) { throw "找不到主程式：$applicationPath" }
+    # 兩套 llama.cpp：預設的（lib）一定是 CPU 版，GPU 版（lib_vulkan）要在
+    $llamaDirectory = Get-ChildItem -LiteralPath $applicationDirectory -Recurse -Directory -Filter "llama_cpp" | Select-Object -First 1
+    if ($null -eq $llamaDirectory) { throw "程式資料夾裡找不到 llama_cpp。" }
+    if (Test-Path -LiteralPath (Join-Path $llamaDirectory.FullName "lib\ggml-vulkan.dll")) { throw "預設的 llama.cpp（lib）不能是 GPU 版：沒有 Vulkan 的電腦會整個載入失敗。" }
+    if (-not (Test-Path -LiteralPath (Join-Path $llamaDirectory.FullName "lib_vulkan\ggml-vulkan.dll"))) { throw "程式裡沒有 GPU 版 llama.cpp（lib_vulkan）。" }
+    # 預設的（lib）CPU 版要用 GPU 版 wheel 的 ggml-cpu.dll（只用 AVX2）：官方 CPU wheel 的含 AVX-512，沒有 AVX-512 的 CPU 會「非法指令」當掉
+    $cpuKernel = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $llamaDirectory.FullName "lib\ggml-cpu.dll")).Hash
+    $gpuKernel = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $llamaDirectory.FullName "lib_vulkan\ggml-cpu.dll")).Hash
+    if ($cpuKernel -ne $gpuKernel) { throw "預設的 llama.cpp（lib）用的不是 AVX2 版的 ggml-cpu.dll（見 scripts/fetch_vulkan_library.py）。" }
+    # 最上層不能有 llama.cpp 的 DLL：Windows 會先載入它們，蓋掉 llama_backend.select_library 選好的那一套
+    $stray = Get-ChildItem -LiteralPath $applicationDirectory, (Join-Path $applicationDirectory "_internal") -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(ggml.*|llama|mtmd)\.dll$' }
+    if ($stray) { throw ("最上層有 llama.cpp 的 DLL（會蓋掉選好的那一套）：" + (($stray | ForEach-Object { $_.FullName }) -join ", ")) }
 
     # 3. 第三方套件的授權檔（隨安裝程式散布）
     & $python scripts\collect_licenses.py $applicationDirectory

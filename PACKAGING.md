@@ -18,9 +18,18 @@
 # → release\ScreenTranslator-0.3.0-beta-Setup.exe 與 .sha256
 ```
 
-腳本依序做：① 檢查模型清單（`installer/models.json`）與程式內的模型一致；② PyInstaller 打包成資料夾（`ScreenTranslator.spec` → `dist\ScreenTranslator\`，約 380 MB）；③ 收集所有第三方套件的授權檔到 `dist\ScreenTranslator\licenses\`；④ 由模型清單產生安裝程式的模型元件（`installer\generated\`，不進版控）；⑤ Inno Setup 編譯。選項：`-SkipAppBuild`（程式沒改，只重包安裝程式）、`-CheckModelsOnline`（連到 Hugging Face 再核對一次 SHA-256 與大小）、`-SignWithReleaseCertificate`（簽章，見下）。
+腳本依序做：① 檢查模型清單（`installer/models.json`）與程式內的模型一致；② 準備 GPU 版 llama.cpp 的 DLL（`scripts/fetch_vulkan_library.py`），PyInstaller 打包成資料夾（`ScreenTranslator.spec` → `dist\ScreenTranslator\`，約 380 MB）；③ 收集所有第三方套件的授權檔到 `dist\ScreenTranslator\licenses\`；④ 由模型清單產生安裝程式的模型元件（`installer\generated\`，不進版控）；⑤ Inno Setup 編譯。選項：`-SkipAppBuild`（程式沒改，只重包安裝程式）、`-CheckModelsOnline`（連到 Hugging Face 再核對一次 SHA-256 與大小）、`-SignWithReleaseCertificate`（簽章，見下）。
 
-選資料夾式（onedir）而不是單一檔案：單檔每次啟動都要把幾百 MB 解壓到暫存資料夾（慢，也常被防毒軟體攔下）。程式只含 CPU 版的 llama.cpp；Vulkan 版要自己從原始碼環境安裝（`requirements-vulkan.txt`）。
+選資料夾式（onedir）而不是單一檔案：單檔每次啟動都要把幾百 MB 解壓到暫存資料夾（慢，也常被防毒軟體攔下）。
+
+**程式附兩套 llama.cpp 函式庫**，使用者在設定 →「運算裝置」切換 CPU／GPU 不必重裝、也不必重新啟動：
+
+- `llama_cpp\lib_vulkan`：GPU 版（Vulkan）。6 個 DLL（約 57 MB，安裝程式裡壓縮後約 17 MB），來自專案的 Vulkan wheel（`scripts/fetch_vulkan_library.py` 下載，固定網址與 SHA-256，不符就拒絕）。
+- `llama_cpp\lib`：CPU 版。**不是**官方 CPU wheel 的 DLL：實測 0.3.33 的 CPU wheel 的 `ggml-cpu.dll` 含 AVX-512 指令（約 7000 處 zmm 暫存器），在沒有 AVX-512 的 CPU（這台的 i7-13700H、多數 Intel 12～14 代、AMD Zen4 以前）載入模型就「非法指令」（0xC000001D）當掉。所以 CPU 版 = Vulkan wheel 的 `ggml-cpu.dll`、`ggml-base.dll`、`llama.dll`、`mtmd.dll`（只用到 AVX2 與 FMA，CPU 上的速度與 CPU wheel 相同：交錯跑 4 輪，3B 平均 850 對 867 ms）＋ CPU wheel 的 `ggml.dll`（只登錄後端，沒有 Vulkan 的連結）。已實測這個組合載得進、翻得出正確結果。
+- 為什麼要兩套：GPU 版的 `ggml.dll` **直接連結** `ggml-vulkan.dll`，再連結 `vulkan-1.dll`（顯示卡驅動程式附的 Vulkan 載入器）。沒有 `vulkan-1.dll` 的電腦（虛擬機器、遠端桌面、只有基本顯示驅動程式）載入 GPU 版會整個失敗，連 CPU 都不能翻譯。所以程式啟動時（`llama_backend.select_library`，在 `llama_cpp` 第一次被匯入之前）檢查這台電腦載不載得進 `vulkan-1.dll`：載得進就讓 llama-cpp-python 改從 `lib_vulkan` 載入（環境變數 `LLAMA_CPP_LIB_PATH`），載不進就用 `lib`。GPU 版也能只用 CPU 跑，所以選了它之後，CPU 與各顆 GPU 之間切換不用重新啟動。有 Vulkan 載入器、但沒有 GPU 驅動程式時（`VK_LOADER_DRIVERS_DISABLE=*` 模擬）GPU 版會正常回報「沒有 GPU」、改用 CPU。
+- Python 繫結（`llama_cpp\*.py`）在兩個 wheel 裡完全相同（25 個檔案逐一比對過），打包的是建置環境裝的那份；建置環境的 llama-cpp-python 必須是同一版（`requirements-core.txt` 釘 `0.3.33`，Vulkan 索引最新也只到 0.3.33），腳本會逐檔比對繫結，不同就停下來。
+- 建置腳本會檢查打包結果：`lib` 沒有 `ggml-vulkan.dll`、`lib_vulkan` 有，`lib` 的 `ggml-cpu.dll` 就是 GPU 版 wheel 的那份（AVX2 版）。**最上層（`_internal\`）不能有 llama.cpp 的 DLL**：PyInstaller 分析相依時會另外複製一份放在最上層，Windows 載入 DLL 時先找那裡、再找 PATH，會蓋掉程式選好的那一套（實測「只用 CPU 版」時照樣載進 GPU 版的 DLL）；spec 會把這些複製拿掉，腳本也會檢查。
+- 環境變數 `SCREEN_TRANSLATOR_CPU_ONLY=1`：強制只用 CPU 版（顯示卡驅動程式有問題、一啟動就當掉時的退路）。
 
 ## 安裝程式做了什麼
 
@@ -67,6 +76,5 @@ python scripts\serve_models.py                       # 127.0.0.1:8765；--tamper
 ## 已知限制
 
 - **網路**：下載由 Inno Setup 進行，用 Windows 的網路設定（Inno 文件：會自動使用系統的代理設定）。已實測：在這台公司網路的電腦上，不經任何額外設定直接從 `huggingface.co` 下載 0.5B 模型（676 MB）約 84 秒，SHA-256 驗證通過。環境變數 `HTTPS_PROXY` **沒有驗證**會不會被讀，不要依賴它；網路需要代理又沒設進 Windows 時，安裝程式下不了模型，可以事後用 `scripts/fetch_translation_models.py`（認 `HTTPS_PROXY`）下載再放進 `models\translation\`。
-- **安裝版只有 CPU 版 llama.cpp，不能用 GPU**：設定 →「運算裝置」仍會列出這台電腦的顯示卡，但都標成「不能用」並說明原因（要改裝 Vulkan 版，見 `requirements-vulkan.txt`）。要不要把 Vulkan 版放進安裝程式（做成可勾選的元件）還沒決定。
 - 安裝精靈的畫面（元件頁的文字、勾選預設）只用靜默安裝與紀錄檔驗證過，沒有逐頁用眼睛看過。
 - 沒有自動更新：新版要重新下載安裝程式（使用者資料與已下載的模型會保留）。

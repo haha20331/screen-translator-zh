@@ -29,7 +29,6 @@ _VENDOR_MICROSOFT = 0x1414  # Microsoft Basic Render Driver、遠端桌面的虛
 _DXGI_ADAPTER_FLAG_SOFTWARE = 2
 _DISCRETE_MIN_BYTES = 2 * 1024**3  # DXGI 看不出內顯或獨顯：專用顯示卡記憶體 2 GB 以上當獨立顯示卡（只用在 llama.cpp 看不到的顯示卡）
 
-NOTE_CPU_BUILD = "目前安裝的 llama.cpp 是 CPU 版，不能使用 GPU（要改裝 Vulkan 版，見 requirements-vulkan.txt）"
 NOTE_NOT_VISIBLE = "llama.cpp 看不到這顆（驅動程式不支援 Vulkan，或不是能運算的裝置）"
 
 
@@ -187,7 +186,7 @@ def detect_gpus() -> GpuReport:
         else:
             kind = _adapter_kind(adapter)
             memory = adapter["dedicated"] if kind == KIND_DISCRETE else 0
-            entries.append(GpuEntry(adapter["description"], kind, memory, False, NOTE_NOT_VISIBLE if supported else NOTE_CPU_BUILD))
+            entries.append(GpuEntry(adapter["description"], kind, memory, False, NOTE_NOT_VISIBLE if supported else llama_backend.gpu_unavailable_reason()))
     for label, device in remaining:  # 只有 llama.cpp 看得到（不是 Windows、或兩邊的型號寫法差太多）
         discrete = device["type"] == llama_backend.DEVICE_TYPE_GPU
         entries.append(GpuEntry(label, KIND_DISCRETE if discrete else KIND_INTEGRATED, device["total"] if discrete else 0, True))

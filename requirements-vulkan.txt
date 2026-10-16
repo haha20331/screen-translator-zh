@@ -12,9 +12,9 @@
 #
 # Back to the CPU build (the CPU and Vulkan wheels have the same version number, so force the reinstall):
 #
-#     python -m pip install --force-reinstall --no-deps --index-url https://abetlen.github.io/llama-cpp-python/whl/cpu llama-cpp-python==0.3.36
+#     python -m pip install --force-reinstall --no-deps --index-url https://abetlen.github.io/llama-cpp-python/whl/cpu llama-cpp-python==0.3.33
 #
-# The version is pinned to the one that was tested; the Vulkan index can be behind the CPU index.
+# The version is pinned to the one that was tested (the CPU index has newer versions, but the Vulkan index stops at 0.3.33).
 --index-url https://abetlen.github.io/llama-cpp-python/whl/vulkan
 --extra-index-url https://pypi.org/simple
 --only-binary=llama-cpp-python
