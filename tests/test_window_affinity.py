@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QWidget
 
 from utils import window_affinity
-from utils.window_affinity import WDA_EXCLUDEFROMCAPTURE, CaptureExclusionFilter, exclude_from_capture
+from utils.window_affinity import WDA_EXCLUDEFROMCAPTURE, CaptureExclusionFilter, capture_allowed, exclude_from_capture
 
 
 class _FakeUser32:
@@ -92,3 +94,45 @@ def test_filter_never_breaks_window_display_when_the_api_fails():
     finally:
         app.removeEventFilter(capture_filter)
         window.close()
+
+
+# ----------------------------------------------------------------------------- 拍說明圖：讓截圖軟體拍得到
+def _event_filters_of(app):
+    return app.findChildren(CaptureExclusionFilter)
+
+
+def test_the_programs_own_windows_are_excluded_from_capture_by_default(tmp_path, monkeypatch):
+    from app.application import Application
+
+    monkeypatch.delenv("SCREEN_TRANSLATOR_ALLOW_CAPTURE", raising=False)
+    monkeypatch.setenv("SCREEN_TRANSLATOR_CONFIG", str(tmp_path / "config.json"))
+    app = QApplication.instance() or QApplication([])
+    before = len(_event_filters_of(app))
+
+    controller = Application(app)
+
+    assert len(_event_filters_of(app)) == before + 1
+    controller.floating_status.deleteLater()
+
+
+def test_the_environment_switch_lets_screenshot_tools_see_the_programs_windows(tmp_path, monkeypatch):
+    from app.application import Application
+
+    monkeypatch.setenv("SCREEN_TRANSLATOR_ALLOW_CAPTURE", "1")
+    monkeypatch.setenv("SCREEN_TRANSLATOR_CONFIG", str(tmp_path / "config.json"))
+    assert capture_allowed()
+    app = QApplication.instance() or QApplication([])
+    installed = []
+    monkeypatch.setattr(app, "installEventFilter", lambda obj: installed.append(obj))
+
+    controller = Application(app)
+
+    assert not any(isinstance(obj, CaptureExclusionFilter) for obj in installed)  # 沒有裝：視窗不會被設成「不可擷取」
+    controller.floating_status.deleteLater()
+
+
+@pytest.mark.parametrize("value", ["", "0", "true", "yes"])
+def test_only_the_exact_value_one_turns_it_on(monkeypatch, value):
+    monkeypatch.setenv("SCREEN_TRANSLATOR_ALLOW_CAPTURE", value)
+
+    assert not capture_allowed()

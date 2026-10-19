@@ -70,7 +70,7 @@ from ui.window_capture_highlight import WindowCaptureHighlight
 from utils import dpi_utils
 from utils.language_utils import LANGUAGE_CODES, LANGUAGES
 from utils.stability import TextStabilizer
-from utils.window_affinity import CaptureExclusionFilter
+from utils.window_affinity import ALLOW_CAPTURE_ENV, CaptureExclusionFilter, capture_allowed
 from workers.translation_worker import PipelineTask
 
 log = get_logger("application")
@@ -101,7 +101,10 @@ class Application(
         self.qt_app = qt_app
         # 程式自己的視窗（監控框、譯文標籤、主視窗）不可被擷取，否則會被 OCR 讀回去
         self._capture_exclusion = CaptureExclusionFilter(qt_app)
-        qt_app.installEventFilter(self._capture_exclusion)
+        if capture_allowed():
+            log.warning("%s=1：本程式的視窗不排除在擷取之外（拍說明圖用）；辨識可能讀到框線或譯文", ALLOW_CAPTURE_ENV)
+        else:
+            qt_app.installEventFilter(self._capture_exclusion)
         self.config = AppConfig()
         self._init_transcript()
         self.monitor_map: list[dpi_utils.MonitorInfo] = []

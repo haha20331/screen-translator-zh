@@ -23,6 +23,18 @@ WDA_EXCLUDEFROMCAPTURE = 0x11
 _MIN_BUILD = 19041
 
 
+# 做說明用的螢幕截圖／錄影時，要讓截圖軟體也拍得到本程式的視窗：啟動前設定這個環境變數為 1。
+# 只在拍畫面時用：視窗不排除的話，OCR 可能把框線或譯文讀回去（譯文放在框的下方時不會，因為框下方不在辨識範圍內）。
+ALLOW_CAPTURE_ENV = "SCREEN_TRANSLATOR_ALLOW_CAPTURE"
+
+
+def capture_allowed() -> bool:
+    """使用者明確要求不要把本程式的視窗排除在擷取之外（拍說明圖用）。"""
+    import os
+
+    return os.environ.get(ALLOW_CAPTURE_ENV) == "1"
+
+
 def supported() -> bool:
     """目前系統是否支援把視窗排除在擷取之外。"""
     if sys.platform != "win32":
