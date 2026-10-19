@@ -14,6 +14,7 @@ from services.window_capture_service import (
     get_window_title,
     window_capture_available,
 )
+from ui.monitor_region import MIN_FRAME_SIZE
 from ui.motion import CAPTURE_SETTLE, SELECTION_SETTLE
 from ui.selection_overlay import SelectionOverlay
 from ui.window_capture_highlight import WindowCaptureHighlight
@@ -52,6 +53,7 @@ class CaptureMixin:
                 screen.virtualGeometry(),
                 mask_opacity=int(self.config.get("capture.select_mask_opacity", 84)),
                 border_color=self._capture_accent(),
+                native_rect=dpi_utils.union_rects([monitor.physical for monitor in self.monitor_map]) if self.monitor_map else None,
             )
             self.selection.selection_done.connect(self._on_selection_done)
             self.selection.cancelled.connect(self._on_selection_cancelled)
@@ -68,7 +70,43 @@ class CaptureMixin:
                 error_message=str(exc),
             )
 
+    def _selection_to_physical(
+        self, logical_bbox: tuple, native_bbox: tuple[int, int, int, int] | None
+    ) -> tuple[int, int, int, int] | None:
+        """框選結果換成要擷取的物理像素範圍。
+
+        優先用「按下、放開那一刻游標的系統座標」（native_bbox）：它就是使用者在螢幕上拉出來的位置，
+        不受 Qt 邏輯座標換算影響（多螢幕、縮放比例不同的電腦上，那個換算會讓範圍偏掉）。
+        沒有（非 Windows）或不能用（不在任何螢幕上、跨了有空隙的螢幕）才用 Qt 的邏輯座標換算。
+        不能擷取時已經處理好（中止並告訴使用者），回傳 None。"""
+        qt_parts = dpi_utils.logical_rect_to_physical_parts(logical_bbox, self.monitor_map)
+        qt_physical = dpi_utils.union_rects(qt_parts) if qt_parts and dpi_utils.parts_form_rectangle(qt_parts) else None
+        if native_bbox is not None:
+            native_parts = [
+                inter
+                for monitor in self.monitor_map
+                if (inter := dpi_utils.intersect(native_bbox, monitor.physical)) is not None
+            ]
+            if native_parts and dpi_utils.parts_form_rectangle(native_parts):
+                physical = dpi_utils.union_rects(native_parts)
+                if qt_physical is not None and max(abs(a - b) for a, b in zip(physical, qt_physical)) > 2:
+                    log.warning("框選範圍：系統座標 %s 與 Qt 換算的 %s 不同，使用系統座標", physical, qt_physical)
+                return physical
+        if not qt_parts:
+            self._abort_capture("框選區域無效，已取消")
+            return None
+        if qt_physical is None:
+            self._abort_capture(
+                "框選跨越了不同縮放比例的螢幕",
+                failed=True,
+                error_title="請在單個螢幕內框選",
+                error_message="跨不同縮放比例的顯示器會產生非矩形畫素區域，請在一個螢幕內完成框選。",
+            )
+            return None
+        return qt_physical
+
     def _on_selection_done(self, logical_bbox: object) -> None:
+        native_bbox = getattr(self.selection, "native_bbox", None)
         self._dispose_selection()
         if not isinstance(logical_bbox, tuple) or len(logical_bbox) != 4:
             self._abort_capture(
@@ -78,22 +116,11 @@ class CaptureMixin:
                 error_message="收到的框選座標格式無效，請重試。",
             )
             return
-        parts = dpi_utils.logical_rect_to_physical_parts(logical_bbox, self.monitor_map)
-        if not parts:
-            self._abort_capture("框選區域太小，已取消")
+        physical = self._selection_to_physical(logical_bbox, native_bbox)
+        if physical is None:
             return
-        if not dpi_utils.parts_form_rectangle(parts):
-            self._abort_capture(
-                "框選跨越了不同縮放比例的螢幕",
-                failed=True,
-                error_title="請在單個螢幕內框選",
-                error_message="跨不同縮放比例的顯示器會產生非矩形畫素區域，請在一個螢幕內完成框選。",
-            )
-            return
-        physical = dpi_utils.union_rects(parts)
-        if physical[2] - physical[0] < 4 or physical[3] - physical[1] < 4:
-            self._abort_capture("框選區域太小，已取消")
-            return
+        # 拉得比最小尺寸還小（甚至只是點一下）也要建出監視框：放大到最小尺寸，之後讓使用者自己調整位置與大小
+        physical = dpi_utils.ensure_min_size(physical, self.monitor_map, MIN_FRAME_SIZE)
         self._schedule_capture("region", bbox=physical, delay_ms=SELECTION_SETTLE)
 
     def _on_selection_cancelled(self) -> None:

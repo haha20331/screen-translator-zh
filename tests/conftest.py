@@ -56,6 +56,28 @@ def _really_delete_widgets_after_each_test():
 
 
 @pytest.fixture(autouse=True)
+def _remove_leaked_capture_filters_after_each_test():
+    """每個 ``Application(qapp)`` 都會在整個程式上裝一個「新視窗排除擷取」的事件過濾器，測試結束時沒人拿掉。
+
+    過濾器是 Python 寫的，程式裡每一個事件（滑鼠、繪圖、計時）都要先過一遍所有過濾器：越積越多，
+    後面的測試就越來越慢，時間敏感的動畫測試（例如設定頁關閉動畫要停在 10%～90% 之間）因此偶爾錯過那個區間。
+    """
+    yield
+    try:
+        from PySide6.QtCore import QCoreApplication
+    except ImportError:  # 沒裝 PySide6 的環境（純邏輯測試）
+        return
+    app = QCoreApplication.instance()
+    if app is None:
+        return
+    from utils.window_affinity import CaptureExclusionFilter
+
+    for leaked in app.findChildren(CaptureExclusionFilter):
+        app.removeEventFilter(leaked)
+        leaked.deleteLater()
+
+
+@pytest.fixture(autouse=True)
 def _no_real_gpu_scan(monkeypatch):
     """設定頁開啟時會在背景偵測 GPU（DXGI 與 Vulkan 初始化，這台電腦第一次要半秒以上）；測試一律用固定的結果，
     不碰真正的顯示卡，結果才不會因電腦而異。要測偵測本身的測試在模組載入時就先拿到真正的函式。"""

@@ -60,7 +60,7 @@ def _leave(widget):
     QApplication.sendEvent(widget, QEvent(QEvent.Type.Leave))
 
 
-def _mouse(widget, kind, x=50, y=50):
+def _mouse(widget, kind, x=20, y=20):  # (20, 20) 在左上角的移動符號裡面：框的中間不收滑鼠
     point = QPointF(x, y)
     button = Qt.MouseButton.LeftButton if kind != QEvent.Type.MouseMove else Qt.MouseButton.NoButton
     QApplication.sendEvent(widget, QMouseEvent(kind, point, point, button, button, Qt.KeyboardModifier.NoModifier))

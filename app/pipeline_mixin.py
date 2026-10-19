@@ -160,6 +160,21 @@ class PipelineMixin:
             self._auto_start_monitor()
             self._transcript_finish_single_shot()  # 沒有接著監控：這一句的結束時間不可知，直接寫出
             return
+        if self._empty_result_keeps_frame():
+            # 框選的範圍裡沒有可翻譯的文字（字幕還沒出現、框到空白處）：照樣建出監視框，讓使用者先調整位置與大小，字幕出現時自動翻譯
+            session = self._capture_session
+            self._capture_session = None
+            if self.window is not None and session is not None:
+                self.window.finish_capture(session.mode)
+            self._set_busy(False)
+            self.floating_status.set_text("已建立監視框")
+            self.floating_status.hide_fade(delay_ms=STATUS_HOLD)
+            self._auto_start_monitor()
+            if self._monitor_active:
+                self.set_status("沒有識別到文字，已建立監視框：先調整位置與大小，字幕出現時會自動翻譯")
+            else:  # 監控沒有開成：照一般的失敗處理
+                self.set_status(self._pipeline_error)
+            return
         message = self._pipeline_error or "處理已取消"
         show_dialog = bool(self._pipeline_error)
         self._abort_capture(
@@ -167,6 +182,22 @@ class PipelineMixin:
             failed=show_dialog,
             error_title="處理失敗" if show_dialog else "",
             error_message=message if show_dialog else "",
+        )
+
+    def _empty_result_keeps_frame(self) -> bool:
+        """這次框選沒有識別到可翻譯的文字，但還是要把監視框建出來嗎？
+
+        只有框選區域（才有框）、結果是「沒有文字」（不是翻譯模型或 OCR 出錯、也不是被取消），而且設定允許擷取後自動進入即時監控。"""
+        session = self._capture_session
+        return bool(
+            session is not None
+            and session.mode == "region"
+            and (self._pipeline_error or "").startswith("沒有識別到")
+            and self._last_capture is not None
+            and self.config.get("monitor.enabled", True)
+            and self.config.get("monitor.auto_start", True)
+            and not self._monitor_active
+            and not self._shutting_down
         )
 
     def _cancel_worker(self) -> bool:

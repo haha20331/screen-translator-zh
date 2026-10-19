@@ -326,3 +326,27 @@ def clamp_bbox_to_monitor(
     if inter is None:
         return monitor.physical
     return inter
+
+
+def ensure_min_size(
+    bbox: tuple[int, int, int, int],
+    monitors: list[MonitorInfo],
+    min_logical: tuple[int, int],
+) -> tuple[int, int, int, int]:
+    """物理矩形太小（拉出來的框比最小尺寸小）時，以中心為準放大到最小尺寸，並留在中心所在的螢幕內。
+
+    ``min_logical`` 是邏輯像素的最小寬高；換成物理像素要乘上該螢幕的縮放倍率。"""
+    if not monitors:
+        return bbox
+    center_x = (bbox[0] + bbox[2]) // 2
+    center_y = (bbox[1] + bbox[3]) // 2
+    monitor = monitor_for_physical_point(center_x, center_y, monitors)
+    min_width = max(1, int(-(-min_logical[0] * monitor.dpr // 1)))
+    min_height = max(1, int(-(-min_logical[1] * monitor.dpr // 1)))
+    width = max(bbox[2] - bbox[0], min_width)
+    height = max(bbox[3] - bbox[1], min_height)
+    left, top = center_x - width // 2, center_y - height // 2
+    m_left, m_top, m_right, m_bottom = monitor.physical
+    left = max(m_left, min(left, m_right - width))
+    top = max(m_top, min(top, m_bottom - height))
+    return (left, top, left + width, top + height)

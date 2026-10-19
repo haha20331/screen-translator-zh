@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt, QTimer, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QCursor, QPainter, QPen
+from PySide6.QtGui import QColor, QCursor, QPainter, QPen, QRegion
 from PySide6.QtWidgets import QWidget
 
+from app.logger import get_logger
 from ui.motion import motion_duration
-from utils import dpi_utils
+from utils import dpi_utils, native_window
+
+log = get_logger("monitor_region")
 
 # 框沒被動到（滑鼠不在框內）超過這麼久，就變得更透明，免得一直擋在字幕旁邊；滑鼠移進框內就恢復
 IDLE_DIM_MS = 2000
@@ -16,9 +19,18 @@ DIM_OPACITY = 0.3  # 變透明之後的整體不透明度（框線還看得到�
 CURSOR_POLL_MS = 100
 # 拖曳、縮放時，通知譯文面板跟著框走的最短間隔：滑鼠事件可以一秒來好幾百個，面板不必每個都重排一次
 REGION_UPDATE_MS = 16
-# 框裡面的填色透明度（0～255）。肉眼看是全透明；不能是 0：Windows 對「逐點透明度」是 0 的像素
-# 讓滑鼠直接穿過去，框的裡面就抓不住了（拖曳移動框要靠抓裡面），1 的話看不出來、滑鼠還抓得到
-INSIDE_ALPHA = 1
+# 框的最小尺寸（邏輯像素）：再小的話兩個移動符號就疊在一起了。拉出來的框比這個小，也照這個大小先建出來
+MIN_FRAME_SIZE = (64, 40)
+# 框是「中空」的：只有邊框那一圈（縮放用）與左上、右下兩個移動符號收得到滑鼠，中間整片讓滑鼠穿過去，
+# 點得到下面真正的畫面。中間靠視窗的形狀（setMask）排除在視窗之外。
+# 另外：Windows 的分層視窗（透明背景）對「逐點透明度是 0」的像素也讓滑鼠穿過去，所以邊框那一圈（9 px 寬，實際畫出來的線只有
+# 2 px）要塗上透明度 1/255 的底色（肉眼看不出來），整圈才收得到滑鼠；實測沒有它，邊框中間的縮放把手會穿透
+BAND = 9  # 邊框那一圈的寬度，也是縮放的把手範圍
+RING_ALPHA = 1
+GRIP = 18  # 移動符號的邊長
+GRIP_INSET = BAND + 2  # 移動符號離框外緣的距離（在邊框那一圈的裡面）
+# 剛顯示出來的前一秒左右，每隔這些毫秒檢查一次視窗實際的位置，和要求的不同就用系統座標校正（見 _settle_position）
+SETTLE_AT_MS = (0, 40, 120, 300, 700, 1400)
 
 
 class MonitorRegionSelector(QWidget):
@@ -29,7 +41,7 @@ class MonitorRegionSelector(QWidget):
     # 双击停止监控
     stop_requested = Signal()
 
-    _HANDLE = 9
+    _HANDLE = BAND
 
     def __init__(
         self,
@@ -50,6 +62,7 @@ class MonitorRegionSelector(QWidget):
         self._highlight_color = QColor(accent)
         self._dragging = False
         self._resize_dir = 0
+        self._settled = False  # 使用者已經動過框（或位置已經確認過）：不再自動校正位置
         self._press_global = QPoint()  # 按下去那一刻游標的螢幕座標：拖曳量都用螢幕座標算（見 mouseMoveEvent）
         self._base_geometry = self._physical_to_geometry(physical_bbox)
         self._geometry = QRect(self._base_geometry)
@@ -63,10 +76,10 @@ class MonitorRegionSelector(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setMouseTracking(True)
-        self.setCursor(Qt.CursorShape.SizeAllCursor)
         # 操作說明用滑鼠停留時的提示，不畫在框內：框內是被擷取、被辨識的區域，常駐的字會擋住字幕
-        self.setToolTip("拖曳調整位置與大小 · 雙擊停止即時監控")
+        self.setToolTip("按住左上或右下角的移動符號拖曳來移動 · 拖邊框與四個角來縮放 · 雙擊邊框或符號停止即時監控")
         self.setGeometry(self._geometry)
+        self._update_shape()
 
         self._pulse_t = 0.0
         self._pulse = QVariantAnimation(self)
@@ -138,10 +151,51 @@ class MonitorRegionSelector(QWidget):
         elif not self._dimmed and not self._idle_timer.isActive():
             self._arm_idle()
 
+    # --------------------------------------------------------- 位置：用系統座標對準
+    def _wanted_native(self) -> tuple[int, int, int, int]:
+        return tuple(int(value) for value in self._physical)  # type: ignore[return-value]
+
+    def _settle_position(self) -> None:
+        """框剛顯示的前一秒：視窗實際的位置（系統座標，物理像素）和要求的不同，就直接用系統座標放過去。
+
+        Qt 把「邏輯座標」換成螢幕上的位置時，用的是視窗「當時所在」螢幕的縮放倍率；第一次顯示的視窗還沒有確定在哪個螢幕，
+        在多螢幕、縮放比例不同的電腦上會偏掉（之後用滑鼠拖才正常，因為那時視窗的螢幕已經確定了）。
+        截圖用的是物理像素，所以框的位置直接以物理像素為準；位置本來就對（單螢幕、100% 縮放）時什麼都不做。"""
+        if self._settled or self._dragging or not self.isVisible() or not native_window.available():
+            return
+        hwnd = int(self.winId())
+        wanted = self._wanted_native()
+        actual = native_window.window_rect(hwnd)
+        if actual is None:
+            return
+        if max(abs(a - b) for a, b in zip(actual, wanted)) <= 1:
+            return
+        log.warning("監視框的位置與要求的不同（要求 %s，實際 %s），用系統座標校正", wanted, actual)
+        native_window.set_window_rect(hwnd, wanted)
+
+    def _schedule_settling(self) -> None:
+        self._settled = False
+        for delay in SETTLE_AT_MS:
+            QTimer.singleShot(delay, self._settle_position)
+
+    def _current_physical(self):
+        """框現在在螢幕上的範圍（物理像素）：能問系統就問系統（就是使用者看到的位置），不行才用 Qt 的座標換算。"""
+        if self.isVisible() and native_window.available():
+            actual = native_window.window_rect(int(self.winId()))
+            if actual is not None:
+                return actual
+        return self._geometry_to_physical(self._geometry)
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._arm_idle()
         self._poll_timer.start()
+        log.info(
+            "監視框：要求的位置 %s，Qt 邏輯座標 %s，螢幕 %s",
+            self._wanted_native(), self.geometry().getRect(),
+            [(m.physical, m.logical_origin, m.dpr) for m in self._monitor_map],
+        )
+        self._schedule_settling()
 
     def hideEvent(self, event) -> None:
         super().hideEvent(event)
@@ -175,9 +229,33 @@ class MonitorRegionSelector(QWidget):
         self._physical = tuple(physical)
         self._geometry = self._physical_to_geometry(physical)
         self.setGeometry(self._geometry)
+        if self.isVisible():
+            self._schedule_settling()
 
-    # --------------------------------------------------------- hit testing
+    # --------------------------------------------------------- 形狀與命中測試
+    def _grip_rects(self) -> tuple[QRect, QRect]:
+        """左上、右下兩個移動符號的位置（視窗內座標）。"""
+        top_left = QRect(GRIP_INSET, GRIP_INSET, GRIP, GRIP)
+        bottom_right = QRect(self.width() - GRIP_INSET - GRIP, self.height() - GRIP_INSET - GRIP, GRIP, GRIP)
+        return top_left, bottom_right
+
+    def _shape(self) -> QRegion:
+        """收得到滑鼠的範圍：邊框那一圈加上兩個移動符號；其餘（框的中間）不屬於這個視窗，滑鼠直接穿到下面。"""
+        w, h = self.width(), self.height()
+        ring = QRegion(0, 0, w, h).subtracted(QRegion(BAND, BAND, max(0, w - 2 * BAND), max(0, h - 2 * BAND)))
+        for grip in self._grip_rects():
+            ring = ring.united(QRegion(grip))
+        return ring
+
+    def _update_shape(self) -> None:
+        self.setMask(self._shape())
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_shape()
+
     def _hit_test(self, pos: QPoint) -> int:
+        """游標在哪：1～8 = 邊框的八個縮放位置，0 = 移動符號，-1 = 都不是（框的中間，實際上收不到滑鼠）。"""
         h = self._HANDLE
         x, y = pos.x(), pos.y()
         w, ht = self.width(), self.height()
@@ -201,16 +279,19 @@ class MonitorRegionSelector(QWidget):
             return 7
         if bottom:
             return 8
-        return 0
+        if any(grip.contains(pos) for grip in self._grip_rects()):
+            return 0
+        return -1
 
     def _apply_cursor(self, pos: QPoint) -> None:
         d = self._hit_test(pos)
         cursors = {
+            -1: Qt.CursorShape.ArrowCursor,
             0: Qt.CursorShape.SizeAllCursor,
             1: Qt.CursorShape.SizeFDiagCursor,
             2: Qt.CursorShape.SizeBDiagCursor,
-            3: Qt.CursorShape.SizeFDiagCursor,
-            4: Qt.CursorShape.SizeBDiagCursor,
+            3: Qt.CursorShape.SizeBDiagCursor,
+            4: Qt.CursorShape.SizeFDiagCursor,
             5: Qt.CursorShape.SizeHorCursor,
             6: Qt.CursorShape.SizeHorCursor,
             7: Qt.CursorShape.SizeVerCursor,
@@ -222,10 +303,15 @@ class MonitorRegionSelector(QWidget):
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
             return
+        direction = self._hit_test(event.position().toPoint())
+        if direction < 0:
+            return  # 框的中間不處理（它本來就收不到滑鼠，這裡只是保險）
         self._dragging = True
+        self._settled = True  # 使用者開始動框了，不要再自動校正位置
         self._touch()
-        self._resize_dir = self._hit_test(event.position().toPoint())
+        self._resize_dir = direction
         self._press_global = event.globalPosition().toPoint()
+        self._geometry = self.geometry()  # 以視窗現在實際的位置為準（校正位置之後 Qt 的記錄可能還沒更新）
         self._base_geometry = QRect(self._geometry)
         self._pulse.stop()
 
@@ -241,18 +327,19 @@ class MonitorRegionSelector(QWidget):
         delta = event.globalPosition().toPoint() - self._press_global
         g = QRect(self._base_geometry)
         d = self._resize_dir
-        min_w, min_h = 32, 32
+        min_w, min_h = MIN_FRAME_SIZE
         if d == 0:
             g.translate(delta)
         else:
+            # QRect 的 right()／bottom() 是最後一個像素（寬度 = right - left + 1），所以最小寬度要多算一個
             if d in (1, 3, 5):
-                g.setLeft(min(g.left() + delta.x(), g.right() - min_w))
+                g.setLeft(min(g.left() + delta.x(), g.right() - min_w + 1))
             if d in (2, 4, 6):
-                g.setRight(max(g.right() + delta.x(), g.left() + min_w))
+                g.setRight(max(g.right() + delta.x(), g.left() + min_w - 1))
             if d in (1, 2, 7):
-                g.setTop(min(g.top() + delta.y(), g.bottom() - min_h))
+                g.setTop(min(g.top() + delta.y(), g.bottom() - min_h + 1))
             if d in (3, 4, 8):
-                g.setBottom(max(g.bottom() + delta.y(), g.top() + min_h))
+                g.setBottom(max(g.bottom() + delta.y(), g.top() + min_h - 1))
         if g == self._geometry:
             return
         self._geometry = g
@@ -261,7 +348,7 @@ class MonitorRegionSelector(QWidget):
             self._update_timer.start()
 
     def _flush_region_changed(self) -> None:
-        physical = self._geometry_to_physical(self._geometry)
+        physical = self._current_physical()
         if physical is not None:
             self._physical = physical
             self.region_changed.emit(physical)
@@ -272,7 +359,7 @@ class MonitorRegionSelector(QWidget):
         self._dragging = False
         self._resize_dir = 0
         self._update_timer.stop()
-        physical = self._geometry_to_physical(self._geometry)
+        physical = self._current_physical()
         if physical is not None:
             self._physical = physical
             self.region_changed.emit(physical)  # 排隊中還沒送的最後一次更新，先送出去再說「定案」
@@ -294,11 +381,13 @@ class MonitorRegionSelector(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
-
-        # 框裡面不上色（INSIDE_ALPHA 的說明見檔案開頭）；框線與四個角的把手維持原樣
-        fill = QColor(self._accent)
-        fill.setAlpha(INSIDE_ALPHA)
-        painter.fillRect(self.rect(), fill)
+        # 框裡面不畫任何東西（全透明，而且收不到滑鼠，見 _shape）；只畫框線、四個角的把手與兩個移動符號。
+        # 底色只塗在 _shape 圈出來的範圍（邊框那一圈與移動符號）：透明度 RING_ALPHA，肉眼看不出來，只是讓這些地方收得到滑鼠
+        painter.setClipRegion(self._shape())
+        ring = QColor(self._accent)
+        ring.setAlpha(RING_ALPHA)
+        painter.fillRect(self.rect(), ring)
+        painter.setClipping(False)
 
         pulse = 0.5 + 0.5 * (1.0 - abs(1.0 - 2.0 * self._pulse_t))
         border = QColor(self._accent)
@@ -319,3 +408,25 @@ class MonitorRegionSelector(QWidget):
             (w - hh // 2, h - hh // 2),
         ):
             painter.drawRoundedRect(cx - 3, cy - 3, 6, 6, 2, 2)
+
+        for grip in self._grip_rects():
+            self._paint_grip(painter, grip)
+
+    def _paint_grip(self, painter: QPainter, grip: QRect) -> None:
+        """移動符號：主題色的小方塊，中間一個四個方向的箭頭（按住它拖曳來移動整個框）。"""
+        chip = QColor(self._accent)
+        chip.setAlpha(225)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(chip)
+        painter.drawRoundedRect(grip, 5, 5)
+        pen = QPen(QColor(255, 255, 255, 245), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        cx, cy = grip.center().x() + 0.5, grip.center().y() + 0.5
+        reach, tip = GRIP / 2 - 3.5, 2.6
+        painter.drawLine(cx - reach, cy, cx + reach, cy)
+        painter.drawLine(cx, cy - reach, cx, cy + reach)
+        for sx, sy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            tx, ty = cx + sx * reach, cy + sy * reach
+            painter.drawLine(tx, ty, tx - sx * tip + sy * tip, ty - sy * tip + sx * tip)
+            painter.drawLine(tx, ty, tx - sx * tip - sy * tip, ty - sy * tip - sx * tip)

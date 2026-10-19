@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, Qt, QVariantAnimation, Signal
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import QWidget
 
@@ -15,6 +15,7 @@ from ui.motion import (
     continuous_motion_enabled,
     motion_duration,
 )
+from utils import native_window
 
 _ACCENT = "#2878E8"
 _SURFACE = "#FFFEFC"
@@ -33,8 +34,14 @@ class SelectionOverlay(QWidget):
         mask_opacity: int = 100,
         border_color: str = "#2878E8",
         parent: QWidget | None = None,
+        native_rect: tuple[int, int, int, int] | None = None,
     ) -> None:
+        """``geometry``：整個虛擬桌面的邏輯範圍（Qt 的座標）。``native_rect``：同一塊範圍的系統座標（物理像素，所有螢幕的聯集）。
+
+        多螢幕、縮放比例不同時，視窗用 Qt 的邏輯座標放，實際蓋住的範圍會比螢幕小（例如筆電的 200% 螢幕下半部蓋不到，
+        點下去的是下面的視窗），所以顯示之後直接用系統座標把視窗鋪滿所有螢幕。"""
         super().__init__(parent)
+        self._native_rect = native_rect
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -56,6 +63,11 @@ class SelectionOverlay(QWidget):
         self._border = QColor(_ACCENT)
         self.set_accent(border_color)
 
+        # 按下去、放開那一刻游標的系統座標（物理像素）：框選的範圍以它為準，不經過 Qt 的邏輯座標換算
+        # （多螢幕、縮放比例不同時，Qt 的換算會讓擷取範圍與監視框偏掉）。取不到（非 Windows）時是 None，照舊用 Qt 的座標
+        self._press_native: tuple[int, int] | None = None
+        self._current_native: tuple[int, int] | None = None
+        self.native_bbox: tuple[int, int, int, int] | None = None
         self._finishing = False
         self._signal_emitted = False
         self._pending_bbox: tuple[int, int, int, int] | None = None
@@ -81,8 +93,18 @@ class SelectionOverlay(QWidget):
         self._esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self._esc.activated.connect(self.cancel)
 
+    def _cover_desktop(self) -> None:
+        """用系統座標把視窗鋪滿所有螢幕（見 __init__）；位置已經對了就不動。"""
+        if self._native_rect is None or self._signal_emitted or not self.isVisible() or not native_window.available():
+            return
+        hwnd = int(self.winId())
+        if native_window.window_rect(hwnd) != tuple(self._native_rect):
+            native_window.set_window_rect(hwnd, tuple(self._native_rect))
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        for delay in (0, 40, 120, 300):
+            QTimer.singleShot(delay, self._cover_desktop)
         self._entrance.stop()
         duration = motion_duration(FAST, large_surface=True)
         if duration == 0:
@@ -118,6 +140,7 @@ class SelectionOverlay(QWidget):
         if self._finishing:
             return
         if event.button() == Qt.MouseButton.LeftButton:
+            self._press_native = native_window.cursor_position()
             self._origin = event.position().toPoint()
             self._current = self._origin
             self._cursor = self._origin
@@ -133,6 +156,7 @@ class SelectionOverlay(QWidget):
         self._cursor = event.position().toPoint()
         if self._origin is not None:
             self._current = self._cursor
+            self._current_native = native_window.cursor_position()
         self.update()
 
     def mouseReleaseEvent(self, event) -> None:
@@ -144,14 +168,17 @@ class SelectionOverlay(QWidget):
         self._current = event.position().toPoint()
         self._cursor = self._current
         rect = self._normalized(self._origin, self._current)
-        if rect.width() < 4 or rect.height() < 4:
-            self._begin_finish(cancelled=True)
-            return
+        end_native = native_window.cursor_position()
+        if self._press_native is not None and end_native is not None:
+            left_n, right_n = sorted((self._press_native[0], end_native[0]))
+            top_n, bottom_n = sorted((self._press_native[1], end_native[1]))
+            self.native_bbox = (left_n, top_n, max(right_n, left_n + 1), max(bottom_n, top_n + 1))
+        # 拉出來的框很小（甚至只是點一下）也照樣交出去：之後由程式放大到最小尺寸、建出監視框，讓使用者自己再調整
         left = self._virtual_origin.x() + rect.x()
         top = self._virtual_origin.y() + rect.y()
         self._begin_finish(
             cancelled=False,
-            bbox=(left, top, left + rect.width(), top + rect.height()),
+            bbox=(left, top, left + max(1, rect.width()), top + max(1, rect.height())),
         )
 
     def closeEvent(self, event) -> None:
@@ -282,7 +309,7 @@ class SelectionOverlay(QWidget):
         font.setPixelSize(12)
         font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(font)
-        label = f"{rect.width()} × {rect.height()}"
+        label = self._size_text(rect)
         metrics = painter.fontMetrics()
         width = metrics.horizontalAdvance(label) + 38
         height = 28
@@ -303,6 +330,12 @@ class SelectionOverlay(QWidget):
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             label,
         )
+
+    def _size_text(self, rect: QRect) -> str:
+        """框的大小：能問系統就用實際的像素數（也就是會擷取的大小），不然用 Qt 的邏輯像素。"""
+        if self._press_native is not None and self._current_native is not None:
+            return f"{abs(self._current_native[0] - self._press_native[0])} × {abs(self._current_native[1] - self._press_native[1])}"
+        return f"{rect.width()} × {rect.height()}"
 
     @staticmethod
     def _normalized(a: QPoint, b: QPoint) -> QRect:
