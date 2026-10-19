@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt, QTimer, QVariantAnimation, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    Qt,
+    QTimer,
+    QVariantAnimation,
+    Signal,
+)
 from PySide6.QtGui import QColor, QCursor, QPainter, QPen, QRegion
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QToolTip, QWidget
 
 from app.logger import get_logger
 from ui.motion import motion_duration
@@ -29,6 +39,8 @@ MIN_FRAME_SIZE = (64, 40)
 DRAG_GRIPS = "grips"
 DRAG_CENTER = "center"
 DRAG_MODES = (DRAG_GRIPS, DRAG_CENTER)
+# 游標停在可以拖曳移動的地方（移動符號；「拖框的中央」模式則是框的中央）時另外顯示的提示，其餘地方顯示整體的操作說明
+MOVE_TIP = "拖曳移動，雙擊關閉"
 BAND = 9  # 邊框那一圈的寬度，也是縮放的把手範圍
 RING_ALPHA = 1
 GRIP = 18  # 移動符號的邊長
@@ -82,6 +94,8 @@ class MonitorRegionSelector(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        # 這個視窗從來不是作用中的視窗（不搶焦點）：Qt 預設只替作用中的視窗顯示提示，不加這個，滑鼠停在框上什麼提示都不會出現
+        self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips)
         self.setMouseTracking(True)
         # 操作說明用滑鼠停留時的提示，不畫在框內：框內是被擷取、被辨識的區域，常駐的字會擋住字幕
         self._update_tooltip()
@@ -284,6 +298,25 @@ class MonitorRegionSelector(QWidget):
             self.setToolTip("按住框的中央拖曳來移動 · 拖邊框與四個角來縮放 · 雙擊停止即時監控")
         else:
             self.setToolTip("按住左上或右下角的移動符號拖曳來移動 · 拖邊框與四個角來縮放 · 雙擊邊框或符號停止即時監控")
+
+    def _tooltip_at(self, pos: QPoint) -> tuple[str, QRect]:
+        """游標在 pos（視窗內座標）時要顯示的提示，以及這段提示管到哪個範圍（離開那個範圍就換一則）。"""
+        if self._hit_test(pos) == 0:
+            for grip in self._grip_rects():
+                if grip.contains(pos):
+                    return MOVE_TIP, grip
+            return MOVE_TIP, self.rect().adjusted(BAND, BAND, -BAND, -BAND)  # 「拖框的中央」模式：框的中央
+        return self.toolTip(), QRect()
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.Type.ToolTip:
+            text, area = self._tooltip_at(event.pos())
+            if text:
+                QToolTip.showText(event.globalPos(), text, self, area)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(event)
 
     def drag_mode(self) -> str:
         return self._drag_mode

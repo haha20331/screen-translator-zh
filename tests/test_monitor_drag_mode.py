@@ -231,3 +231,49 @@ def test_applying_the_settings_without_a_frame_is_harmless(controller):
     controller._monitor_region_selector = None
 
     controller._apply_monitor_frame_settings()
+
+
+# ----------------------------------------------------------------------------- 游標停在可以拖曳的地方：另外顯示「拖曳移動，雙擊關閉」
+def _help_event(widget, local: QPoint):
+    from PySide6.QtGui import QHelpEvent
+
+    return QHelpEvent(QEvent.Type.ToolTip, local, widget.mapToGlobal(local))
+
+
+def test_hovering_a_move_grip_shows_its_own_hint(grip_frame):
+    for grip in grip_frame._grip_rects():
+        text, area = grip_frame._tooltip_at(grip.center())
+
+        assert text == monitor_region.MOVE_TIP == "拖曳移動，雙擊關閉"
+        assert area == grip  # 離開符號就換一則
+
+
+def test_the_rest_of_the_frame_keeps_the_general_hint(grip_frame):
+    text, area = grip_frame._tooltip_at(QPoint(1, grip_frame.height() // 2))  # 邊框
+
+    assert text == grip_frame.toolTip() and text != monitor_region.MOVE_TIP
+    assert "縮放" in text and area.isNull()
+
+
+def test_in_center_mode_the_middle_shows_the_move_hint_and_the_border_the_general_one(center_frame):
+    middle = QPoint(center_frame.width() // 2, center_frame.height() // 2)
+
+    assert center_frame._tooltip_at(middle)[0] == monitor_region.MOVE_TIP
+    assert center_frame._tooltip_at(QPoint(1, center_frame.height() // 2))[0] == center_frame.toolTip()
+
+
+def test_a_tooltip_event_over_a_grip_really_displays_the_hint(qapp, grip_frame):
+    from PySide6.QtWidgets import QToolTip
+
+    grip = grip_frame._grip_rects()[0]
+    QApplication.sendEvent(grip_frame, _help_event(grip_frame, grip.center()))
+
+    assert QToolTip.isVisible() and QToolTip.text() == "拖曳移動，雙擊關閉"
+    border = QPoint(1, grip_frame.height() // 2)
+    QApplication.sendEvent(grip_frame, _help_event(grip_frame, border))
+    assert QToolTip.text() == grip_frame.toolTip()
+    QToolTip.hideText()
+
+
+def test_the_frame_shows_tooltips_even_though_it_is_never_the_active_window(grip_frame):
+    assert grip_frame.testAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips)  # 沒有這個，真實 Windows 上完全不會出現提示
