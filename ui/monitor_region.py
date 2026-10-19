@@ -25,6 +25,10 @@ MIN_FRAME_SIZE = (64, 40)
 # 點得到下面真正的畫面。中間靠視窗的形狀（setMask）排除在視窗之外。
 # 另外：Windows 的分層視窗（透明背景）對「逐點透明度是 0」的像素也讓滑鼠穿過去，所以邊框那一圈（9 px 寬，實際畫出來的線只有
 # 2 px）要塗上透明度 1/255 的底色（肉眼看不出來），整圈才收得到滑鼠；實測沒有它，邊框中間的縮放把手會穿透
+# 移動方式（設定 → 即時監控）：GRIPS = 拖左上、右下兩個移動符號（預設，中間穿透）；CENTER = 整個框的中央都能拖，但中間不再穿透
+DRAG_GRIPS = "grips"
+DRAG_CENTER = "center"
+DRAG_MODES = (DRAG_GRIPS, DRAG_CENTER)
 BAND = 9  # 邊框那一圈的寬度，也是縮放的把手範圍
 RING_ALPHA = 1
 GRIP = 18  # 移動符號的邊長
@@ -52,8 +56,10 @@ class MonitorRegionSelector(QWidget):
         idle_ms: int = IDLE_DIM_MS,
         dim_opacity: float = DIM_OPACITY,
         poll_ms: int = CURSOR_POLL_MS,
+        drag_mode: str = DRAG_GRIPS,
     ) -> None:
         super().__init__(parent)
+        self._drag_mode = drag_mode if drag_mode in DRAG_MODES else DRAG_GRIPS
         self._idle_ms = max(0, int(idle_ms))  # 0 = 不變透明
         self._dim_opacity = max(0.15, min(1.0, float(dim_opacity)))  # 太低的話框內填色的透明度四捨五入成 0，滑鼠會穿過框、移進來也收不到
         self._dimmed = False
@@ -78,7 +84,7 @@ class MonitorRegionSelector(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setMouseTracking(True)
         # 操作說明用滑鼠停留時的提示，不畫在框內：框內是被擷取、被辨識的區域，常駐的字會擋住字幕
-        self.setToolTip("按住左上或右下角的移動符號拖曳來移動 · 拖邊框與四個角來縮放 · 雙擊邊框或符號停止即時監控")
+        self._update_tooltip()
         self.setGeometry(self._geometry)
         self._update_shape()
 
@@ -257,15 +263,40 @@ class MonitorRegionSelector(QWidget):
         return top_left, bottom_right
 
     def _shape(self) -> QRegion:
-        """收得到滑鼠的範圍：邊框那一圈加上兩個移動符號；其餘（框的中間）不屬於這個視窗，滑鼠直接穿到下面。"""
+        """收得到滑鼠的範圍：邊框那一圈加上兩個移動符號；其餘（框的中間）不屬於這個視窗，滑鼠直接穿到下面。
+        「拖框的中央」模式整個框都收滑鼠。"""
         w, h = self.width(), self.height()
+        if self._drag_mode == DRAG_CENTER:
+            return QRegion(0, 0, w, h)
         ring = QRegion(0, 0, w, h).subtracted(QRegion(BAND, BAND, max(0, w - 2 * BAND), max(0, h - 2 * BAND)))
         for grip in self._grip_rects():
             ring = ring.united(QRegion(grip))
         return ring
 
     def _update_shape(self) -> None:
-        self.setMask(self._shape())
+        if self._drag_mode == DRAG_CENTER:
+            self.clearMask()  # 整個框都收滑鼠
+        else:
+            self.setMask(self._shape())
+
+    def _update_tooltip(self) -> None:
+        if self._drag_mode == DRAG_CENTER:
+            self.setToolTip("按住框的中央拖曳來移動 · 拖邊框與四個角來縮放 · 雙擊停止即時監控")
+        else:
+            self.setToolTip("按住左上或右下角的移動符號拖曳來移動 · 拖邊框與四個角來縮放 · 雙擊邊框或符號停止即時監控")
+
+    def drag_mode(self) -> str:
+        return self._drag_mode
+
+    def set_drag_mode(self, mode: str) -> None:
+        """換移動方式（設定改了，框還在畫面上時馬上生效）。"""
+        mode = mode if mode in DRAG_MODES else DRAG_GRIPS
+        if mode == self._drag_mode:
+            return
+        self._drag_mode = mode
+        self._update_shape()
+        self._update_tooltip()
+        self.update()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -296,6 +327,8 @@ class MonitorRegionSelector(QWidget):
             return 7
         if bottom:
             return 8
+        if self._drag_mode == DRAG_CENTER:
+            return 0  # 框的中央整片都是移動
         if any(grip.contains(pos) for grip in self._grip_rects()):
             return 0
         return -1
@@ -398,8 +431,9 @@ class MonitorRegionSelector(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
-        # 框裡面不畫任何東西（全透明，而且收不到滑鼠，見 _shape）；只畫框線、四個角的把手與兩個移動符號。
-        # 底色只塗在 _shape 圈出來的範圍（邊框那一圈與移動符號）：透明度 RING_ALPHA，肉眼看不出來，只是讓這些地方收得到滑鼠
+        # 框裡面不畫任何東西（全透明）；只畫框線、四個角的把手，以及（預設的移動方式）兩個移動符號。
+        # 底色只塗在 _shape 圈出來的範圍（邊框那一圈與移動符號；「拖框的中央」模式是整個框）：
+        # 透明度 RING_ALPHA，肉眼看不出來，只是讓這些地方收得到滑鼠
         painter.setClipRegion(self._shape())
         ring = QColor(self._accent)
         ring.setAlpha(RING_ALPHA)
@@ -426,7 +460,7 @@ class MonitorRegionSelector(QWidget):
         ):
             painter.drawRoundedRect(cx - 3, cy - 3, 6, 6, 2, 2)
 
-        if self._grips_visible:
+        if self._grips_visible and self._drag_mode == DRAG_GRIPS:
             for grip in self._grip_rects():
                 self._paint_grip(painter, grip)
 

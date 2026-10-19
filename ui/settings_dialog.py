@@ -692,8 +692,17 @@ class SettingsDialog(QWidget):
             "開啟時，翻譯完成後會接著持續監控，畫面上的字幕一變就自動重譯；關閉即時監控或開始新的擷取即可停止。\n"
             "關閉這個選項則只翻譯一次，要監控請手動按「即時監控」或用快捷鍵。"
         )
+        self.combo_drag_mode = NoWheelComboBox()
+        self.combo_drag_mode.addItem("拖曳左上、右下角的移動符號（推薦：框的中間點得到後面的畫面）", "grips")
+        self.combo_drag_mode.addItem("拖曳框的中央（整個框都能拖，但中間點不到後面的畫面）", "center")
+        self.combo_drag_mode.setToolTip(
+            "拖曳符號：框的中間是透明的，滑鼠點得到後面真正的畫面；要移動框就按住左上或右下角的小符號再拖。\n"
+            "拖曳中央：在框裡面任何地方按住都能拖動框，比較好抓，但框的中間會擋住滑鼠，點不到後面的畫面。\n"
+            "兩種方式都能拖邊框與四個角來縮放；框在畫面上時，改了馬上生效。"
+        )
         monitor_form = self._new_form()
         monitor_form.addRow(self.chk_auto_monitor)
+        monitor_form.addRow("監視框的移動方式", self.combo_drag_mode)
         monitor_form.addRow("辨識間隔", scan_row)
         monitor_form.addRow("無字幕時關閉譯文", self.spin_hide_no_text)
         monitor_form.addRow("停止監控後釋放模型", self.spin_release_model)
@@ -1203,6 +1212,7 @@ class SettingsDialog(QWidget):
         self._set_combo(self.combo_engine, cfg.get("ocr.engine", "windows"))
         self._set_combo(self.combo_lang, cfg.get("ocr.lang", "auto"))
         self.chk_auto_monitor.setChecked(bool(cfg.get("monitor.auto_start", True)))
+        self._set_combo(self.combo_drag_mode, cfg.get("monitor.drag_mode", "grips"))
         self.spin_release_model.setValue(int(float(cfg.get("monitor.release_model_after_seconds", 10))))
         self.spin_scan_interval.setValue(int(cfg.get("monitor.interval_ms", stability.RECOMMENDED_INTERVAL_MS)) / 1000)
         self._refresh_scan_rate()
@@ -1340,6 +1350,7 @@ class SettingsDialog(QWidget):
             cfg.set("ocr.engine", self.combo_engine.currentData() or "windows")
             cfg.set("ocr.lang", self.combo_lang.currentData() or "auto")
             cfg.set("monitor.auto_start", self.chk_auto_monitor.isChecked())
+            cfg.set("monitor.drag_mode", self.combo_drag_mode.currentData() or "grips")
             cfg.set("monitor.interval_ms", int(round(self.spin_scan_interval.value() * 1000)))
             cfg.set("monitor.hide_after_no_text_seconds", self.spin_hide_no_text.value())
             cfg.set("monitor.release_model_after_seconds", self.spin_release_model.value())

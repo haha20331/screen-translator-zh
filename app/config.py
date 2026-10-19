@@ -152,6 +152,9 @@ DEFAULTS: dict[str, Any] = {
         "hide_after_no_text_seconds": 1.0,
         # 停止即時監控超過這麼多秒，就把翻譯模型從記憶體放掉（3B 約 2.8 GB）；下次擷取或監控時自動載回。0 = 不釋放
         "release_model_after_seconds": 10,
+        # 監視框的移動方式：grips = 拖左上、右下兩個移動符號（預設，框的中間穿透，點得到後面的畫面）；
+        # center = 整個框的中央都能拖，但中間不再穿透。設定 → 即時監控 可改，框在畫面上時馬上生效
+        "drag_mode": "grips",
     },
     # 文字輸出：每句字幕（開始、結束時間、原文、譯文、四角點、模型）附加寫進一份 txt，一天一檔。
     # 字幕結束（被下一句取代、消失、停止監控、離開程式）時才寫，寫下的是最完整的那一版。
@@ -338,6 +341,8 @@ def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
     except (TypeError, ValueError):
         release_after = DEFAULTS["monitor"]["release_model_after_seconds"]
     monitor["release_model_after_seconds"] = max(0.0, min(3600.0, release_after))
+    if monitor.get("drag_mode") not in ("grips", "center"):
+        monitor["drag_mode"] = DEFAULTS["monitor"]["drag_mode"]
 
 
 def _normalize_output(data: dict[str, Any]) -> None:

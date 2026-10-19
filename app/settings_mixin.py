@@ -157,6 +157,7 @@ class SettingsMixin:
             self.show_error("快捷鍵", str(exc))
         self._apply_autostart()
         self._reschedule_monitor_after_settings()
+        self._apply_monitor_frame_settings()
         self._apply_transcript_settings()
         if self.window is not None:
             self.window.reload_values()

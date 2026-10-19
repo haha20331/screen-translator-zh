@@ -278,6 +278,14 @@ class MonitorMixin:
         if self._monitor_active and self._monitor_timer.isActive():
             self._monitor_schedule_next()
 
+    def _monitor_drag_mode(self) -> str:
+        return str(self.config.get("monitor.drag_mode", "grips"))
+
+    def _apply_monitor_frame_settings(self) -> None:
+        """設定改了：框還在畫面上的話，移動方式馬上換。"""
+        if self._monitor_region_selector is not None:
+            self._monitor_region_selector.set_drag_mode(self._monitor_drag_mode())
+
     def _create_monitor_region_selector(self) -> None:
         self._dispose_monitor_region()
         if self.monitor_map is None or self._monitor_request is None:
@@ -286,7 +294,7 @@ class MonitorMixin:
 
         bbox = self._monitor_request["bbox"]
         accent = str(self.config.get("capture.select_border_color", "#2878E8"))
-        selector = MonitorRegionSelector(self.monitor_map, bbox, accent)
+        selector = MonitorRegionSelector(self.monitor_map, bbox, accent, drag_mode=self._monitor_drag_mode())
         selector.region_changed.connect(self._on_monitor_region_changed)
         selector.region_committed.connect(self._on_monitor_region_committed)
         selector.stop_requested.connect(self.stop_monitor)
