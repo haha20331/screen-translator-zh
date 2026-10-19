@@ -183,3 +183,83 @@ def test_with_animations_on_the_opacity_still_ends_at_the_right_values(qapp, mon
 
     assert widget.windowOpacity() == pytest.approx(1.0, abs=0.01)
     widget.close()
+
+
+# ----------------------------------------------------------------------------- 移動符號：游標不在框裡就隱形
+def _grip_alpha(frame, which=0):
+    grip = frame._grip_rects()[which]
+    return frame.grab().toImage().pixelColor(grip.center()).alpha()
+
+
+def test_the_move_grips_are_drawn_while_the_cursor_is_in_the_frame(qapp, frame):
+    _Cursor.where = frame.geometry().center()
+    frame.show()
+
+    _wait(qapp, 0.15)
+
+    assert frame.grips_visible()
+    assert _grip_alpha(frame, 0) >= 200 and _grip_alpha(frame, 1) >= 200
+
+
+def test_the_move_grips_vanish_when_the_cursor_is_outside_the_frame(qapp, frame):
+    frame.show()  # 游標預設在框外
+
+    _wait(qapp, 0.15)
+
+    assert not frame.grips_visible()
+    assert _grip_alpha(frame, 0) <= 1 and _grip_alpha(frame, 1) <= 1  # 沒畫出來（只剩肉眼看不見的底色，讓滑鼠進來時抓得到）
+    border = frame.grab().toImage().pixelColor(1, frame.height() // 2)
+    assert border.alpha() >= 150  # 框線還在，框本身照樣只是變淡
+
+
+def test_leaving_the_frame_hides_the_grips_at_once_without_waiting_for_the_next_poll(qapp, frame):
+    _Cursor.where = frame.geometry().center()
+    frame.show()
+    _wait(qapp, 0.15)
+    assert frame.grips_visible()
+
+    _Cursor.where = QPoint(-5000, -5000)
+    _leave(frame)
+
+    assert not frame.grips_visible()
+
+
+def test_walking_from_the_border_into_the_clear_middle_keeps_the_grips(qapp, frame):
+    """中間是穿透的：游標從邊框走進中間會收到 leave，但還在框的範圍內，符號不能消失。"""
+    _Cursor.where = frame.geometry().center()
+    frame.show()
+    _wait(qapp, 0.15)
+
+    _leave(frame)
+    _wait(qapp, 0.15)
+
+    assert frame.grips_visible()
+
+
+def test_the_grips_come_back_when_the_cursor_returns(qapp, frame):
+    frame.show()
+    _wait(qapp, 0.15)
+    assert not frame.grips_visible()
+
+    _Cursor.where = frame.geometry().center()  # 只是進到框的範圍：框裡面穿透，不會有任何滑鼠事件，靠定時檢查游標位置
+    _wait(qapp, 0.2)
+
+    assert frame.grips_visible() and not frame.is_dimmed()
+    _Cursor.where = frame.geometry().topLeft() + QPoint(20, 20)
+    assert _grip_alpha(frame, 0) >= 200
+
+
+def test_the_grips_do_not_vanish_under_the_hand_while_the_frame_is_being_dragged(qapp, frame):
+    _Cursor.where = frame.geometry().center()
+    frame.show()
+    _wait(qapp, 0.1)
+    _mouse(frame, QEvent.Type.MouseButtonPress)
+
+    _Cursor.where = QPoint(-5000, -5000)  # 游標暫時落後在框外
+    _leave(frame)
+    _wait(qapp, 0.15)
+
+    assert frame.grips_visible()
+    _mouse(frame, QEvent.Type.MouseButtonRelease)
+    _wait(qapp, 0.15)
+    assert not frame.grips_visible()  # 放開之後游標在框外：隱形

@@ -16,7 +16,7 @@ log = get_logger("monitor_region")
 IDLE_DIM_MS = 2000
 DIM_OPACITY = 0.3  # 變透明之後的整體不透明度（框線還看得到，找得到框在哪）
 # 框裡面幾乎全透明、變淡之後更是收不到滑鼠事件，所以每隔這麼久直接看游標在不在框裡
-CURSOR_POLL_MS = 100
+CURSOR_POLL_MS = 50  # 同時決定移動符號在游標進出框時多快出現、消失
 # 拖曳、縮放時，通知譯文面板跟著框走的最短間隔：滑鼠事件可以一秒來好幾百個，面板不必每個都重排一次
 REGION_UPDATE_MS = 16
 # 框的最小尺寸（邏輯像素）：再小的話兩個移動符號就疊在一起了。拉出來的框比這個小，也照這個大小先建出來
@@ -57,6 +57,7 @@ class MonitorRegionSelector(QWidget):
         self._idle_ms = max(0, int(idle_ms))  # 0 = 不變透明
         self._dim_opacity = max(0.15, min(1.0, float(dim_opacity)))  # 太低的話框內填色的透明度四捨五入成 0，滑鼠會穿過框、移進來也收不到
         self._dimmed = False
+        self._grips_visible = True  # 兩個移動符號只在游標在框的範圍內才畫出來（游標一離開就隱形）；剛建好的框游標就在上面
         self._monitor_map = monitor_map
         self._accent = QColor(accent)
         self._highlight_color = QColor(accent)
@@ -128,8 +129,17 @@ class MonitorRegionSelector(QWidget):
         if self._idle_ms > 0 and not self._dragging:
             self._idle_timer.start()
 
+    def grips_visible(self) -> bool:
+        return self._grips_visible
+
+    def _set_grips_visible(self, visible: bool) -> None:
+        if visible != self._grips_visible:
+            self._grips_visible = visible
+            self.update()
+
     def _touch(self) -> None:
-        """框被動到（滑鼠移進來、按下、拖曳）：不再倒數，已經變透明就恢復。"""
+        """框被動到（滑鼠移進來、按下、拖曳）：不再倒數，已經變透明就恢復，移動符號也顯示出來。"""
+        self._set_grips_visible(True)
         self._idle_timer.stop()
         if self._dimmed:
             self._dimmed = False
@@ -144,12 +154,16 @@ class MonitorRegionSelector(QWidget):
     def _poll_cursor(self) -> None:
         """定時直接看游標在不在框裡：框裡面幾乎全透明、變淡之後更是收不到 enter／mouseMove，不能只靠事件。"""
         if self._dragging:
+            self._set_grips_visible(True)  # 拖曳中游標可能暫時落後在框外，符號不能在手指底下消失
             return
         if self._cursor_inside():
+            self._set_grips_visible(True)
             if self._dimmed or self._idle_timer.isActive():
                 self._touch()
-        elif not self._dimmed and not self._idle_timer.isActive():
-            self._arm_idle()
+        else:
+            self._set_grips_visible(False)
+            if not self._dimmed and not self._idle_timer.isActive():
+                self._arm_idle()
 
     # --------------------------------------------------------- 位置：用系統座標對準
     def _wanted_native(self) -> tuple[int, int, int, int]:
@@ -208,6 +222,9 @@ class MonitorRegionSelector(QWidget):
 
     def leaveEvent(self, event) -> None:
         super().leaveEvent(event)
+        # 游標從邊框走進中間（中間是穿透的）也會收到 leave，但還在框的範圍內：符號留著，等游標真的離開框再隱形
+        if not self._dragging and not self._cursor_inside():
+            self._set_grips_visible(False)
         self._arm_idle()
 
     # --------------------------------------------------------- coordinate mapping
@@ -409,8 +426,9 @@ class MonitorRegionSelector(QWidget):
         ):
             painter.drawRoundedRect(cx - 3, cy - 3, 6, 6, 2, 2)
 
-        for grip in self._grip_rects():
-            self._paint_grip(painter, grip)
+        if self._grips_visible:
+            for grip in self._grip_rects():
+                self._paint_grip(painter, grip)
 
     def _paint_grip(self, painter: QPainter, grip: QRect) -> None:
         """移動符號：主題色的小方塊，中間一個四個方向的箭頭（按住它拖曳來移動整個框）。"""
