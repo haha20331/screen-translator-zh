@@ -7,11 +7,11 @@ Windows 桌面上的即時字幕翻譯工具：在畫面上框一塊區域，程
 
 ## 示範
 
-實機操作的示範影片（約 1 分鐘）：
+實機操作的示範（約 1 分鐘，從框選字幕、譯文出現，到移動與調整監視框）：
 
-<video src="demo/demo1.mp4" controls muted width="100%">
-  你的瀏覽器不能直接播放，可以<a href="demo/demo1.mp4">下載示範影片（mp4）</a>。
-</video>
+![實機操作示範：框選歌詞字幕後譯文顯示在框的下方，並移動、調整監視框](demo/demo1.gif)
+
+想看高畫質版：[下載示範影片（mp4，1080p）](https://github.com/haha20331/screen-translator-zh/raw/main/demo/demo1.mp4)。
 
 框選字幕之後，框會留在畫面上，譯文顯示在框的下方：
 
