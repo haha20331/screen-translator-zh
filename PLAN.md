@@ -401,3 +401,13 @@
 - [ ] 逐一核對 RapidOCR 模型（PP-OCRv6）與其他相依套件的授權條款（對外非商用散布）；已整理初版到 `THIRD_PARTY_LICENSES.md`。
 - [ ] 在真實 Windows 上驗證 `WDA_EXCLUDEFROMCAPTURE` 能讓 mss 擷取不含自家視窗。
 - [ ] 常駐框（先擺框再開始偵測）與上游「先截圖再啟動監控」流程的差異，確認要改成哪一種操作順序。
+
+- [ ] **多語言支援（使用者 2026-10-19 提出；動工到一半先還原，尚未實作）**：
+  1. **翻譯的目標語言新增英文、日文**，在設定中可選（預設繁體中文），並依目標語言換提示詞的示範句。目標是英文時英文句子本來就不翻、目標是日文時日文句子不翻；來源語言仍是日文與英文。
+     - 要動的地方（2026-10-19 讀碼所得）：`utils/language_utils`（`TARGET_LANGUAGES`、`needs_translation`）、`app/config`（`_normalize_translation` 與 `AppConfig.set` 現在把目標語言釘死成 `zh-hant`）、`ui/settings_dialog`（目標語言下拉現在停用）、`services/translation/offline_common.ChineseTargetTranslator`（`_translate_batch` 只收中文、`_to_target_script` 與標點整理只有中文版）、`offline_translator`（系統提示詞、示範句、歌詞提示詞、`_generate`／`_run`、預熱、`looks_not_chinese` 重翻檢查）、`token_filter.bans_for`（生成時擋詞要依目標換：英文擋漢字與假名、日文擋假名以外的外文，現在的 `FOREIGN` 含假名）、`utils/chinese.is_meta_reply`（客套回覆只有中文版）、`workers/translation_worker` 的「附帶中文譯文略過」只對中文目標有意義、設定名稱 `retry_non_chinese` 與說明文字。
+     - 做法與風險：中文提示詞（Qwen2.5 專用）只在目標是中文時用，英文／日文目標一律用英文指示；`_generate` 要多一個 `target` 參數（既有測試有多處用 `lambda texts, language:` 取代它）；要用真實 Qwen 3B 在 Windows 實測 日→英、英→日 的示範句與品質（不能只靠假引擎）；快取鍵本來就含目標語言，不必改。
+  2. **整個介面語言新增英文、日文**，在設定中可選，重新啟動後生效即可。全專案約 2,100 行含中文字面值（`ui/settings_dialog.py` 約 320 行最多，其次是 `app/*` 的狀態訊息、歡迎畫面、系統匣、主視窗、`model_names`／模型介紹、`gpu_info`、`speed_test`）。
+     - 建議做法：`tr("中文原文")` 查表（以中文原文當鍵，找不到就顯示原文），目錄放 `app/locales/en.py`、`ja.py`；f-string 改成帶 `{0}` 的範本；用 AST 掃描寫「每個中文字面值都有英文與日文譯文」的覆蓋測試，另外在英文／日文下把主視窗、設定、歡迎畫面、系統匣建出來，檢查沒有任何文字還等於中文原文。
+     - 陷阱：有些程式用中文訊息的開頭做判斷（例如 `message.startswith("沒有識別到文字")`，在 `app/pipeline_mixin.py`、`app/monitor_mixin.py`），翻譯之後會失效，要先改成代碼或例外型別；模型提示詞、日誌、txt 輸出的欄位不翻。
+  3. **安裝時詢問期望語言**：安裝程式用英文詢問，選項各用該語言顯示（English、日本語、繁體中文）；選擇的結果寫進設定檔的目標語言與介面語言（`translation.target_language`、介面語言設定）；安裝程式自己的文字（元件名稱、模型說明、3B 確認視窗）也要三語。現有安裝程式是 Inno Setup 7（`installer/`），可用它內建的語言選擇與 `[CustomMessages]`，在 `[Code]` 依 `ActiveLanguage` 寫出初始的 `config.json`。
+  4. **連帶要改**：`tests/test_target_language.py`（現在測的是「只能是繁體中文」）、README 與歡迎畫面裡「目標語言固定繁體中文」的說明、`PLAN.md` 第 2 節的決策（2026-10-15 的「目標語言限定繁體中文」）。
