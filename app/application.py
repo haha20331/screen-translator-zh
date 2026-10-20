@@ -172,6 +172,8 @@ class Application(
         self._monitor_stabilizer: TextStabilizer | None = None
         self._monitor_errors = 0
         self._monitor_no_text = False
+        self._monitor_quiet_until = 0.0  # 移動／調整監視框放開之後，到這個時間（time.monotonic）之前先不辨識、不翻譯
+        self._monitor_wait_noted = False  # 「等框停下來」的狀態列提示已經顯示過了（每次調整只提示一次）
         self._last_original_text = ""
         self._last_translated_text = ""
         self._monitor_region_selector = None

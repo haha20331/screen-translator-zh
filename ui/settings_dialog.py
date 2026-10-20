@@ -654,6 +654,18 @@ class SettingsDialog(QWidget):
             "監控中，OCR 連續這麼久都抓不到任何文字（字幕消失了、換成沒有字的畫面），就自動把譯文關掉，"
             "不會一直留著上一句。字幕再出現時會重新翻譯顯示。0 = 不自動關閉。"
         )
+        self.spin_frame_settle = NoWheelDoubleSpinBox()
+        self.spin_frame_settle.setRange(0.0, 10.0)
+        self.spin_frame_settle.setSingleStep(0.5)
+        self.spin_frame_settle.setDecimals(1)
+        self.spin_frame_settle.setSuffix(" 秒")
+        self.spin_frame_settle.setSpecialValueText("不等待")
+        self.spin_frame_settle.setToolTip(
+            "拖曳或調整監視框的時候，框會掃過別的文字，不想把它們也翻出來。\n"
+            "按著滑鼠移動、調整大小的期間一律不辨識、不翻譯，放開之後再等這麼多秒才繼續；"
+            "這段時間內又動了框就重新計時。譯文面板仍然會跟著框走。\n"
+            "0 = 不等待：拖曳中也照常辨識、翻譯。"
+        )
         self.spin_release_model = NoWheelSpinBox()
         self.spin_release_model.setRange(0, 3600)
         self.spin_release_model.setSuffix(" 秒")
@@ -705,6 +717,7 @@ class SettingsDialog(QWidget):
         monitor_form.addRow("監視框的移動方式", self.combo_drag_mode)
         monitor_form.addRow("辨識間隔", scan_row)
         monitor_form.addRow("無字幕時關閉譯文", self.spin_hide_no_text)
+        monitor_form.addRow("移動或調整監視框後等待", self.spin_frame_settle)
         monitor_form.addRow("停止監控後釋放模型", self.spin_release_model)
         monitor_form.addRow("確認次數", self.spin_confirm_rounds)
         monitor_form.addRow("最久等待", self.spin_max_wait)
@@ -970,13 +983,16 @@ class SettingsDialog(QWidget):
             "只適用於「顯示在框下方」的譯文面板（框選區域）。"
         )
         self.spin_cache_entries = NoWheelSpinBox()
-        self.spin_cache_entries.setRange(50, 20000)
+        self.spin_cache_entries.setRange(50, 100000)
         self.spin_cache_entries.setSingleStep(50)
         self.spin_cache_entries.setSuffix(" 句")
         self.spin_cache_entries.setToolTip(
             "記住最近翻過的原文與譯文；一模一樣的原文再出現時直接用，不再翻譯（也不必重新呼叫模型）。\n"
-            "每句約 0.2 KB，2000 句不到 1 MB，存在本機。超過上限時，先淘汰最久沒用到的。\n"
+            "每句約 0.25 KB，存在本機：2000 句約 0.5 MB，10 萬句約 23 MB（啟動時多花約 0.3 秒讀檔、"
+            "結束程式時多花約 0.5 秒存檔，記憶體多佔約 55 MB）。查詢與新增的速度和筆數無關。\n"
+            "超過上限時，一次淘汰最久沒用到的四分之一。\n"
             "建議 2000：只留 50 句太少，歌詞的副歌常在 50 句以外才再出現；影片重看一次也能直接用。"
+            "想把整張專輯、整部影集都留著，可以加大到幾萬句。"
         )
         self.chk_skip_sounds = QCheckBox("略過只有擬聲詞（音效、笑聲、狀聲詞）的句子，不翻譯也不顯示")
         self.chk_skip_sounds.setToolTip(
@@ -1214,6 +1230,7 @@ class SettingsDialog(QWidget):
         self.chk_auto_monitor.setChecked(bool(cfg.get("monitor.auto_start", True)))
         self._set_combo(self.combo_drag_mode, cfg.get("monitor.drag_mode", "grips"))
         self.spin_release_model.setValue(int(float(cfg.get("monitor.release_model_after_seconds", 10))))
+        self.spin_frame_settle.setValue(float(cfg.get("monitor.frame_settle_seconds", 1.0)))
         self.spin_scan_interval.setValue(int(cfg.get("monitor.interval_ms", stability.RECOMMENDED_INTERVAL_MS)) / 1000)
         self._refresh_scan_rate()
         self.spin_hide_no_text.setValue(
@@ -1354,6 +1371,7 @@ class SettingsDialog(QWidget):
             cfg.set("monitor.interval_ms", int(round(self.spin_scan_interval.value() * 1000)))
             cfg.set("monitor.hide_after_no_text_seconds", self.spin_hide_no_text.value())
             cfg.set("monitor.release_model_after_seconds", self.spin_release_model.value())
+            cfg.set("monitor.frame_settle_seconds", self.spin_frame_settle.value())
             cfg.set("monitor.confirm_rounds", self.spin_confirm_rounds.value())
             cfg.set("monitor.max_wait_seconds", self.spin_max_wait.value())
             cfg.set("ocr.min_confidence", self.spin_confidence.value())

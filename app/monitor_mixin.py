@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 # 通过 app.application 命名空间解析 is_window_capturable，使测试对该符号的 monkeypatch 仍然生效。
 from app import application as _application
 from app.logger import get_logger
@@ -76,6 +78,8 @@ class MonitorMixin:
         self._monitor_signature = ""
         self._monitor_frame_hash = ""
         self._monitor_idle_hash = ""
+        self._monitor_quiet_until = 0.0
+        self._monitor_wait_noted = False
         self._monitor_stabilizer = TextStabilizer()
         self._configure_stabilizer()
         self._transcript_note_monitor(started=True)
@@ -122,6 +126,17 @@ class MonitorMixin:
         request = self._monitor_request
         if request is None:
             return
+        wait_ms = self._monitor_adjust_wait_ms()
+        if wait_ms > 0:
+            # 使用者正在移動或調整監視框（或剛放開、還沒過設定的秒數）：框會掃過別的文字，這時不辨識、不翻譯，
+            # 等框停下來再開始。不截圖、不算錯誤，只是晚一點再來看一次。
+            if not self._monitor_wait_noted:
+                self._monitor_wait_noted = True
+                self.set_status("監視框移動中，停下來 %g 秒後才會繼續翻譯" % self._monitor_settle_seconds())
+            self._monitor_timer.stop()
+            self._monitor_timer.start(wait_ms)
+            return
+        self._monitor_wait_noted = False
         if self._translator_warming():
             # 翻譯模型還在背景載入：這一輪送出去只會卡在載入上（重新整理還會被當成舊任務沒結束）。
             # 這一格畫面不記進去，載入完成後的下一輪照常辨識、翻譯。
@@ -202,6 +217,27 @@ class MonitorMixin:
         except (TypeError, ValueError):
             rounds, max_wait = RECOMMENDED_FAST_ROUNDS, RECOMMENDED_MAX_WAIT
         self._monitor_stabilizer.configure(max(MIN_ROUNDS, min(MAX_ROUNDS, rounds)), max_wait)
+
+    def _monitor_settle_seconds(self) -> float:
+        """設定：移動或調整監視框之後，要等幾秒才繼續翻譯（0 = 不等，拖曳中照常翻譯）。"""
+        try:
+            seconds = float(self.config.get("monitor.frame_settle_seconds", 1.0))
+        except (TypeError, ValueError):
+            seconds = 1.0
+        return max(0.0, min(10.0, seconds))
+
+    def _monitor_adjust_wait_ms(self) -> int:
+        """還要等多久才能辨識、翻譯（毫秒）；0 = 現在可以。
+
+        框正被按著移動或調整大小時一直等（隔一小段時間再看一次）；放開之後再等設定的秒數，
+        這段時間內又動了框就重新計時。設成 0 秒就完全不等。"""
+        if self._monitor_settle_seconds() <= 0:
+            return 0
+        selector = self._monitor_region_selector
+        if selector is not None and selector.is_adjusting():
+            return 100
+        remaining = self._monitor_quiet_until - time.monotonic()
+        return int(remaining * 1000) + 20 if remaining > 0 else 0
 
     def _monitor_interval_ms(self) -> int:
         """設定的辨識間隔（毫秒），壞掉的值用推薦值，並限制在允許範圍內。"""
@@ -320,8 +356,11 @@ class MonitorMixin:
     def _on_monitor_region_committed(self, bbox) -> None:
         if self._monitor_request is not None:
             self._monitor_request["bbox"] = tuple(bbox)
-        # 拖拽结束尽快重刷一次；若当前正在跑轮询则不抢占，避免阻塞 UI 线程，
+        settle = self._monitor_settle_seconds()
+        if settle > 0:
+            self._monitor_quiet_until = time.monotonic() + settle  # 放開之後再等設定的秒數，才開始辨識新位置的文字
+        # 拖拽结束尽快重刷一次（有設定等待秒數就等那麼久）；若当前正在跑轮询则不抢占，避免阻塞 UI 线程，
         # 下一轮周期自会采用新位置。
         if self._monitor_active and self.worker is None:
             self._monitor_timer.stop()
-            self._monitor_timer.start(80)
+            self._monitor_timer.start(int(settle * 1000) + 20 if settle > 0 else 80)

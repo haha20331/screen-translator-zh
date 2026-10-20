@@ -321,6 +321,10 @@ class MonitorRegionSelector(QWidget):
     def drag_mode(self) -> str:
         return self._drag_mode
 
+    def is_adjusting(self) -> bool:
+        """使用者現在按著滑鼠在移動或調整大小（放開之前都算）。"""
+        return self._dragging
+
     def set_drag_mode(self, mode: str) -> None:
         """換移動方式（設定改了，框還在畫面上時馬上生效）。"""
         mode = mode if mode in DRAG_MODES else DRAG_GRIPS
