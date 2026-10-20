@@ -402,7 +402,7 @@
 - [ ] 逐一核對 RapidOCR 模型（PP-OCRv6）與其他相依套件的授權條款（對外非商用散布）；已整理初版到 `THIRD_PARTY_LICENSES.md`。
 - [ ] 在真實 Windows 上驗證 `WDA_EXCLUDEFROMCAPTURE` 能讓 mss 擷取不含自家視窗。
 - [ ] 常駐框（先擺框再開始偵測）與上游「先截圖再啟動監控」流程的差異，確認要改成哪一種操作順序。
-
+- [ ] OCR出的多組文字在單次LLM翻譯中翻譯 （使用者 2026-10-19 提出）
 - [ ] **多語言支援（使用者 2026-10-19 提出；動工到一半先還原，尚未實作）**：
   1. **翻譯的目標語言新增英文、日文**，在設定中可選（預設繁體中文），並依目標語言換提示詞的示範句。目標是英文時英文句子本來就不翻、目標是日文時日文句子不翻；來源語言仍是日文與英文。
      - 要動的地方（2026-10-19 讀碼所得）：`utils/language_utils`（`TARGET_LANGUAGES`、`needs_translation`）、`app/config`（`_normalize_translation` 與 `AppConfig.set` 現在把目標語言釘死成 `zh-hant`）、`ui/settings_dialog`（目標語言下拉現在停用）、`services/translation/offline_common.ChineseTargetTranslator`（`_translate_batch` 只收中文、`_to_target_script` 與標點整理只有中文版）、`offline_translator`（系統提示詞、示範句、歌詞提示詞、`_generate`／`_run`、預熱、`looks_not_chinese` 重翻檢查）、`token_filter.bans_for`（生成時擋詞要依目標換：英文擋漢字與假名、日文擋假名以外的外文，現在的 `FOREIGN` 含假名）、`utils/chinese.is_meta_reply`（客套回覆只有中文版）、`workers/translation_worker` 的「附帶中文譯文略過」只對中文目標有意義、設定名稱 `retry_non_chinese` 與說明文字。

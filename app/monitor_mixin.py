@@ -270,7 +270,7 @@ class MonitorMixin:
         """設定畫面的「清除翻譯快取」：刪除所有已儲存的翻譯，回傳刪了幾句。"""
         removed = self.cache.clear() if self.cache is not None else 0
         self._forget_displayed_translations()
-        self.set_status(f"已清除翻譯快取（{removed} 句）")
+        self.set_status(f"目前存了 0 句）")
         return removed
 
     def translation_cache_count(self) -> int:
