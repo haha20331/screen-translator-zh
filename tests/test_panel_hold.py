@@ -246,8 +246,9 @@ def test_translation_settings_let_the_user_choose_the_hold(app, tmp_path):
 def test_translation_settings_expose_the_cache_size(app, tmp_path):
     apply_style(app)
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
-    assert dialog.spin_cache_entries.value() == 2000
-    assert "建議 2000" in dialog.spin_cache_entries.toolTip()
+    assert dialog.spin_cache_entries.value() == 100000
+    assert dialog.spin_cache_entries.maximum() == 500000
+    assert "預設 10 萬句" in dialog.spin_cache_entries.toolTip()
 
     dialog.spin_cache_entries.setValue(500)
     dialog._commit_accept(dialog._validated_hotkeys())

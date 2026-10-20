@@ -195,7 +195,7 @@ class Application(
             self.cache = TranslationCache(
                 path=Path(self.config.path.parent) / "translation_cache.json",
                 ttl_days=self.config.get("translation.cache_ttl_days", 30),
-                max_entries=self.config.get("translation.cache_max_entries", 2000),
+                max_entries=self.config.get("translation.cache_max_entries", 100000),
             )
             self.ocr_engine = self._create_configured_ocr_engine()
             self.translator = create_translator(

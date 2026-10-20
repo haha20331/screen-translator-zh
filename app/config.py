@@ -104,7 +104,7 @@ DEFAULTS: dict[str, Any] = {
             "han_only_as": "ja",
         },
         "cache_ttl_days": 30,
-        "cache_max_entries": 2000,
+        "cache_max_entries": 100000,
         # 翻譯快取是用哪個模型存的（程式自己記）：換了模型就清空快取
         "cache_model": "",
     },

@@ -23,6 +23,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
     QApplication,
     QCheckBox,
     QColorDialog,
@@ -983,16 +984,18 @@ class SettingsDialog(QWidget):
             "只適用於「顯示在框下方」的譯文面板（框選區域）。"
         )
         self.spin_cache_entries = NoWheelSpinBox()
-        self.spin_cache_entries.setRange(50, 100000)
-        self.spin_cache_entries.setSingleStep(50)
+        self.spin_cache_entries.setRange(50, 500000)
+        self.spin_cache_entries.setStepType(QAbstractSpinBox.StepType.AdaptiveDecimalStepType)  # 數字越大，一次增減越多
         self.spin_cache_entries.setSuffix(" 句")
         self.spin_cache_entries.setToolTip(
             "記住最近翻過的原文與譯文；一模一樣的原文再出現時直接用，不再翻譯（也不必重新呼叫模型）。\n"
-            "每句約 0.25 KB，存在本機：2000 句約 0.5 MB，10 萬句約 23 MB（啟動時多花約 0.3 秒讀檔、"
-            "結束程式時多花約 0.5 秒存檔，記憶體多佔約 55 MB）。查詢與新增的速度和筆數無關。\n"
+            "每句約 0.25 KB，存在本機，查詢與新增的速度和筆數無關；筆數多的代價是啟動時讀檔、結束程式時存檔變久，"
+            "以及佔用的記憶體：\n"
+            "．2000 句：檔案約 0.5 MB，幾乎沒有影響。\n"
+            "．10 萬句（預設）：檔案約 23 MB、記憶體約 55 MB，啟動多花約 0.3 秒、結束多花約 0.5 秒。\n"
+            "．50 萬句（上限）：檔案約 113 MB、記憶體約 270 MB，啟動多花約 2 秒、結束多花約 2.5 秒。\n"
             "超過上限時，一次淘汰最久沒用到的四分之一。\n"
-            "建議 2000：只留 50 句太少，歌詞的副歌常在 50 句以外才再出現；影片重看一次也能直接用。"
-            "想把整張專輯、整部影集都留著，可以加大到幾萬句。"
+            "預設 10 萬句：整張專輯、整部影集重看都能直接用；只留幾十句太少，歌詞的副歌常在幾十句以外才再出現。"
         )
         self.chk_skip_sounds = QCheckBox("略過只有擬聲詞（音效、笑聲、狀聲詞）的句子，不翻譯也不顯示")
         self.chk_skip_sounds.setToolTip(
@@ -1254,7 +1257,7 @@ class SettingsDialog(QWidget):
         self.chk_skip_sounds.setChecked(bool(cfg.get("translation.skip_sounds", True)))
         self.chk_retry_non_chinese.setChecked(bool(cfg.get("translation.retry_non_chinese", True)))
         self.spin_min_hold.setValue(float(cfg.get("overlay.min_hold_seconds", 0.5)))
-        self.spin_cache_entries.setValue(int(cfg.get("translation.cache_max_entries", 2000)))
+        self.spin_cache_entries.setValue(int(cfg.get("translation.cache_max_entries", 100000)))
 
         self._set_combo(self.combo_placement, cfg.get("overlay.placement", "below"))
         self._sync_placement()

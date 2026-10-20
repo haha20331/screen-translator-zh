@@ -35,7 +35,7 @@ class TranslationCache:
         self,
         path: Path | str,
         ttl_days: float = 30,
-        max_entries: int = 2000,
+        max_entries: int = 100000,
     ) -> None:
         self.path = Path(path)
         self.ttl_seconds = ttl_days * 86400

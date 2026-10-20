@@ -142,7 +142,7 @@ class SettingsMixin:
         if self.cache is not None:
             self.cache.set_ttl(
                 self.config.get("translation.cache_ttl_days", 30),
-                self.config.get("translation.cache_max_entries", 2000),
+                self.config.get("translation.cache_max_entries", 100000),
             )
         self.ocr_engine = self._create_configured_ocr_engine()
         self._vertical_ocr_engine = None  # OCR 設定可能改了，直向文字用的備用引擎下次重建

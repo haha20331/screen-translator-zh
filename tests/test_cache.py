@@ -171,3 +171,10 @@ def test_adding_an_entry_takes_the_same_time_whether_the_cache_is_small_or_big(t
     small, big = per_set(2000), per_set(60000)
 
     assert big < small * 5 + 0.0005  # 以前是 O(筆數)：6 萬筆比 2 千筆慢 30 倍以上；現在差不多（容許量測雜訊）
+
+
+def test_the_default_limit_is_100000_and_a_new_cache_object_uses_it(tmp_path):
+    from app.config import DEFAULTS
+
+    assert DEFAULTS["translation"]["cache_max_entries"] == 100000
+    assert TranslationCache(tmp_path / "cache.json").max_entries == 100000
