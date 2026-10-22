@@ -44,7 +44,7 @@ DEFAULTS: dict[str, Any] = {
         "ocr_max_side": 4096,
         "max_upscale": 3.0,
         "min_confidence": 0.6,
-        "merge_y_tolerance_ratio": 0.3,
+        "merge_y_tolerance_ratio": 1.5,
         "merge_x_gap_ratio": 0.8,
         # 相鄰行合併成同一段翻譯（字幕、對白需要完整上下文）。上游只合併寬度 < 擷取寬度 36% 的窄標籤；
         # 這裡放寬到整個擷取範圍，並把置中對齊的相鄰行也視為同一段。

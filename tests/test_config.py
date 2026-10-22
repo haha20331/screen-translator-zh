@@ -8,6 +8,8 @@ from app.config import DEFAULTS, AppConfig
 def test_defaults_loaded(tmp_path):
     config = AppConfig(tmp_path / "config.json")
     assert config.get("ocr.min_confidence") == 0.6
+    assert config.get("ocr.merge_y_tolerance_ratio") == 1.5
+    assert config.get("ocr.merge_x_gap_ratio") == 0.8
     assert config.get("ocr.engine") == "rapidocr"
     assert config.get("ocr.lang") == "auto"
     assert config.get("updates.auto_check") is None  # 自动更新已移除

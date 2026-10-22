@@ -944,7 +944,7 @@ class SettingsDialog(QWidget):
             "容許上下錯開的程度 = 這個數值 × 行高：0 = 較矮那塊要整個疊在另一塊的高度範圍內；"
             "0.3 = 重疊 70% 以上就算同一行；1 = 上下邊只要相碰；超過 1 = 上下有空隙也算（2 = 空隙最多一個行高）。\n"
             "太大，上下相鄰的兩行字幕會被併成一行；太小，稍微歪斜或大小字混排的一行會被拆開。\n"
-            "建議 0.3（可試 0.2～0.5）。"
+            "預設 1.5：上下空隙不到半個行高的文字塊也算同一行。調小，只接上下幾乎對齊的字；調大，連相隔更遠的也接。"
         )
         self.spin_x_gap.setSuffix(" 倍字寬")
         self.spin_x_gap.setToolTip(
@@ -1297,7 +1297,7 @@ class SettingsDialog(QWidget):
         self.spin_confirm_rounds.setValue(int(cfg.get("monitor.confirm_rounds", stability.RECOMMENDED_FAST_ROUNDS)))
         self.spin_max_wait.setValue(float(cfg.get("monitor.max_wait_seconds", stability.RECOMMENDED_MAX_WAIT)))
         self.spin_confidence.setValue(float(cfg.get("ocr.min_confidence", 0.6)))
-        self.spin_y_tol.setValue(float(cfg.get("ocr.merge_y_tolerance_ratio", 0.5)))
+        self.spin_y_tol.setValue(float(cfg.get("ocr.merge_y_tolerance_ratio", 1.5)))
         self.spin_x_gap.setValue(float(cfg.get("ocr.merge_x_gap_ratio", 0.8)))
         self._refresh_merge_preview()
 

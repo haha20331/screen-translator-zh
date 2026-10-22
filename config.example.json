@@ -21,7 +21,7 @@
     "engine": "rapidocr",
     "lang": "auto",
     "min_confidence": 0.6,
-    "merge_y_tolerance_ratio": 0.3,
+    "merge_y_tolerance_ratio": 1.5,
     "merge_x_gap_ratio": 0.8,
     "rapidocr": {
       "limit_side_len": 960,

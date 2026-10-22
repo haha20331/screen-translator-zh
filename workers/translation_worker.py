@@ -110,7 +110,7 @@ class PipelineTask(QThread):
             target = str(self.config.get("translation.target_language", "zh-hant"))
             han_is_source = bool(getattr(self.translator, "han_is_source", False))
             min_confidence = float(self.config.get("ocr.min_confidence", 0.6))
-            y_tolerance_ratio = float(self.config.get("ocr.merge_y_tolerance_ratio", 0.5))
+            y_tolerance_ratio = float(self.config.get("ocr.merge_y_tolerance_ratio", 1.5))
             x_gap_ratio = float(self.config.get("ocr.merge_x_gap_ratio", 0.8))
             max_width_ratio = float(self.config.get("ocr.merge_wrapped_max_width_ratio", 0.36))
             merge_centered = bool(self.config.get("ocr.merge_centered_lines", False))

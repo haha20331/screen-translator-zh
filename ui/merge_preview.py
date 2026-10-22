@@ -76,7 +76,7 @@ class MergePreview(QWidget):
     def __init__(self, base_config=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._base = base_config
-        self._y_ratio = 0.3
+        self._y_ratio = 1.5
         self._x_ratio = 0.8
         self.setFixedSize(QSize(330, 150))
         self.setAccessibleName("文本組合範例")
