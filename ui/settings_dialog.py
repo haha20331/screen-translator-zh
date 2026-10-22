@@ -86,6 +86,7 @@ from ui.appearance import (
     SURFACE_PRESETS,
     current_tokens,
 )
+from ui.merge_preview import MergePreview, merge_summary
 from ui.motion import BASE, ENTER_EASING, EXIT_EASING, MOVE_EASING, SLOW, motion_duration
 from ui.no_wheel import NoWheelComboBox, NoWheelDoubleSpinBox, NoWheelSlider, NoWheelSpinBox
 from ui.overlay_preview import OverlayPreview
@@ -928,9 +929,32 @@ class SettingsDialog(QWidget):
         self.spin_x_gap = NoWheelDoubleSpinBox()
         self.spin_x_gap.setRange(0.0, 5.0)
         self.spin_x_gap.setSingleStep(0.1)
-        self.spin_confidence.setToolTip("低於該置信度的識別結果會被丟棄；0.6 左右較穩妥，越低越寬容但可能混入噪點。")
-        self.spin_y_tol.setToolTip("同一行文字在垂直方向的容差；數值越大，間距較遠的文字塊也越容易合併到同一行。")
-        self.spin_x_gap.setToolTip("同一行內相鄰文字塊的橫向最大間隔；超過該間隔則視為不同行。")
+        self.spin_confidence.setSpecialValueText("不過濾")
+        self.spin_confidence.setToolTip(
+            "OCR 對每一段文字有多大把握，0～1（沒有單位，1 = 百分之百有把握）。低於這個值的文字塊整個丟掉，不翻譯。"
+            "範圍 0～1，0 = 不過濾。\n"
+            "越低越寬容，小字、藝術字比較不會漏，但雜訊、花紋被當成文字的機會也變多；"
+            "越高越乾淨，但字幕邊緣模糊時整句可能消失。\n"
+            "建議 0.6（可試 0.5～0.7）：常出現「沒有識別到文字」就降到 0.5，常翻出怪句子就升到 0.7。"
+            "只對 RapidOCR 有效；Windows OCR 不提供把握度，一律當 1.0。"
+        )
+        self.spin_y_tol.setSuffix(" 倍行高")
+        self.spin_y_tol.setToolTip(
+            "判斷兩個文字塊是不是同一行。單位是「行高」：兩塊中較矮那塊的高度（像素），範圍 0～2。\n"
+            "容許上下錯開的程度 = 這個數值 × 行高：0 = 較矮那塊要整個疊在另一塊的高度範圍內；"
+            "0.3 = 重疊 70% 以上就算同一行；1 = 上下邊只要相碰；超過 1 = 上下有空隙也算（2 = 空隙最多一個行高）。\n"
+            "太大，上下相鄰的兩行字幕會被併成一行；太小，稍微歪斜或大小字混排的一行會被拆開。\n"
+            "建議 0.3（可試 0.2～0.5）。"
+        )
+        self.spin_x_gap.setSuffix(" 倍字寬")
+        self.spin_x_gap.setToolTip(
+            "同一行裡，相鄰兩個文字塊之間的空隙小於這個值，就接成同一個文字塊一起翻譯；否則分開，各自翻譯。"
+            "單位是「字寬」：估計的一個字的寬度 = 行高 × 0.6（最少 4 像素），例如 32 像素高的字，1 倍字寬約 19 像素。"
+            "範圍 0～5，0 = 只有框互相重疊才接。\n"
+            "太小，被 OCR 拆開的句子接不回來，譯文變成零碎的短句；"
+            "太大，同一行裡左右分開的不同項目（選單、表格欄位、人名與對白）會被併成一句。\n"
+            "建議 0.8（可試 0.5～1.5）。"
+        )
 
         engine_form = self._new_form()
         engine_form.addRow("OCR 引擎", self.combo_engine)
@@ -941,7 +965,38 @@ class SettingsDialog(QWidget):
         merge_form.addRow("最低置信度", self.spin_confidence)
         merge_form.addRow("行合併容差", self.spin_y_tol)
         merge_form.addRow("橫向合併閾值", self.spin_x_gap)
-        layout.addWidget(self._card("文本組合", "控制零散文字塊如何合併成自然語句。", merge_form))
+        self.merge_preview = MergePreview(self.config)
+        self.merge_summary = QLabel()
+        self.merge_summary.setObjectName("SettingsCardDescription")
+        self.merge_summary.setWordWrap(True)
+        merge_preview_title = QLabel("目前設定的範例")
+        merge_preview_title.setObjectName("SettingsCardDescription")
+        merge_column = QVBoxLayout()
+        merge_column.setContentsMargins(0, 0, 0, 0)
+        merge_column.setSpacing(6)
+        merge_column.addWidget(merge_preview_title)
+        merge_column.addWidget(self.merge_preview)
+        merge_column.addStretch(1)
+        merge_fields = QVBoxLayout()
+        merge_fields.setContentsMargins(0, 0, 0, 0)
+        merge_fields.setSpacing(10)
+        merge_fields.addLayout(merge_form)
+        merge_fields.addWidget(self.merge_summary)
+        merge_fields.addStretch(1)
+        merge_body = QHBoxLayout()
+        merge_body.setContentsMargins(0, 0, 0, 0)
+        merge_body.setSpacing(18)
+        merge_body.addLayout(merge_fields, 1)
+        merge_body.addLayout(merge_column)
+        self.spin_y_tol.valueChanged.connect(self._refresh_merge_preview)
+        self.spin_x_gap.valueChanged.connect(self._refresh_merge_preview)
+        layout.addWidget(
+            self._card(
+                "文本組合",
+                "控制零散文字塊如何合併成自然語句。右邊的範例會隨「行合併容差」「橫向合併閾值」即時改變。",
+                merge_body,
+            )
+        )
 
         layout.addStretch(1)
         return tab
@@ -1244,6 +1299,7 @@ class SettingsDialog(QWidget):
         self.spin_confidence.setValue(float(cfg.get("ocr.min_confidence", 0.6)))
         self.spin_y_tol.setValue(float(cfg.get("ocr.merge_y_tolerance_ratio", 0.5)))
         self.spin_x_gap.setValue(float(cfg.get("ocr.merge_x_gap_ratio", 0.8)))
+        self._refresh_merge_preview()
 
         self._set_combo(self.combo_source, cfg.get("translation.source_language", "auto"))
         self._set_combo(self.combo_target, TARGET_LANGUAGE)
@@ -1538,6 +1594,11 @@ class SettingsDialog(QWidget):
             "overlay.border_radius": self.spin_radius.value(),
             "overlay.show_border": self.chk_show_border.isChecked(),
         }
+
+    def _refresh_merge_preview(self, *_args) -> None:
+        y_ratio, x_ratio = self.spin_y_tol.value(), self.spin_x_gap.value()
+        self.merge_preview.set_values(y_ratio, x_ratio)
+        self.merge_summary.setText(merge_summary(y_ratio, x_ratio))
 
     def _refresh_overlay_preview(self, *_args) -> None:
         if hasattr(self, "overlay_preview") and hasattr(self, "_text_color"):

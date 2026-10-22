@@ -40,6 +40,15 @@ def group_into_rows(lines: list[OCRLine], y_tolerance_ratio: float = 0.5) -> lis
     return rows
 
 
+CHAR_WIDTH_PER_HEIGHT = 0.6  # 估計一個字的寬度 = 行高 × 0.6
+MIN_CHAR_WIDTH = 4.0
+
+
+def x_gap_limit(line_height: float, x_gap_ratio: float) -> float:
+    """同一行內兩個文字塊的空隙小於這個像素數就會接成一塊（設定的「橫向合併閾值」換算成像素）。"""
+    return x_gap_ratio * max(MIN_CHAR_WIDTH, line_height * CHAR_WIDTH_PER_HEIGHT)
+
+
 def merge_row_into_region(
     row: list[OCRLine], x_gap_ratio: float = 0.8
 ) -> tuple[tuple[int, int, int, int], str, float]:
@@ -53,8 +62,7 @@ def merge_row_into_region(
         cur_x, cur_top, cur_w, cur_h = line.box
         prev_right = prev_x + prev_w
         gap = cur_x - prev_right
-        char_width = max(4.0, max(prev_h, cur_h) * 0.6)
-        if gap < x_gap_ratio * char_width:
+        if gap < x_gap_limit(max(prev_h, cur_h), x_gap_ratio):
             merged.append(line)
         else:
             yield _region_from_lines(merged)
