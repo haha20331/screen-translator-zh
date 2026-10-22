@@ -160,7 +160,7 @@ def test_saving_the_settings_forgets_the_displayed_translations_too(controller, 
 
 
 # ----------------------------------------------------------------------------- 換模型時自動清空
-MODEL_1_5B = "qwen2.5-1.5b-instruct-gguf-q4_k_m"
+MODEL_1_5B = "qwen2.5-1.5b-instruct-gguf-q8_0"
 MODEL_3B = "qwen2.5-3b-instruct-gguf-q4_k_m"
 
 

@@ -27,6 +27,7 @@ from services.translation.offline_translator import (
 from tests.fake_llama import offline_translator, source_of
 from utils import chinese
 
+# 1.7B 已不在清單內，但使用者放進模型資料夾的自訂 Qwen3 模型照樣要認得
 QWEN3 = ("qwen3-1.7b-gguf-q8_0", "qwen3-4b-gguf-q4_k_m")
 
 
@@ -114,8 +115,7 @@ def test_the_names_and_cache_tags_keep_the_two_families_apart():
     assert len(tags) == len(OFFLINE_MODELS)  # 每個模型各有自己的快取鍵
 
 
-def test_both_qwen3_sizes_are_listed_between_the_qwen25_sizes_they_sit_next_to():
+def test_qwen3_4b_is_listed_between_the_qwen25_3b_and_7b():
     names = [model.name for model in OFFLINE_MODELS]
 
-    assert names.index("qwen2.5-1.5b-instruct-gguf-q8_0") < names.index("qwen3-1.7b-gguf-q8_0") < names.index("qwen2.5-3b-instruct-gguf-q4_k_m")
     assert names.index("qwen2.5-3b-instruct-gguf-q4_k_m") < names.index("qwen3-4b-gguf-q4_k_m") < names.index("qwen2.5-7b-instruct-gguf-q4_k_m")

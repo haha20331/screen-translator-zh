@@ -196,9 +196,13 @@ def test_the_welcome_dialog_matches_the_program_as_it_is_now(qapp):
     dialog.deleteLater()
 
 
-def test_model_introductions_are_plain_and_do_not_talk_about_licences(qapp, tmp_path):
+def test_model_introductions_are_plain_and_do_not_talk_about_licences(qapp, tmp_path, monkeypatch):
     import json
     from pathlib import Path
+
+    import ui.settings_dialog as settings_module
+
+    monkeypatch.setattr(settings_module, "discover_models", lambda model_dir="": [])  # 不讀這台電腦真正的模型資料夾（檔名本身就含 Q8_0）
 
     catalog = json.loads((Path(__file__).resolve().parent.parent / "installer" / "models.json").read_text(encoding="utf-8"))
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))

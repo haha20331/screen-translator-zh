@@ -24,72 +24,9 @@
       }
     },
     {
-      "name": "qwen2.5-1.5b-instruct-gguf-q4_k_m",
-      "component": "qwen25_1_5b",
-      "label": "Qwen2.5 1.5B：約 1.1 GB，很快，翻得還可以，電腦比較慢時用",
-      "recommended": false,
-      "license": "Apache-2.0",
-      "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-      "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
-      "files": [
-        {
-          "name": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-          "size": 1117320736,
-          "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"
-        }
-      ],
-      "license_file": {
-        "name": "LICENSE",
-        "size": 11343,
-        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
-      }
-    },
-    {
-      "name": "qwen3-1.7b-gguf-q8_0",
-      "component": "qwen3_1_7b",
-      "label": "Qwen3 1.7B：約 1.8 GB，新一代的小模型，大小在 1.5B 和 3B 之間",
-      "recommended": false,
-      "license": "Apache-2.0",
-      "repo": "Qwen/Qwen3-1.7B-GGUF",
-      "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
-      "files": [
-        {
-          "name": "Qwen3-1.7B-Q8_0.gguf",
-          "size": 1834426016,
-          "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a"
-        }
-      ],
-      "license_file": {
-        "name": "LICENSE",
-        "size": 11544,
-        "sha256": "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd"
-      }
-    },
-    {
-      "name": "qwen2.5-0.5b-instruct-gguf-q8_0",
-      "component": "qwen25_0_5b",
-      "label": "Qwen2.5 0.5B：約 0.7 GB，最小最快，但日文常翻錯",
-      "recommended": false,
-      "license": "Apache-2.0",
-      "repo": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
-      "revision": "9217f5db79a29953eb74d5343926648285ec7e67",
-      "files": [
-        {
-          "name": "qwen2.5-0.5b-instruct-q8_0.gguf",
-          "size": 675710816,
-          "sha256": "ca59ca7f13d0e15a8cfa77bd17e65d24f6844b554a7b6c12e07a5f89ff76844e"
-        }
-      ],
-      "license_file": {
-        "name": "LICENSE",
-        "size": 11343,
-        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
-      }
-    },
-    {
       "name": "qwen2.5-1.5b-instruct-gguf-q8_0",
-      "component": "qwen25_1_5b_q8",
-      "label": "Qwen2.5 1.5B 高精度版：約 1.9 GB，比 1.5B 準一些，慢約 4 成",
+      "component": "qwen25_1_5b",
+      "label": "Qwen2.5 1.5B：約 1.9 GB，最小最快，翻得還可以，電腦比較慢時用",
       "recommended": false,
       "license": "Apache-2.0",
       "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",

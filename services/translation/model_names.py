@@ -3,7 +3,7 @@
 資料夾名稱（也是 ``translation.offline.model_name`` 的值）：
 
 - ``qwen2.5-3b-instruct-gguf-q4_k_m``：Qwen2.5-Instruct 系列
-- ``qwen3-1.7b-gguf-q8_0``：Qwen3 系列（混合思考模型，翻譯用非思考模式）
+- ``qwen3-4b-gguf-q4_k_m``：Qwen3 系列（混合思考模型，翻譯用非思考模式）
 """
 
 from __future__ import annotations
@@ -46,12 +46,12 @@ def strip_thinking(text: str) -> str:
 
 
 def model_tag(name: str) -> str:
-    """快取鍵用的短名稱：qwen2.5-1.5b-instruct-gguf-q4_k_m → 1.5b-q4_k_m；qwen3-1.7b-gguf-q8_0 → qwen3-1.7b-q8_0。"""
+    """快取鍵用的短名稱：qwen2.5-1.5b-instruct-gguf-q8_0 → 1.5b-q8_0；qwen3-4b-gguf-q4_k_m → qwen3-4b-q4_k_m。"""
     return name.removeprefix("qwen2.5-").replace("-instruct-gguf-", "-").replace("-gguf-", "-")
 
 
 def display_name(name: str) -> str:
-    """表格與設定畫面用的短名稱：3B Q4_K_M、Qwen3 1.7B Q8_0（Qwen2.5 是預設系列，名稱不加系列）。"""
+    """表格與設定畫面用的短名稱：3B Q4_K_M、Qwen3 4B Q4_K_M（Qwen2.5 是預設系列，名稱不加系列）。"""
     if not name.lower().startswith("qwen"):
         return name  # 自訂的名稱照原樣顯示
     tag = model_tag(name)

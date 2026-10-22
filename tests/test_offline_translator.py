@@ -181,7 +181,7 @@ def test_auto_uses_the_3b_default_then_falls_back_to_the_1_5b_that_can_ship_with
     # 什麼都沒有：指向推薦的預設，找不到模型的錯誤訊息才會叫使用者下載它
     assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME == "qwen2.5-3b-instruct-gguf-q4_k_m"
     _make_gguf(models / FALLBACK_MODEL_NAME)
-    assert FALLBACK_MODEL_NAME == "qwen2.5-1.5b-instruct-gguf-q4_k_m"
+    assert FALLBACK_MODEL_NAME == "qwen2.5-1.5b-instruct-gguf-q8_0"
     assert _translator().resolved_model_name() == FALLBACK_MODEL_NAME  # 沒下載 3B（3B 不隨程式散布）：用備用的 1.5B
     _make_gguf(models / DEFAULT_MODEL_NAME)
     assert _translator().resolved_model_name() == DEFAULT_MODEL_NAME  # 兩個都有：用預設的 3B
@@ -258,11 +258,21 @@ def test_every_listed_model_can_be_fetched_by_the_download_script():
         assert all(file.endswith(".gguf") for file in info["files"])
 
 
+def test_the_program_offers_exactly_these_four_models():
+    """使用者 2026-10-22 決定：預設的模型只留這四個（設定的下拉選單、下載腳本、安裝程式都以此為準）。"""
+    assert [model.name for model in OFFLINE_MODELS] == [
+        "qwen2.5-1.5b-instruct-gguf-q8_0",
+        "qwen2.5-3b-instruct-gguf-q4_k_m",
+        "qwen3-4b-gguf-q4_k_m",
+        "qwen2.5-7b-instruct-gguf-q4_k_m",
+    ]
+
+
 @pytest.mark.parametrize(
     ("name", "tag"),
     [
-        ("qwen2.5-1.5b-instruct-gguf-q4_k_m", "1.5b-q4_k_m"),
-        ("qwen2.5-0.5b-instruct-gguf-q8_0", "0.5b-q8_0"),
+        ("qwen2.5-1.5b-instruct-gguf-q8_0", "1.5b-q8_0"),
+        ("qwen3-4b-gguf-q4_k_m", "qwen3-4b-q4_k_m"),
         ("qwen2.5-7b-instruct-gguf-q4_k_m", "7b-q4_k_m"),
         ("my-own-model", "my-own-model"),
     ],

@@ -603,7 +603,7 @@ def test_the_speed_test_measures_the_device_shown_in_the_menu(qapp, monkeypatch,
     started: list[dict] = []
     monkeypatch.setattr("ui.settings_dialog._speed_test_thread", lambda section, models, cancel, messages, store: started.append(section))
     monkeypatch.setattr(OfflineTranslator, "availability_reason", classmethod(lambda cls: None))
-    monkeypatch.setattr("ui.settings_dialog.llama_model_available", lambda name, model_dir="": name == "qwen2.5-1.5b-instruct-gguf-q4_k_m")
+    monkeypatch.setattr("ui.settings_dialog.llama_model_available", lambda name, model_dir="": name == "qwen2.5-1.5b-instruct-gguf-q8_0")
     monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
 
     dialog._on_speed_test()

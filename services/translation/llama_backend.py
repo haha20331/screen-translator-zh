@@ -8,7 +8,7 @@
   llama-cpp-python 會自動重用與「上一次」提示詞相同的前綴（KV cache）。固定前綴（系統提示 + 示範）
   換語言或歌詞模式時就不同了、要重算約 1 秒，所以每種固定前綴的 KV 快取各存一份（``prepare``），換回來只要毫秒。
 
-模型是官方釋出的 GGUF（``scripts/fetch_translation_models.py --model qwen2.5-1.5b-instruct-gguf-q4_k_m``）。
+模型是官方釋出的 GGUF（``scripts/fetch_translation_models.py --model qwen2.5-1.5b-instruct-gguf-q8_0``）。
 """
 
 from __future__ import annotations

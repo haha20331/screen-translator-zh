@@ -1,6 +1,6 @@
 ﻿; 螢幕截圖翻譯的安裝程式（Inno Setup 7，每位使用者安裝，不需要系統管理員權限）。
 ;
-; 程式本體是 PyInstaller 的資料夾輸出（ScreenTranslator.spec）。翻譯模型（GGUF，每個 0.7～4.7 GB）不在安裝程式裡：
+; 程式本體是 PyInstaller 的資料夾輸出（ScreenTranslator.spec）。翻譯模型（GGUF，每個 1.9～4.7 GB）不在安裝程式裡：
 ; 依使用者在「選擇元件」頁的勾選，安裝時從 Hugging Face 下載，並用 SHA-256 驗證（清單：models.json，由
 ; scripts/installer_models.py 產生 generated\models.inc）。預設勾選推薦的 Qwen2.5 3B。
 ;

@@ -5,10 +5,10 @@
 - NLLB-200（600M / 1.3B）對字幕、遊戲對白這類短句常誤譯，詞表缺字還會輸出 ``⁇``，已不再使用。
 - Qwen2.5-Instruct 加上示範（few-shot）後穩定且自然。
 
-引擎是 llama.cpp（``llama_backend.py``）：CPU 上每句約 0.3 秒（1.5B Q4_K_M）、0.55 秒（3B Q4_K_M），
+引擎是 llama.cpp（``llama_backend.py``）：CPU 上每句約 0.4 秒（1.5B Q8_0）、0.55 秒（3B Q4_K_M），
 比先前的 CTranslate2 快 2～3 倍，品質沒有明顯差異（見 PLAN.md 9.2.7），所以只留這一個引擎。模型有大小之分
-（0.5B／1.5B／3B／7B，見 ``OFFLINE_MODELS``），``model_name`` 設成其中一個；預設 ``auto``：有獨立顯示卡（可用顯示卡記憶體
-至少 5.5 GB）且放了 7B 就用 7B，否則用 3B Q4_K_M（真實字幕上和 7B 差不多，只要一半的時間與記憶體），沒有下載 3B 時退回 1.5B Q4_K_M
+（1.5B／3B／4B／7B，見 ``OFFLINE_MODELS``），``model_name`` 設成其中一個；預設 ``auto``：有獨立顯示卡（可用顯示卡記憶體
+至少 5.5 GB）且放了 7B 就用 7B，否則用 3B Q4_K_M（真實字幕上和 7B 差不多，只要一半的時間與記憶體），沒有下載 3B 時退回 1.5B Q8_0
 （Apache-2.0，可以隨程式散布；3B 是 Qwen Research License，只能請使用者自己下載）。
 
 三個可勾選的輔助功能（設定在 ``translation`` 區段，即時生效、不必重新載入模型）：
@@ -67,12 +67,9 @@ class OfflineModel(NamedTuple):
     label: str  # 設定畫面顯示的名稱
 
 
-# 可選的模型，由小到大（Qwen2.5-Instruct 與 Qwen3 兩個系列；取得方式見 scripts/fetch_translation_models.py）
+# 可選的模型，由小到大：Qwen2.5-Instruct 的 1.5B Q8_0／3B Q4_K_M／7B Q4_K_M 與 Qwen3 4B Q4_K_M（取得方式見 scripts/fetch_translation_models.py）
 OFFLINE_MODELS: tuple[OfflineModel, ...] = (
-    OfflineModel("qwen2.5-0.5b-instruct-gguf-q8_0", "Qwen2.5 0.5B（約 0.7 GB）：最小最快，但日文常翻錯，電腦很慢時才用"),
-    OfflineModel("qwen2.5-1.5b-instruct-gguf-q4_k_m", "Qwen2.5 1.5B（約 1.1 GB）：很快，翻得還可以，電腦比較慢時用這個"),
-    OfflineModel("qwen2.5-1.5b-instruct-gguf-q8_0", "Qwen2.5 1.5B 高精度版（約 1.9 GB）：比上一個準一些，慢約 4 成"),
-    OfflineModel("qwen3-1.7b-gguf-q8_0", "Qwen3 1.7B（約 1.8 GB）：新一代的小模型，大小在 1.5B 和 3B 之間"),
+    OfflineModel("qwen2.5-1.5b-instruct-gguf-q8_0", "Qwen2.5 1.5B（約 1.9 GB）：最小最快，翻得還可以，電腦比較慢時用這個"),
     OfflineModel("qwen2.5-3b-instruct-gguf-q4_k_m", "Qwen2.5 3B（約 2.1 GB）：推薦，翻得準、速度也不慢，一般電腦夠用"),
     OfflineModel("qwen3-4b-gguf-q4_k_m", "Qwen3 4B（約 2.5 GB）：比 3B 再大一點，更準但更慢"),
     OfflineModel("qwen2.5-7b-instruct-gguf-q4_k_m", "Qwen2.5 7B（約 4.7 GB）：最準，但很慢、要約 7 GB 記憶體，有獨立顯示卡時才建議用"),
@@ -82,7 +79,7 @@ PROMPT_VERSION = 5  # 5：Qwen2.5 系列改用中文提示詞（Qwen3 維持英�
 # 預設：真實字幕上和 7B 差不多準，速度與記憶體只要一半。授權是 Qwen Research License，不隨程式散布，使用者自己下載
 DEFAULT_MODEL_NAME = "qwen2.5-3b-instruct-gguf-q4_k_m"
 # 備用：Apache-2.0，可以隨程式散布；沒有下載預設的 3B 時用它
-FALLBACK_MODEL_NAME = "qwen2.5-1.5b-instruct-gguf-q4_k_m"
+FALLBACK_MODEL_NAME = "qwen2.5-1.5b-instruct-gguf-q8_0"
 LARGE_MODEL_NAME = "qwen2.5-7b-instruct-gguf-q4_k_m"
 # auto 自動改用 7B 的條件之一：獨立顯示卡的可用顯示卡記憶體至少這麼多（7B Q4_K_M 約 4.7 GB，再加上快取與緩衝）。
 # 內顯與 CPU 共用系統記憶體，7B 要 6～7 GB、又不會變快，所以內顯不算
@@ -173,7 +170,7 @@ _LYRICS_SHOTS: dict[str, list[tuple[str, str]]] = {
 # ----------------------------------------------------------------------------- 兩種提示詞風格
 # 中文版：系統提示詞與每句使用者輪（「翻譯這句日文：」）都用中文，示範同英文版。Qwen2.5 是以中文為主的模型，
 # 盲測（PROMPT_TUNING.md）：3B 比英文版好（歌詞 62:31 與 55:28，通順度 +0.4～0.6、保真度 +0.15～0.3），台詞持平；
-# Qwen3 1.7B 的台詞反而變差、歌詞稍好，整體沒有差別，所以 Qwen3 維持英文版。
+# Qwen3（盲測用的是 1.7B）的台詞反而變差、歌詞稍好，整體沒有差別，所以 Qwen3 維持英文版。
 _ZH_SKIP_RULE = (
     f" 如果文字只有音效、擬聲詞、笑聲、嘆息、尖叫這類沒有意義的聲音（例如 ドン、ガシャーン、ワンワン、ははは、Boom、Woof、Haha），"
     f"不要翻成「砰」「汪汪」之類的中文擬聲詞，直接輸出 {SKIP_MARKER}。"
@@ -326,7 +323,7 @@ class OfflineTranslator(ChineseTargetTranslator):
     # ------------------------------------------------------------- 模型選擇
     def resolved_model_name(self) -> str:
         """實際要用的模型名稱。``auto``：有獨立顯示卡（可用顯示卡記憶體夠）且放了 7B 就用 7B；否則用預設的 3B，
-        沒有 3B 就退回 1.5B；兩個都沒有時回傳預設的 3B（找不到模型的錯誤訊息才會指到推薦的那個）。"""
+        沒有 3B 就退回 1.5B Q8_0；兩個都沒有時回傳預設的 3B（找不到模型的錯誤訊息才會指到推薦的那個）。"""
         if self._resolved_model is not None:
             return self._resolved_model
         settings = self._settings()
@@ -418,7 +415,7 @@ class OfflineTranslator(ChineseTargetTranslator):
         return f"{self.name}/{self.resolved_model_name()}"
 
     def display_model_name(self) -> str:
-        """給使用者看的短名稱（3B Q4_K_M、Qwen3 1.7B Q8_0），顯示載入進度時用。"""
+        """給使用者看的短名稱（3B Q4_K_M、Qwen3 4B Q4_K_M），顯示載入進度時用。"""
         return display_name(self.resolved_model_name())
 
     def is_ready(self) -> bool:

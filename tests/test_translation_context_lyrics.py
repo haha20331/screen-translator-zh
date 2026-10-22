@@ -321,17 +321,17 @@ def test_no_retry_when_the_output_is_clean():
 @pytest.mark.parametrize(
     ("section", "expected"),
     [
-        ({}, "auto|p5|1.5b-q4_k_m"),
-        ({"lyrics_mode": True}, "auto|lyrics|p5|1.5b-q4_k_m"),
-        ({"use_context": True}, "auto|ctx|p5|1.5b-q4_k_m"),
-        ({"lyrics_mode": True, "use_context": True}, "auto|lyrics|ctx|p5|1.5b-q4_k_m"),
-        ({"retry_non_chinese": True}, "auto|p5|1.5b-q4_k_m"),  # 預設就是開，不另外分流
-        ({"retry_non_chinese": False}, "auto|noretry|p5|1.5b-q4_k_m"),
-        ({"lyrics_mode": True, "retry_non_chinese": False}, "auto|lyrics|noretry|p5|1.5b-q4_k_m"),
+        ({}, "auto|p5|1.5b-q8_0"),
+        ({"lyrics_mode": True}, "auto|lyrics|p5|1.5b-q8_0"),
+        ({"use_context": True}, "auto|ctx|p5|1.5b-q8_0"),
+        ({"lyrics_mode": True, "use_context": True}, "auto|lyrics|ctx|p5|1.5b-q8_0"),
+        ({"retry_non_chinese": True}, "auto|p5|1.5b-q8_0"),  # 預設就是開，不另外分流
+        ({"retry_non_chinese": False}, "auto|noretry|p5|1.5b-q8_0"),
+        ({"lyrics_mode": True, "retry_non_chinese": False}, "auto|lyrics|noretry|p5|1.5b-q8_0"),
     ],
 )
 def test_cache_namespace_separates_translation_styles(section, expected):
-    instance, _ = _translator(offline={"model_name": "qwen2.5-1.5b-instruct-gguf-q4_k_m"}, **section)  # 模型固定，不受這台電腦下載了什麼影響
+    instance, _ = _translator(offline={"model_name": "qwen2.5-1.5b-instruct-gguf-q8_0"}, **section)  # 模型固定，不受這台電腦下載了什麼影響
 
     assert instance.cache_namespace("auto") == expected
 

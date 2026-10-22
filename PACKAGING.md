@@ -47,7 +47,7 @@
 .\ScreenTranslator-0.3.0-beta-Setup.exe /VERYSILENT /TYPE=minimal                                  # 只裝程式
 ```
 
-元件代號在 `installer/models.json` 的 `component`（`qwen25_3b`、`qwen25_1_5b`、`qwen3_1_7b`、`qwen25_0_5b`、`qwen25_1_5b_q8`、`qwen3_4b`、`qwen25_7b`）。
+元件代號在 `installer/models.json` 的 `component`（`qwen25_3b`、`qwen25_1_5b`、`qwen3_4b`、`qwen25_7b`）。
 
 ## 模型清單
 
@@ -63,7 +63,7 @@ python scripts\serve_models.py                       # 127.0.0.1:8765；--tamper
 # 2. 另一個視窗：建一個「從本機伺服器下載」的測試安裝程式
 .\scripts\build_installer.ps1 -Version 0.3.0-beta -ModelHost http://127.0.0.1:8765 -OutputDirectory release\test
 # 3. 靜默安裝到暫存資料夾，再檢查
-.\release\test\ScreenTranslator-0.3.0-beta-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /DIR="$env:TEMP\st" /COMPONENTS="app,models,models\qwen25_0_5b" /LOG="$env:TEMP\st.log"
+.\release\test\ScreenTranslator-0.3.0-beta-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /DIR="$env:TEMP\st" /COMPONENTS="app,models,models\qwen25_1_5b" /LOG="$env:TEMP\st.log"
 ```
 
 要檢查的：模型資料夾裡有 `.gguf`、`LICENSE`、`manifest.json`；`licenses\` 有各套件的授權；`$env:TEMP\st\ScreenTranslator.exe` 能啟動並載入模型（`SCREEN_TRANSLATOR_SMOKE=1`、`SCREEN_TRANSLATOR_SMOKE_SECONDS=40` 讓它跑 40 秒後自己結束，並把 `LOCALAPPDATA` 指到暫存資料夾，不要動到真正的使用者資料）；`unins000.exe /VERYSILENT` 解除安裝後資料夾消失；`--tamper` 時安裝以非零代碼結束、不留檔案。測試安裝程式**不能對外發佈**（它的下載網址是本機）。
@@ -75,6 +75,6 @@ python scripts\serve_models.py                       # 127.0.0.1:8765；--tamper
 
 ## 已知限制
 
-- **網路**：下載由 Inno Setup 進行，用 Windows 的網路設定（Inno 文件：會自動使用系統的代理設定）。已實測：在這台公司網路的電腦上，不經任何額外設定直接從 `huggingface.co` 下載 0.5B 模型（676 MB）約 84 秒，SHA-256 驗證通過。環境變數 `HTTPS_PROXY` **沒有驗證**會不會被讀，不要依賴它；網路需要代理又沒設進 Windows 時，安裝程式下不了模型，可以事後用 `scripts/fetch_translation_models.py`（認 `HTTPS_PROXY`）下載再放進 `models\translation\`。
+- **網路**：下載由 Inno Setup 進行，用 Windows 的網路設定（Inno 文件：會自動使用系統的代理設定）。已實測：在這台公司網路的電腦上，不經任何額外設定直接從 `huggingface.co` 下載 0.5B 模型（676 MB，當時的清單裡有，現已移除）約 84 秒，SHA-256 驗證通過。環境變數 `HTTPS_PROXY` **沒有驗證**會不會被讀，不要依賴它；網路需要代理又沒設進 Windows 時，安裝程式下不了模型，可以事後用 `scripts/fetch_translation_models.py`（認 `HTTPS_PROXY`）下載再放進 `models\translation\`。
 - 安裝精靈的畫面（元件頁的文字、勾選預設）只用靜默安裝與紀錄檔驗證過，沒有逐頁用眼睛看過。
 - 沒有自動更新：新版要重新下載安裝程式（使用者資料與已下載的模型會保留）。

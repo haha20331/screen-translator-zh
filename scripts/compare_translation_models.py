@@ -1,4 +1,4 @@
-"""比較離線翻譯的模型（llama.cpp，Qwen2.5 的 0.5B／1.5B／3B／7B 與不同量化）。
+"""比較離線翻譯的模型（llama.cpp，Qwen2.5 的 1.5B／3B／7B 與 Qwen3 4B）。
 
 同一份提示詞、同一批句子、每句單獨翻譯（和即時監控一樣），每個模型在**獨立的行程**裡跑，
 這樣記憶體用量才量得準、也不會互相影響。量測：
@@ -11,7 +11,7 @@
 用法（模型要先用 scripts/fetch_translation_models.py 放進 models/translation/；沒下載的會自動略過）::
 
     python scripts/compare_translation_models.py
-    python scripts/compare_translation_models.py --models qwen2.5-0.5b-instruct-gguf-q8_0 qwen2.5-7b-instruct-gguf-q4_k_m
+    python scripts/compare_translation_models.py --models qwen2.5-1.5b-instruct-gguf-q8_0 qwen2.5-7b-instruct-gguf-q4_k_m
     python scripts/compare_translation_models.py --threads 4 6 8 --reps 3
     python scripts/compare_translation_models.py --reps 3 --report MODEL_COMPARISON.md     # 另外存成 Markdown 報表
 
@@ -72,10 +72,7 @@ REPORT_SENTENCES = [
 
 # 預設比較的模型（由小到大）；沒有下載的會略過
 DEFAULT_MODELS = [
-    "qwen2.5-0.5b-instruct-gguf-q8_0",
-    "qwen2.5-1.5b-instruct-gguf-q4_k_m",
     "qwen2.5-1.5b-instruct-gguf-q8_0",
-    "qwen3-1.7b-gguf-q8_0",
     "qwen2.5-3b-instruct-gguf-q4_k_m",
     "qwen3-4b-gguf-q4_k_m",
     "qwen2.5-7b-instruct-gguf-q4_k_m",
@@ -222,7 +219,7 @@ def report(results: list[dict]) -> None:
 
 
 def short_name(name: str) -> str:
-    """qwen2.5-1.5b-instruct-gguf-q4_k_m → 1.5B Q4_K_M；qwen3-1.7b-gguf-q8_0 → Qwen3 1.7B Q8_0（報表欄位用的短名稱）。"""
+    """qwen2.5-1.5b-instruct-gguf-q8_0 → 1.5B Q8_0；qwen3-4b-gguf-q4_k_m → Qwen3 4B Q4_K_M（報表欄位用的短名稱）。"""
     from services.translation.model_names import display_name
 
     return display_name(name)
@@ -278,7 +275,7 @@ def write_report(results: list[dict], path: Path, reps: int) -> None:
             f"{median('日文歌詞')} | {median('日文一般')} | {median('英文')} | {median('無主詞')} | {median('擬聲詞')} | {average_calls:.2f} |"
         )
     baseline = results[0]
-    default = next((r for r in results if r["name"].endswith("1.5b-instruct-gguf-q4_k_m")), baseline)
+    default = next((r for r in results if r["name"].endswith("1.5b-instruct-gguf-q8_0")), baseline)
     base_out = {r["source"]: r["output"] for r in default["rows"]}
     lines += [
         "",

@@ -24,7 +24,7 @@ from services.translation.offline_translator import llama_model_available
 from ui.settings_dialog import SettingsDialog
 from ui.style import apply_style
 
-KNOWN = "qwen2.5-1.5b-instruct-gguf-q4_k_m"
+KNOWN = "qwen2.5-1.5b-instruct-gguf-q8_0"
 
 
 def _gguf(folder: Path, name: str = "model.gguf", size: int = 1000) -> Path:

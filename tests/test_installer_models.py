@@ -65,6 +65,16 @@ def test_every_download_is_verified_has_a_size_and_belongs_to_one_component(cata
         assert re.search(r"Components: models\\\w+;", line) and "ignoreversion" in line
 
 
+def test_the_installer_offers_exactly_the_four_models(catalog):
+    """使用者 2026-10-22 決定：只留 1.5B Q8、3B Q4、Qwen3 4B Q4、7B Q4。"""
+    assert [(model["component"], model["name"]) for model in catalog["models"]] == [
+        ("qwen25_3b", "qwen2.5-3b-instruct-gguf-q4_k_m"),
+        ("qwen25_1_5b", "qwen2.5-1.5b-instruct-gguf-q8_0"),
+        ("qwen3_4b", "qwen3-4b-gguf-q4_k_m"),
+        ("qwen25_7b", "qwen2.5-7b-instruct-gguf-q4_k_m"),
+    ]
+
+
 def test_components_list_the_recommended_one_in_the_recommended_type(catalog):
     text = installer_models.inno_include(catalog)
     components = [line for line in text.splitlines() if line.startswith('Name: "models\\')]
@@ -131,7 +141,7 @@ def test_the_installer_ships_the_licenses_and_cleans_up_only_empty_model_folders
 def test_the_test_server_serves_every_file_of_the_catalog(catalog, tmp_path):
     routes = serve_models.build_routes(catalog, tmp_path)
 
-    # 同一個來源 repo 的模型（1.5B 的兩種量化）共用同一份授權檔網址，所以是「不重複的網址」
+    # 同一個來源 repo 的模型共用同一份授權檔網址，所以是「不重複的網址」
     wanted = {
         f'/{model["repo"]}/resolve/{model["revision"]}/{item["name"]}'
         for model in catalog["models"]

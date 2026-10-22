@@ -57,7 +57,7 @@ def main() -> None:
     parser.add_argument(
         "--model",
         default="auto",
-        help="離線翻譯的模型名稱（見 scripts/fetch_translation_models.py --list）；預設 auto = 3B Q4_K_M（沒有下載就用 1.5B）",
+        help="離線翻譯的模型名稱（見 scripts/fetch_translation_models.py --list）；預設 auto = 3B Q4_K_M（沒有下載就用 1.5B Q8_0）",
     )
     parser.add_argument("--threads", type=int, default=0, help="推論執行緒數（0 = 自動）")
     parser.add_argument("--variant", default="production", help="提示詞版本（scripts/prompt_variants.py）；production = 目前正式程式碼")

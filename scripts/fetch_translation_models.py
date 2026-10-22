@@ -4,8 +4,8 @@
 （``pip install huggingface_hub``，開發環境已有）::
 
     python scripts/fetch_translation_models.py --list
-    python scripts/fetch_translation_models.py                                  # 預設的 3B Q4_K_M 加上備用的 1.5B Q4_K_M
-    python scripts/fetch_translation_models.py --model qwen2.5-7b-instruct-gguf-q4_k_m qwen2.5-0.5b-instruct-gguf-q8_0
+    python scripts/fetch_translation_models.py                                  # 預設的 3B Q4_K_M 加上備用的 1.5B Q8_0
+    python scripts/fetch_translation_models.py --model qwen2.5-7b-instruct-gguf-q4_k_m qwen3-4b-gguf-q4_k_m
 
 來源版本固定在 ``MODELS`` 的 ``revision``，每個模型資料夾附上 ``manifest.json``（來源、授權、SHA-256）
 與原模型的授權檔。公司網路若攔截 Hugging Face 的 HTTPS，設定 ``HTTPS_PROXY`` 指向公司代理，
@@ -21,47 +21,26 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL = "qwen2.5-3b-instruct-gguf-q4_k_m"  # 程式預設使用的模型（授權：Qwen Research License，不隨程式散布）
-FALLBACK_MODEL = "qwen2.5-1.5b-instruct-gguf-q4_k_m"  # 備用（Apache-2.0，可隨程式散布）：沒有下載 3B 時使用
+FALLBACK_MODEL = "qwen2.5-1.5b-instruct-gguf-q8_0"  # 備用（Apache-2.0，可隨程式散布）：沒有下載 3B 時使用
 
-# 同一個 Qwen2.5-Instruct 系列，大小與量化不同：越大越準也越慢、越吃記憶體。
+# Qwen2.5-Instruct 的 1.5B／3B／7B 加上 Qwen3 4B：越大越準也越慢、越吃記憶體。
 # ``files`` 有多個時是官方分片（llama.cpp 讀第一片就會自動找到其餘的）。
 MODELS = {
-    "qwen2.5-0.5b-instruct-gguf-q8_0": {
-        "repo": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
-        "revision": "9217f5db79a29953eb74d5343926648285ec7e67",
-        "files": ["qwen2.5-0.5b-instruct-q8_0.gguf"],
-        "license": "Apache-2.0",
-        "note": "最小最快（約 0.7 GB），日文品質明顯較差，適合當速度上限的參考。",
-    },
-    "qwen2.5-1.5b-instruct-gguf-q4_k_m": {
-        "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-        "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
-        "files": ["qwen2.5-1.5b-instruct-q4_k_m.gguf"],
-        "license": "Apache-2.0",
-        "note": "備用，沒有 3B 時使用。4 位元量化（約 1.1 GB），最快的實用選擇，Apache-2.0 可隨程式散布。",
-    },
     "qwen2.5-1.5b-instruct-gguf-q8_0": {
         "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
         "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
         "files": ["qwen2.5-1.5b-instruct-q8_0.gguf"],
         "license": "Apache-2.0",
-        "note": "8 位元量化（約 1.9 GB），比 Q4_K_M 慢約 1.4 倍，較少字元層級的小錯。",
+        "note": "備用，沒有 3B 時使用。8 位元量化（約 1.9 GB），最小最快的選擇，Apache-2.0 可隨程式散布。",
     },
     "qwen2.5-3b-instruct-gguf-q4_k_m": {
         "repo": "Qwen/Qwen2.5-3B-Instruct-GGUF",
         "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe",
         "files": ["qwen2.5-3b-instruct-q4_k_m.gguf"],
         "license": "Qwen Research License（僅限非商用）",
-        "note": "預設。約 2.1 GB，比 1.5B 準、約慢 2 倍，真實字幕上和 7B 差不多。授權不是 Apache-2.0（僅限研究與評估），不隨程式散布，請閱讀隨附的 LICENSE。",
+        "note": "預設。約 2.1 GB，比 1.5B 準、慢約 1.5 倍，真實字幕上和 7B 差不多。授權不是 Apache-2.0（僅限研究與評估），不隨程式散布，請閱讀隨附的 LICENSE。",
     },
-    # Qwen3（混合思考模型；翻譯用非思考模式）：全部 Apache-2.0，連 4B 也可以隨程式散布。官方的 1.7B 只有 Q8_0 一種量化
-    "qwen3-1.7b-gguf-q8_0": {
-        "repo": "Qwen/Qwen3-1.7B-GGUF",
-        "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
-        "files": ["Qwen3-1.7B-Q8_0.gguf"],
-        "license": "Apache-2.0",
-        "note": "Qwen3 1.7B（約 1.8 GB，官方只有 Q8_0）。Apache-2.0，可隨程式散布；大小介於 Qwen2.5 的 1.5B 與 3B 之間。",
-    },
+    # Qwen3（混合思考模型；翻譯用非思考模式）：Apache-2.0，連 4B 也可以隨程式散布
     "qwen3-4b-gguf-q4_k_m": {
         "repo": "Qwen/Qwen3-4B-GGUF",
         "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",

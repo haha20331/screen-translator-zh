@@ -260,7 +260,7 @@ def test_the_test_settings_keep_the_users_threads_but_switch_off_context_and_lyr
 
 def test_short_names():
     assert short_label("qwen2.5-3b-instruct-gguf-q4_k_m") == "3B Q4_K_M"
-    assert short_label("qwen2.5-0.5b-instruct-gguf-q8_0") == "0.5B Q8_0"
+    assert short_label("qwen2.5-1.5b-instruct-gguf-q8_0") == "1.5B Q8_0"
 
 
 def test_the_needed_memory_is_a_bit_more_than_the_file():
@@ -385,8 +385,8 @@ def test_the_table_sits_under_the_model_selector_with_a_button_and_lists_every_m
         assert dialog.table_speed.rowCount() == len(OFFLINE_MODELS)
         headers = [dialog.table_speed.horizontalHeaderItem(c).text() for c in range(dialog.table_speed.columnCount())]
         assert headers == ["模型", "日文一般", "日文歌詞", "英文", "平均", "載入（秒）"]
-        assert [_cells(dialog, r)[0] for r in range(7)] == [
-            "0.5B Q8_0", "1.5B Q4_K_M", "1.5B Q8_0", "Qwen3 1.7B Q8_0", "★ 3B Q4_K_M", "Qwen3 4B Q4_K_M", "7B Q4_K_M",
+        assert [_cells(dialog, r)[0] for r in range(4)] == [
+            "1.5B Q8_0", "★ 3B Q4_K_M", "Qwen3 4B Q4_K_M", "7B Q4_K_M",
         ]  # ★ = 使用中
         assert dialog.lbl_speed_test.text() == "尚未測試過"
         assert _cells(dialog, 0)[1] == "尚未測試"
@@ -395,11 +395,11 @@ def test_the_table_sits_under_the_model_selector_with_a_button_and_lists_every_m
 
 
 def test_models_that_are_not_downloaded_say_so(qapp, tmp_path, monkeypatch):
-    monkeypatch.setattr(dialog_module, "llama_model_available", lambda name, model_dir="": name.endswith("q4_k_m") and "1.5b" in name)
+    monkeypatch.setattr(dialog_module, "llama_model_available", lambda name, model_dir="": name == "qwen2.5-1.5b-instruct-gguf-q8_0")
     dialog = SettingsDialog(_config(tmp_path))
     try:
         assert _cells(dialog, _row_of("qwen2.5-7b-instruct-gguf-q4_k_m"))[1] == "未下載"
-        assert _cells(dialog, _row_of("qwen2.5-1.5b-instruct-gguf-q4_k_m"))[1] == "尚未測試"
+        assert _cells(dialog, _row_of("qwen2.5-1.5b-instruct-gguf-q8_0"))[1] == "尚未測試"
     finally:
         dialog.deleteLater()
 
@@ -422,7 +422,7 @@ def test_saved_results_are_shown_as_soon_as_the_settings_open(qapp, tmp_path, do
 def test_the_star_follows_the_model_in_use_and_auto_resolves_to_the_real_one(qapp, tmp_path, downloaded):
     dialog = SettingsDialog(_config(tmp_path, model="auto"))
     try:
-        stars = [r for r in range(7) if _cells(dialog, r)[0].startswith("★")]
+        stars = [r for r in range(4) if _cells(dialog, r)[0].startswith("★")]
         assert stars == [_row_of("qwen2.5-3b-instruct-gguf-q4_k_m")]  # auto → 預設的 3B（這台有下載）
     finally:
         dialog.deleteLater()
@@ -466,9 +466,9 @@ def test_pressing_the_button_tests_every_downloaded_model_shows_and_saves_the_re
         assert dialog._speed_testing or record  # 一按就開始（在背景執行緒，不會卡住畫面）
         _wait_for_the_test_to_finish(dialog)
 
-        assert "7 個模型" in asked[0] and "3 句" in asked[0]
+        assert "4 個模型" in asked[0] and "3 句" in asked[0]
         assert record["models"] == [model.name for model in OFFLINE_MODELS]
-        assert [_cells(dialog, r)[4] for r in range(7)] == ["100", "200", "300", "400", "500", "600", "700"]
+        assert [_cells(dialog, r)[4] for r in range(4)] == ["100", "200", "300", "400"]
         assert dialog.btn_speed_test.text() == "測試速度" and dialog.btn_speed_test.isEnabled()
         saved = SpeedTestStore(tmp_path / "speed_test.json").load()
         assert set(saved["models"]) == {model.name for model in OFFLINE_MODELS}
@@ -487,13 +487,13 @@ def test_results_are_there_again_after_closing_and_reopening_the_settings(qapp, 
 
     second = SettingsDialog(_config(tmp_path))
     try:
-        assert [_cells(second, r)[4] for r in range(7)] == ["100", "200", "300", "400", "500", "600", "700"]
+        assert [_cells(second, r)[4] for r in range(4)] == ["100", "200", "300", "400"]
     finally:
         second.deleteLater()
 
 
 def test_only_the_downloaded_models_are_tested_and_the_test_uses_the_saved_translation_settings(qapp, tmp_path, monkeypatch):
-    only = {"qwen2.5-1.5b-instruct-gguf-q4_k_m", "qwen2.5-3b-instruct-gguf-q4_k_m"}
+    only = {"qwen2.5-1.5b-instruct-gguf-q8_0", "qwen2.5-3b-instruct-gguf-q4_k_m"}
     monkeypatch.setattr(dialog_module, "llama_model_available", lambda name, model_dir="": name in only)
     monkeypatch.setattr(OfflineTranslator, "availability_reason", classmethod(lambda cls: None))
     record = {}
@@ -578,7 +578,7 @@ def test_the_button_becomes_stop_while_testing_and_stopping_ends_the_test(qapp, 
             dialog._poll_speed_test()
             time.sleep(0.01)
         assert dialog.btn_speed_test.text() == "停止測試"
-        assert "測試中…" in _cells(dialog, 0)[1] or any("測試中…" in _cells(dialog, r)[1] for r in range(7))
+        assert "測試中…" in _cells(dialog, 0)[1] or any("測試中…" in _cells(dialog, r)[1] for r in range(4))
 
         dialog.btn_speed_test.click()  # 停止
         assert not dialog.btn_speed_test.isEnabled()  # 等目前這個模型測完
@@ -818,15 +818,15 @@ def test_the_default_translator_turns_the_cpu_fallback_off_only_when_asked(monke
 def test_the_table_names_the_device_each_number_was_measured_on(qapp, tmp_path, downloaded):
     store = SpeedTestStore(tmp_path / "speed_test.json")
     store.save_result(_result("qwen2.5-3b-instruct-gguf-q4_k_m", device="gpu", gpu_fallback=False))
-    store.save_result(_result("qwen2.5-1.5b-instruct-gguf-q4_k_m", device="cpu", gpu_fallback=False))
-    store.save_result(_result("qwen2.5-0.5b-instruct-gguf-q8_0", device="cpu", gpu_fallback=True))
+    store.save_result(_result("qwen3-4b-gguf-q4_k_m", device="cpu", gpu_fallback=False))
+    store.save_result(_result("qwen2.5-7b-instruct-gguf-q4_k_m", device="cpu", gpu_fallback=True))
     store.save_result(_result("qwen2.5-1.5b-instruct-gguf-q8_0"))  # 舊版存的結果沒有裝置欄位
     dialog = SettingsDialog(_config(tmp_path))
     try:
         assert _cells(dialog, _row_of("qwen2.5-3b-instruct-gguf-q4_k_m"))[0] == "★ 3B Q4_K_M · GPU"
-        assert _cells(dialog, _row_of("qwen2.5-1.5b-instruct-gguf-q4_k_m"))[0] == "1.5B Q4_K_M · CPU"
-        assert _cells(dialog, _row_of("qwen2.5-0.5b-instruct-gguf-q8_0"))[0] == "0.5B Q8_0 · CPU（GPU 失敗）"
-        assert "GPU" in dialog.table_speed.item(_row_of("qwen2.5-0.5b-instruct-gguf-q8_0"), 0).toolTip()
+        assert _cells(dialog, _row_of("qwen3-4b-gguf-q4_k_m"))[0] == "Qwen3 4B Q4_K_M · CPU"
+        assert _cells(dialog, _row_of("qwen2.5-7b-instruct-gguf-q4_k_m"))[0] == "7B Q4_K_M · CPU（GPU 失敗）"
+        assert "GPU" in dialog.table_speed.item(_row_of("qwen2.5-7b-instruct-gguf-q4_k_m"), 0).toolTip()
         assert _cells(dialog, _row_of("qwen2.5-1.5b-instruct-gguf-q8_0"))[0] == "1.5B Q8_0"  # 沒有紀錄就不亂標
     finally:
         dialog.deleteLater()

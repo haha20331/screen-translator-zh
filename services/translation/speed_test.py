@@ -102,7 +102,7 @@ def describe_machine() -> dict[str, Any]:
 
 
 def short_label(name: str) -> str:
-    """qwen2.5-3b-instruct-gguf-q4_k_m → 3B Q4_K_M；qwen3-1.7b-gguf-q8_0 → Qwen3 1.7B Q8_0（表格用的短名稱）。"""
+    """qwen2.5-3b-instruct-gguf-q4_k_m → 3B Q4_K_M；qwen3-4b-gguf-q4_k_m → Qwen3 4B Q4_K_M（表格用的短名稱）。"""
     return display_name(name)
 
 

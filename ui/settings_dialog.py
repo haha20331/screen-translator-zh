@@ -1016,7 +1016,7 @@ class SettingsDialog(QWidget):
         for label, name in OFFLINE_MODEL_CHOICES:
             self.combo_offline_model.addItem(label, name)
         self.combo_offline_model.setToolTip(
-            "離線翻譯用哪個「模型」。名字裡的 0.5B、1.5B、3B 是模型的大小：數字越大，翻得越準，但也越慢、越吃記憶體。\n"
+            "離線翻譯用哪個「模型」。名字裡的 1.5B、3B、4B、7B 是模型的大小：數字越大，翻得越準，但也越慢、越吃記憶體。\n"
             "一般電腦用 3B（預設）就好；電腦比較慢就換 1.5B；有獨立顯示卡可以試 7B。\n"
             f"灰色的選項是還沒下載的模型，{how_to_get('<名稱>')}下載。\n"
             "換了模型，下次翻譯會重新載入，翻譯快取也會自動清空。\n"
@@ -1902,7 +1902,7 @@ class SettingsDialog(QWidget):
         self.btn_speed_test.setToolTip(
             "用 3 句測資（日文一般、日文歌詞、英文），依序載入每個已下載的模型，量這台電腦翻一句要多久。\n"
             "只算「熱機之後」的推論時間：先預熱（載入、算好固定前綴），再翻一輪不計時，之後計時三輪取中位數。\n"
-            "測試時會載入各模型（0.5B 到 7B），電腦會比較忙，請先停止即時監控；結果會存起來。"
+            "測試時會載入各模型（1.5B 到 7B），電腦會比較忙，請先停止即時監控；結果會存起來。"
         )
         self.btn_speed_test.clicked.connect(self._on_speed_test)
         self.lbl_speed_test = QLabel()

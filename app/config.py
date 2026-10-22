@@ -86,8 +86,8 @@ DEFAULTS: dict[str, Any] = {
         "request_interval_seconds": 0.0,
         # 離線翻譯（Qwen2.5-Instruct，llama.cpp / GGUF）；model_dir 留空 = 自動尋找 models/translation/
         "offline": {
-            # 模型名稱（見 services/translation/offline_translator.OFFLINE_MODELS，由小到大 0.5B／1.5B／3B／7B）。
-            # auto：有獨立顯示卡（可用顯示卡記憶體至少 5.5 GB）且放了 7B 就用 7B，否則用 3B Q4_K_M，沒有下載 3B 就用 1.5B Q4_K_M（內顯與 CPU 共用記憶體，不算）
+            # 模型名稱（見 services/translation/offline_translator.OFFLINE_MODELS，由小到大 1.5B／3B／4B／7B）。
+            # auto：有獨立顯示卡（可用顯示卡記憶體至少 5.5 GB）且放了 7B 就用 7B，否則用 3B Q4_K_M，沒有下載 3B 就用 1.5B Q8_0（內顯與 CPU 共用記憶體，不算）
             "model_name": "auto",
             "model_dir": "",
             # 運算裝置（設定頁「運算裝置」）：auto = 有可用的 GPU 就用（沒有 GPU 版的 llama.cpp 或載入失敗就用 CPU）、

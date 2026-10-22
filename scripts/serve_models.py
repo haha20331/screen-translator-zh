@@ -5,7 +5,7 @@
 ``fetch_translation_models.py`` 下載好）。
 
     python scripts/serve_models.py                      # 127.0.0.1:8765
-    python scripts/serve_models.py --tamper qwen2.5-0.5b-instruct-gguf-q8_0   # 該模型的授權檔內容被改過，安裝程式應該拒絕安裝
+    python scripts/serve_models.py --tamper qwen2.5-1.5b-instruct-gguf-q8_0   # 該模型的授權檔內容被改過，安裝程式應該拒絕安裝
 
 只綁在本機位址；Ctrl+C 結束。
 """

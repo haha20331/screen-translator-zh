@@ -29,17 +29,16 @@ def _result(script, name, ms, calls=1, rss=1800.0):
 
 
 def test_short_names(script):
-    assert script.short_name("qwen2.5-1.5b-instruct-gguf-q4_k_m") == "1.5B Q4_K_M"
-    assert script.short_name("qwen2.5-0.5b-instruct-gguf-q8_0") == "0.5B Q8_0"
-    assert script.short_name("qwen3-1.7b-gguf-q8_0") == "Qwen3 1.7B Q8_0"
+    assert script.short_name("qwen2.5-1.5b-instruct-gguf-q8_0") == "1.5B Q8_0"
+    assert script.short_name("qwen2.5-3b-instruct-gguf-q4_k_m") == "3B Q4_K_M"
     assert script.short_name("qwen3-4b-gguf-q4_k_m") == "Qwen3 4B Q4_K_M"
     assert script.short_name("something-else") == "something-else"
 
 
 def test_the_report_lists_speed_quality_and_the_ten_sentences(script, tmp_path):
     results = [
-        _result(script, "qwen2.5-0.5b-instruct-gguf-q8_0", 160),
-        _result(script, "qwen2.5-1.5b-instruct-gguf-q4_k_m", 310, calls=1.2),
+        _result(script, "qwen2.5-1.5b-instruct-gguf-q8_0", 160),
+        _result(script, "qwen2.5-3b-instruct-gguf-q4_k_m", 310, calls=1.2),
         _result(script, "qwen2.5-7b-instruct-gguf-q4_k_m", 1300, rss=7200.0),
     ]
     target = tmp_path / "report.md"
@@ -49,7 +48,8 @@ def test_the_report_lists_speed_quality_and_the_ten_sentences(script, tmp_path):
     text = target.read_text(encoding="utf-8")
     assert text.startswith("# 離線翻譯模型比較")
     assert "## 耗時與記憶體" in text and "## 譯文品質的機器指標" in text and "## 逐句並排比較（10 句）" in text
-    assert "| 0.5B Q8_0 |" in text and "| 1.5B Q4_K_M |" in text and "| 7B Q4_K_M |" in text
+    assert "| 1.5B Q8_0 |" in text and "| 3B Q4_K_M |" in text and "| 7B Q4_K_M |" in text
+    assert "基準：1.5B Q8_0" in text  # 最小最快的 1.5B 是基準
     assert "**160**" in text and "**1300**" in text and "7.2 GB" in text
     assert "1.20" in text  # 平均進模型次數
     table = text.split("## 逐句並排比較（10 句）")[1]
