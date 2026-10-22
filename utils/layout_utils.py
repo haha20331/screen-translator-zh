@@ -40,6 +40,34 @@ def group_into_rows(lines: list[OCRLine], y_tolerance_ratio: float = 0.5) -> lis
     return rows
 
 
+# 上下相鄰的行併成一段時的距離（單位都是「單行行高」的倍數；算出來太小的用最小像素數墊底）
+WRAP_GAP_RATIO = 1.0  # 上下兩行之間的空隙最多這麼多（原本寫死 0.8，2026-10-22 起預設 1）
+WRAP_ALIGN_RATIO = 0.35  # 左緣（置中模式是中心點）最多錯開這麼多
+WRAP_OVERLAP_RATIO = 0.5  # 大字體、藝術字的框常彼此重疊，輕微重疊（不超過這麼多）仍視為相鄰行
+MIN_WRAP_GAP = 8
+MIN_WRAP_ALIGN = 5
+MIN_LABEL_WIDTH = 180  # 單行寬度上限的最小值（像素）
+
+
+def wrap_gap_limit(line_height: float, gap_ratio: float = WRAP_GAP_RATIO) -> int:
+    """上下兩行之間的空隙不超過這麼多像素，下面那行就會併進上面那段。"""
+    return max(MIN_WRAP_GAP, int(round(line_height * gap_ratio)))
+
+
+def wrap_align_limit(line_height: float, align_ratio: float = WRAP_ALIGN_RATIO) -> int:
+    """兩行的左緣（置中模式：中心點）相差不超過這麼多像素，才算對齊。"""
+    return max(MIN_WRAP_ALIGN, int(round(line_height * align_ratio)))
+
+
+def wrap_overlap_limit(line_height: float) -> int:
+    return int(round(line_height * WRAP_OVERLAP_RATIO))
+
+
+def wrap_max_width(capture_width: int, max_width_ratio: float) -> int:
+    """單行寬度上限（像素）：擷取寬度的比例，最少 ``MIN_LABEL_WIDTH``；比它寬的行不會被併進別的行。"""
+    return max(MIN_LABEL_WIDTH, int(round(max(1, capture_width) * max(0.05, max_width_ratio))))
+
+
 CHAR_WIDTH_PER_HEIGHT = 0.6  # 估計一個字的寬度 = 行高 × 0.6
 MIN_CHAR_WIDTH = 4.0
 
@@ -138,6 +166,8 @@ def vertical_regions(
     max_width_ratio: float,
     merge_centered: bool,
     han_is_source: bool,
+    gap_ratio: float = WRAP_GAP_RATIO,
+    align_ratio: float = WRAP_ALIGN_RATIO,
 ) -> list[TextRegion]:
     """直排文字（由上往下讀、欄由右往左）的版面：把每一欄當成「一行」，沿用橫排的分行與合併。
 
@@ -165,6 +195,8 @@ def vertical_regions(
         max_width_ratio=max_width_ratio,
         merge_centered=merge_centered,
         han_is_source=han_is_source,
+        gap_ratio=gap_ratio,
+        align_ratio=align_ratio,
     )
     for region in regions:
         turned_x, turned_y, turned_width, turned_height = region.x, region.y, region.width, region.height
@@ -182,6 +214,8 @@ def merge_wrapped_labels(
     max_width_ratio: float = 0.36,
     merge_centered: bool = False,
     han_is_source: bool = False,
+    gap_ratio: float = WRAP_GAP_RATIO,
+    align_ratio: float = WRAP_ALIGN_RATIO,
 ) -> list[TextRegion]:
     """合并被 OCR 拆开的标签和段落，同时保留原始单行字号参考。
 
@@ -191,12 +225,14 @@ def merge_wrapped_labels(
     ``max_width_ratio``：單行寬度上限佔擷取寬度的比例（上游預設 0.36，只適合窄標籤；
     字幕與對白通常很寬，可調到 1.0）。``merge_centered``：置中對齊（中心點接近）的相鄰行
     也視為同一段，用於置中字幕。``han_is_source``：翻譯器把純漢字當來源語言。
+    ``gap_ratio``：上下兩行最大的空隙；``align_ratio``：左緣（置中時是中心點）最大的誤差；
+    兩者都是單行行高的倍數（見 ``wrap_gap_limit``、``wrap_align_limit``）。
     """
     if len(regions) < 2:
         return regions
 
     remaining = sorted(regions, key=lambda item: (item.y, item.x))
-    max_label_width = max(180, int(round(max(1, capture_width) * max(0.05, max_width_ratio))))
+    max_label_width = wrap_max_width(capture_width, max_width_ratio)
     merged: list[TextRegion] = []
     while remaining:
         current = remaining.pop(0)
@@ -206,17 +242,14 @@ def merge_wrapped_labels(
             match_index: int | None = None
             for candidate_index, candidate in enumerate(remaining):
                 candidate_height = candidate.source_line_height or float(candidate.height)
-                gap_tolerance = max(
-                    8, int(round(max(source_height, candidate_height) * 0.8))
-                )
+                line_height = max(source_height, candidate_height)
+                gap_tolerance = wrap_gap_limit(line_height, gap_ratio)
                 gap = candidate.y - current.bottom
                 if gap > gap_tolerance:
                     break
                 # 大字體、藝術字的 OCR 框常彼此重疊；輕微重疊仍視為相鄰行
-                overlap_tolerance = int(round(max(source_height, candidate_height) * 0.5))
-                x_tolerance = max(
-                    5, int(round(max(source_height, candidate_height) * 0.35))
-                )
+                overlap_tolerance = wrap_overlap_limit(line_height)
+                x_tolerance = wrap_align_limit(line_height, align_ratio)
                 left_aligned = abs(candidate.x - current.x) <= x_tolerance
                 centered = merge_centered and (
                     abs(candidate.center[0] - current.center[0]) <= x_tolerance

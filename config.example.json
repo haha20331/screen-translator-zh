@@ -21,8 +21,12 @@
     "engine": "rapidocr",
     "lang": "auto",
     "min_confidence": 0.6,
-    "merge_y_tolerance_ratio": 1.5,
+    "merge_y_tolerance_ratio": 0.3,
     "merge_x_gap_ratio": 0.8,
+    "merge_wrapped_max_width_ratio": 1.0,
+    "merge_centered_lines": true,
+    "merge_wrapped_gap_ratio": 1.0,
+    "merge_wrapped_align_ratio": 0.35,
     "rapidocr": {
       "limit_side_len": 960,
       "threads": 0,

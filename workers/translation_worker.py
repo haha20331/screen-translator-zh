@@ -20,6 +20,8 @@ from utils.image_utils import (
 )
 from utils.language_utils import needs_translation
 from utils.layout_utils import (
+    WRAP_ALIGN_RATIO,
+    WRAP_GAP_RATIO,
     companion_translation_texts,
     merge_wrapped_labels,
     ocr_lines_to_regions,
@@ -110,10 +112,12 @@ class PipelineTask(QThread):
             target = str(self.config.get("translation.target_language", "zh-hant"))
             han_is_source = bool(getattr(self.translator, "han_is_source", False))
             min_confidence = float(self.config.get("ocr.min_confidence", 0.6))
-            y_tolerance_ratio = float(self.config.get("ocr.merge_y_tolerance_ratio", 1.5))
+            y_tolerance_ratio = float(self.config.get("ocr.merge_y_tolerance_ratio", 0.3))
             x_gap_ratio = float(self.config.get("ocr.merge_x_gap_ratio", 0.8))
-            max_width_ratio = float(self.config.get("ocr.merge_wrapped_max_width_ratio", 0.36))
+            max_width_ratio = float(self.config.get("ocr.merge_wrapped_max_width_ratio", 1.0))
             merge_centered = bool(self.config.get("ocr.merge_centered_lines", False))
+            wrap_gap_ratio = float(self.config.get("ocr.merge_wrapped_gap_ratio", WRAP_GAP_RATIO))
+            wrap_align_ratio = float(self.config.get("ocr.merge_wrapped_align_ratio", WRAP_ALIGN_RATIO))
             if self.vertical:
                 image_height, image_width = self.capture.image.shape[:2]
                 regions = vertical_regions(
@@ -129,6 +133,8 @@ class PipelineTask(QThread):
                     max_width_ratio=max_width_ratio,
                     merge_centered=merge_centered,
                     han_is_source=han_is_source,
+                    gap_ratio=wrap_gap_ratio,
+                    align_ratio=wrap_align_ratio,
                 )
                 if not regions:
                     self.error.emit("沒有識別到文字（置信度過濾後為空）")
@@ -152,6 +158,8 @@ class PipelineTask(QThread):
                     max_width_ratio=max_width_ratio,
                     merge_centered=merge_centered,
                     han_is_source=han_is_source,
+                    gap_ratio=wrap_gap_ratio,
+                    align_ratio=wrap_align_ratio,
                 )
 
             source = str(self.config.get("translation.source_language", "auto"))

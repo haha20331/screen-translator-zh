@@ -91,8 +91,10 @@ from ui.motion import BASE, ENTER_EASING, EXIT_EASING, MOVE_EASING, SLOW, motion
 from ui.no_wheel import NoWheelComboBox, NoWheelDoubleSpinBox, NoWheelSlider, NoWheelSpinBox
 from ui.overlay_preview import OverlayPreview
 from ui.personalization import AppearancePreview, PersonalizationChoiceRow
+from ui.wrap_preview import WrapPreview, wrap_summary
 from utils import stability
 from utils.language_utils import LANGUAGES, TARGET_LANGUAGE, TARGET_LANGUAGES
+from utils.layout_utils import WRAP_ALIGN_RATIO, WRAP_GAP_RATIO
 
 log = get_logger("settings")
 
@@ -739,6 +741,69 @@ class SettingsDialog(QWidget):
         monitor_form.addRow(explanation)
         layout.addWidget(self._card("即時監控", "翻譯完成後是否自動持續監控、多久檢查一次畫面（辨識間隔），以及新字幕要連續辨識到相同結果幾次才翻譯並顯示（確認次數）。", monitor_form))
 
+        self.spin_wrap_gap = NoWheelDoubleSpinBox()
+        self.spin_wrap_gap.setRange(0.0, 2.0)
+        self.spin_wrap_gap.setSingleStep(0.1)
+        self.spin_wrap_gap.setSuffix(" 倍行高")
+        self.spin_wrap_gap.setToolTip(
+            "字幕太長被分成上下好幾行時，上下兩行之間的空隙最多這麼大，下面那行就併進上面那段，一起翻譯成一句。"
+            "單位是「行高」（字的高度，像素），範圍 0～2；算出來不到 8 像素時用 8 像素。\n"
+            "太大，上下隔得很遠、其實是兩句的字幕會被併成一句；太小，行距比較寬的兩行字幕會被拆開，各翻各的。\n"
+            "預設 1（空隙不超過 1 個行高）。"
+        )
+        self.spin_wrap_align = NoWheelDoubleSpinBox()
+        self.spin_wrap_align.setRange(0.0, 2.0)
+        self.spin_wrap_align.setSingleStep(0.05)
+        self.spin_wrap_align.setSuffix(" 倍行高")
+        self.spin_wrap_align.setToolTip(
+            "兩行要對齊才會併成一段：左緣（下面勾選「置中」時也可以是中心點）相差不超過這麼多。"
+            "單位是「行高」，範圍 0～2；算出來不到 5 像素時用 5 像素。\n"
+            "太大，表格或選單裡左右錯開的不同項目會被併在一起；太小，稍微縮排的第二行會被拆開。\n"
+            "預設 0.35。"
+        )
+        self.chk_wrap_centered = QCheckBox("置中對齊的相鄰行也算同一段")
+        self.chk_wrap_centered.setToolTip(
+            "兩行的中心點相差不超過「對齊誤差」，就算同一段，用在置中的字幕。\n"
+            "副作用：置中排列、上下相鄰的幾個獨立條目也可能被併在一起。預設開。"
+        )
+        wrap_form = self._new_form()
+        wrap_form.addRow("上下行距", self.spin_wrap_gap)
+        wrap_form.addRow("對齊誤差", self.spin_wrap_align)
+        wrap_form.addRow(self.chk_wrap_centered)
+        self.wrap_preview = WrapPreview(self.config)
+        self.wrap_summary = QLabel()
+        self.wrap_summary.setObjectName("SettingsCardDescription")
+        self.wrap_summary.setWordWrap(True)
+        wrap_preview_title = QLabel("目前設定的範例")
+        wrap_preview_title.setObjectName("SettingsCardDescription")
+        wrap_column = QVBoxLayout()
+        wrap_column.setContentsMargins(0, 0, 0, 0)
+        wrap_column.setSpacing(6)
+        wrap_column.addWidget(wrap_preview_title)
+        wrap_column.addWidget(self.wrap_preview)
+        wrap_column.addStretch(1)
+        wrap_fields = QVBoxLayout()
+        wrap_fields.setContentsMargins(0, 0, 0, 0)
+        wrap_fields.setSpacing(10)
+        wrap_fields.addLayout(wrap_form)
+        wrap_fields.addWidget(self.wrap_summary)
+        wrap_fields.addStretch(1)
+        wrap_body = QHBoxLayout()
+        wrap_body.setContentsMargins(0, 0, 0, 0)
+        wrap_body.setSpacing(18)
+        wrap_body.addLayout(wrap_fields, 1)
+        wrap_body.addLayout(wrap_column)
+        for control in (self.spin_wrap_gap, self.spin_wrap_align):
+            control.valueChanged.connect(self._refresh_wrap_preview)
+        self.chk_wrap_centered.toggled.connect(self._refresh_wrap_preview)
+        layout.addWidget(
+            self._card(
+                "多行合併",
+                "字幕太長被分成上下好幾行時，上下兩行離多近、對齊多準，才併成同一句一起翻譯。右邊的範例會隨欄位即時改變。",
+                wrap_body,
+            )
+        )
+
         self.history_dir = QLineEdit()
         pick = QPushButton("選擇目錄")
         pick.clicked.connect(self._pick_history_dir)
@@ -944,7 +1009,7 @@ class SettingsDialog(QWidget):
             "容許上下錯開的程度 = 這個數值 × 行高：0 = 較矮那塊要整個疊在另一塊的高度範圍內；"
             "0.3 = 重疊 70% 以上就算同一行；1 = 上下邊只要相碰；超過 1 = 上下有空隙也算（2 = 空隙最多一個行高）。\n"
             "太大，上下相鄰的兩行字幕會被併成一行；太小，稍微歪斜或大小字混排的一行會被拆開。\n"
-            "預設 1.5：上下空隙不到半個行高的文字塊也算同一行。調小，只接上下幾乎對齊的字；調大，連相隔更遠的也接。"
+            "建議 0.3（可試 0.2～0.5）。"
         )
         self.spin_x_gap.setSuffix(" 倍字寬")
         self.spin_x_gap.setToolTip(
@@ -1297,9 +1362,13 @@ class SettingsDialog(QWidget):
         self.spin_confirm_rounds.setValue(int(cfg.get("monitor.confirm_rounds", stability.RECOMMENDED_FAST_ROUNDS)))
         self.spin_max_wait.setValue(float(cfg.get("monitor.max_wait_seconds", stability.RECOMMENDED_MAX_WAIT)))
         self.spin_confidence.setValue(float(cfg.get("ocr.min_confidence", 0.6)))
-        self.spin_y_tol.setValue(float(cfg.get("ocr.merge_y_tolerance_ratio", 1.5)))
+        self.spin_y_tol.setValue(float(cfg.get("ocr.merge_y_tolerance_ratio", 0.3)))
         self.spin_x_gap.setValue(float(cfg.get("ocr.merge_x_gap_ratio", 0.8)))
         self._refresh_merge_preview()
+        self.spin_wrap_gap.setValue(float(cfg.get("ocr.merge_wrapped_gap_ratio", WRAP_GAP_RATIO)))
+        self.spin_wrap_align.setValue(float(cfg.get("ocr.merge_wrapped_align_ratio", WRAP_ALIGN_RATIO)))
+        self.chk_wrap_centered.setChecked(bool(cfg.get("ocr.merge_centered_lines", True)))
+        self._refresh_wrap_preview()
 
         self._set_combo(self.combo_source, cfg.get("translation.source_language", "auto"))
         self._set_combo(self.combo_target, TARGET_LANGUAGE)
@@ -1436,6 +1505,9 @@ class SettingsDialog(QWidget):
             cfg.set("ocr.min_confidence", self.spin_confidence.value())
             cfg.set("ocr.merge_y_tolerance_ratio", self.spin_y_tol.value())
             cfg.set("ocr.merge_x_gap_ratio", self.spin_x_gap.value())
+            cfg.set("ocr.merge_wrapped_gap_ratio", self.spin_wrap_gap.value())
+            cfg.set("ocr.merge_wrapped_align_ratio", self.spin_wrap_align.value())
+            cfg.set("ocr.merge_centered_lines", self.chk_wrap_centered.isChecked())
 
             cfg.set("translation.source_language", self.combo_source.currentData() or "auto")
             cfg.set("translation.target_language", TARGET_LANGUAGE)
@@ -1594,6 +1666,15 @@ class SettingsDialog(QWidget):
             "overlay.border_radius": self.spin_radius.value(),
             "overlay.show_border": self.chk_show_border.isChecked(),
         }
+
+    def _refresh_wrap_preview(self, *_args) -> None:
+        values = (
+            self.spin_wrap_gap.value(),
+            self.spin_wrap_align.value(),
+            self.chk_wrap_centered.isChecked(),
+        )
+        self.wrap_preview.set_values(*values)
+        self.wrap_summary.setText(wrap_summary(*values))
 
     def _refresh_merge_preview(self, *_args) -> None:
         y_ratio, x_ratio = self.spin_y_tol.value(), self.spin_x_gap.value()

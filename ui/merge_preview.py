@@ -13,6 +13,7 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from ui.preview_style import FRAME, MEASURE, MERGED, SCREEN, SEPARATE, TEXT, draw_label
 from ui.translation_overlay import font_families
 from utils.layout_utils import CHAR_WIDTH_PER_HEIGHT, MIN_CHAR_WIDTH, x_gap_limit
 
@@ -20,13 +21,6 @@ SAMPLE_LINE_HEIGHT = 24  # 範例字的高度（像素）；所有距離都跟�
 SAMPLE_TEXTS = ("こんにちは", "お元気", "ですか")  # 一句話被 OCR 拆成三塊
 SEPARATE_EXTRA = 12  # 第三塊放在「剛好超過」閾值再多 12 像素的地方，示範會被分開
 MAX_Y_RATIO = 2.0  # 設定畫面行合併容差的上限（版面按這個預留高度，調整時第一塊不會跳動）
-
-_SCREEN = QColor("#27456F")  # 模擬畫面的底色：與譯文範例同一種藍，不跟系統的深淺色走
-_TEXT = QColor("#FFFFFF")
-_FRAME = QColor("#7CC4FF")
-_MERGED = QColor("#6EE7A8")
-_MEASURE = QColor("#FFC857")
-_SEPARATE = QColor("#B7C3D6")
 
 _LEFT_MARGIN = 66
 _TEXT_SCALE = 0.7  # 字的像素大小 = 行高 × 這個值
@@ -76,7 +70,7 @@ class MergePreview(QWidget):
     def __init__(self, base_config=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._base = base_config
-        self._y_ratio = 1.5
+        self._y_ratio = 0.3
         self._x_ratio = 0.8
         self.setFixedSize(QSize(330, 150))
         self.setAccessibleName("文本組合範例")
@@ -117,7 +111,7 @@ class MergePreview(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), _SCREEN)
+        painter.fillRect(self.rect(), SCREEN)
 
         info = self.layout_info()
         scale = min(1.0, self.width() / info.width, self.height() / info.height)
@@ -130,53 +124,47 @@ class MergePreview(QWidget):
         # 接成同一句之後的範圍（OCR 合併後會變成一個框）
         merged = first.united(second).adjusted(-4, -4, 4, 4)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(_MERGED, 1.4, Qt.PenStyle.DashLine))
+        painter.setPen(QPen(MERGED, 1.4, Qt.PenStyle.DashLine))
         painter.drawRoundedRect(merged, 4, 4)
-        self._label(painter, label_font, _MERGED, "同一句", QRectF(merged.left(), merged.top() - 16, 80, 14))
+        draw_label(painter, label_font, MERGED, "同一句", QRectF(merged.left(), merged.top() - 16, 80, 14))
 
         painter.setFont(text_font)
         for rect, text in ((first, SAMPLE_TEXTS[0]), (second, SAMPLE_TEXTS[1])):
-            painter.setPen(QPen(_FRAME, 1.2))
+            painter.setPen(QPen(FRAME, 1.2))
             painter.drawRect(rect)
-            painter.setPen(_TEXT)
+            painter.setPen(TEXT)
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
-        faded = QColor(_TEXT)
+        faded = QColor(TEXT)
         faded.setAlpha(150)
-        painter.setPen(QPen(_SEPARATE, 1.2, Qt.PenStyle.DashLine))
+        painter.setPen(QPen(SEPARATE, 1.2, Qt.PenStyle.DashLine))
         painter.drawRect(third)
         painter.setPen(faded)
         painter.drawText(third, Qt.AlignmentFlag.AlignCenter, SAMPLE_TEXTS[2])
-        self._label(painter, label_font, _SEPARATE, "分開翻譯", QRectF(third.left(), third.top() - 16, 80, 14))
+        draw_label(painter, label_font, SEPARATE, "分開翻譯", QRectF(third.left(), third.top() - 16, 80, 14))
 
         # 橫向：第一塊右緣到第二塊左緣的最大空隙
         arrow_y = first.bottom() + 12
-        painter.setPen(QPen(_MEASURE, 1.0, Qt.PenStyle.DotLine))
+        painter.setPen(QPen(MEASURE, 1.0, Qt.PenStyle.DotLine))
         painter.drawLine(QPointF(first.right(), first.bottom()), QPointF(first.right(), arrow_y + 4))
         painter.drawLine(QPointF(second.left(), second.bottom()), QPointF(second.left(), arrow_y + 4))
-        painter.setPen(QPen(_MEASURE, 1.4))
+        painter.setPen(QPen(MEASURE, 1.4))
         painter.drawLine(QPointF(first.right(), arrow_y), QPointF(second.left(), arrow_y))
         for x in (first.right(), second.left()):
             painter.drawLine(QPointF(x, arrow_y - 3), QPointF(x, arrow_y + 3))
         middle = (first.right() + second.left()) / 2
-        self._label(
-            painter, label_font, _MEASURE, f"空隙 < {info.gap:.1f} px" if info.gap > 0 else "框要重疊才接",
+        draw_label(
+            painter, label_font, MEASURE, f"空隙 < {info.gap:.1f} px" if info.gap > 0 else "框要重疊才接",
             QRectF(middle - 60, arrow_y + 6, 120, 14), Qt.AlignmentFlag.AlignHCenter,
         )
 
         # 上下：第一塊與第二塊上緣的最大落差
         bar_x = _LEFT_MARGIN - 8
         centre = first.top() + first.height() / 2
-        painter.setPen(QPen(_MEASURE, 1.4))
+        painter.setPen(QPen(MEASURE, 1.4))
         painter.drawLine(QPointF(bar_x, first.top()), QPointF(bar_x, second.top()))
         for y in (first.top(), second.top()):
             painter.drawLine(QPointF(bar_x - 3, y), QPointF(bar_x + 3, y))
-        self._label(
-            painter, label_font, _MEASURE, f"上下錯開\n≤ {info.offset:.1f} px",
+        draw_label(
+            painter, label_font, MEASURE, f"上下錯開\n≤ {info.offset:.1f} px",
             QRectF(0, centre - 14, bar_x - 4, 28), Qt.AlignmentFlag.AlignRight,
         )
-
-    @staticmethod
-    def _label(painter: QPainter, font: QFont, color: QColor, text: str, rect: QRectF, align=Qt.AlignmentFlag.AlignLeft) -> None:
-        painter.setFont(font)
-        painter.setPen(color)
-        painter.drawText(rect, int(align | Qt.AlignmentFlag.AlignVCenter), text)

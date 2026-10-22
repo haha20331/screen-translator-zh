@@ -44,12 +44,15 @@ DEFAULTS: dict[str, Any] = {
         "ocr_max_side": 4096,
         "max_upscale": 3.0,
         "min_confidence": 0.6,
-        "merge_y_tolerance_ratio": 1.5,
+        "merge_y_tolerance_ratio": 0.3,
         "merge_x_gap_ratio": 0.8,
         # 相鄰行合併成同一段翻譯（字幕、對白需要完整上下文）。上游只合併寬度 < 擷取寬度 36% 的窄標籤；
         # 這裡放寬到整個擷取範圍，並把置中對齊的相鄰行也視為同一段。
         "merge_wrapped_max_width_ratio": 1.0,
         "merge_centered_lines": True,
+        # 上下相鄰的兩行併成同一段時：空隙最多、左緣（置中時是中心點）最多錯開幾倍行高（見 utils/layout_utils.wrap_gap_limit）
+        "merge_wrapped_gap_ratio": 1.0,
+        "merge_wrapped_align_ratio": 0.35,
         # 雙語字幕：疊在日文字幕旁、純漢字的那行（字幕檔附的中文譯文）不再當日文翻譯
         "skip_companion_translation": True,
         "rapidocr": {
