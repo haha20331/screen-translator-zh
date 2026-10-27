@@ -37,6 +37,7 @@ def app():
 def setup(app, tmp_path):
     config = AppConfig(tmp_path / "config.json")
     config.set("overlay.placement", "below")
+    config.set("overlay.min_hold_seconds", 0.5)  # 這個檔案測的是保留機制，預設值另有測試
     manager = OverlayManager(config)
     manager.set_monitor_map([MonitorInfo(0, (0, 0, 1000, 600), (0, 0), 1.0)])
     clock = _Clock()
@@ -64,8 +65,8 @@ def _panel(manager):
     return manager._panels[0]
 
 
-def test_default_hold_is_half_a_second():
-    assert DEFAULTS["overlay"]["min_hold_seconds"] == 0.5
+def test_default_hold_is_zero():
+    assert DEFAULTS["overlay"]["min_hold_seconds"] == 0.0
 
 
 def test_a_sentence_replaced_within_the_hold_stays_above_the_new_one(setup):
@@ -224,7 +225,7 @@ def test_whole_screen_captures_are_unaffected(setup):
 # ----------------------------------------------------------------------------- 設定
 def test_the_hold_is_clamped_when_loading_a_config(tmp_path):
     path = tmp_path / "config.json"
-    for saved, expected in (({}, 0.5), ({"min_hold_seconds": 3}, 3.0), ({"min_hold_seconds": -1}, 0.0), ({"min_hold_seconds": 99}, 10.0), ({"min_hold_seconds": "x"}, 0.5)):
+    for saved, expected in (({}, 0.0), ({"min_hold_seconds": 3}, 3.0), ({"min_hold_seconds": -1}, 0.0), ({"min_hold_seconds": 99}, 10.0), ({"min_hold_seconds": "x"}, 0.0)):
         path.write_text(json.dumps({"overlay": saved}), encoding="utf-8")
         assert AppConfig(path).get("overlay.min_hold_seconds") == expected
 
@@ -232,7 +233,7 @@ def test_the_hold_is_clamped_when_loading_a_config(tmp_path):
 def test_translation_settings_let_the_user_choose_the_hold(app, tmp_path):
     apply_style(app)
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
-    assert dialog.spin_min_hold.value() == 0.5
+    assert dialog.spin_min_hold.value() == 0.0
     assert dialog.pages.widget(3).widget().isAncestorOf(dialog.spin_min_hold)  # 翻譯頁
 
     dialog.spin_min_hold.setValue(1.2)

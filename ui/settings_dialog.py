@@ -1100,7 +1100,7 @@ class SettingsDialog(QWidget):
         self.spin_min_hold.setSuffix(" 秒")
         self.spin_min_hold.setToolTip(
             "字幕換得很快、第 N 句剛翻好畫面就跳到第 N+1 句時，第 N 句的譯文至少還要留這麼久；"
-            "第 N+1 句也翻好後，接在第 N 句的下方一起顯示，同樣至少留這麼久。預設 0.5 秒，0 = 立刻換掉。\n"
+            "第 N+1 句也翻好後，接在第 N 句的下方一起顯示，同樣至少留這麼久。預設 0 = 立刻換掉。\n"
             "只適用於「顯示在框下方」的譯文面板（框選區域）。"
         )
         self.spin_cache_entries = NoWheelSpinBox()
@@ -1381,7 +1381,7 @@ class SettingsDialog(QWidget):
         self._load_gpu_device(cfg)
         self.chk_skip_sounds.setChecked(bool(cfg.get("translation.skip_sounds", True)))
         self.chk_retry_non_chinese.setChecked(bool(cfg.get("translation.retry_non_chinese", True)))
-        self.spin_min_hold.setValue(float(cfg.get("overlay.min_hold_seconds", 0.5)))
+        self.spin_min_hold.setValue(float(cfg.get("overlay.min_hold_seconds", 0.0)))
         self.spin_cache_entries.setValue(int(cfg.get("translation.cache_max_entries", 100000)))
 
         self._set_combo(self.combo_placement, cfg.get("overlay.placement", "below"))

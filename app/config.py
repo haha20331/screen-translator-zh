@@ -130,7 +130,7 @@ DEFAULTS: dict[str, Any] = {
         # 譯文面板（below 模式）的底色不透明度 0–255
         "panel_alpha": 215,
         # 字幕翻得很快、新的一句已經出來時，舊的一句譯文至少還要留幾秒（疊在上面，新的接在它下面）；0 = 立刻換掉
-        "min_hold_seconds": 0.5,
+        "min_hold_seconds": 0.0,
     },
     "monitor": {
         "enabled": True,

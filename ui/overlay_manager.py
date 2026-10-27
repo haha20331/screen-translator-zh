@@ -124,9 +124,9 @@ class OverlayManager(QObject):
     # ------------------------------------------------------------- panel below the selection
     def _min_hold(self) -> float:
         try:
-            return max(0.0, float(self._config.get("overlay.min_hold_seconds", 0.5)))
+            return max(0.0, float(self._config.get("overlay.min_hold_seconds", 0.0)))
         except (TypeError, ValueError):
-            return 0.5
+            return 0.0
 
     def _show_panel(self, capture: CaptureInfo, regions: list[TextRegion]) -> bool:
         for window in self._windows.values():  # 先前以「蓋在原文上」顯示的內容不應殘留
