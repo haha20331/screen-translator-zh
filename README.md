@@ -130,6 +130,7 @@ Get-Content .\ScreenTranslator-0.3.0-beta-Setup.exe.sha256     # 兩個要完全
 - **歌詞模式**：看的是歌詞時打開，改用適合歌詞的提示與示範。
 - **略過擬聲詞**（預設開）：只有音效、笑聲、吶喊的字幕不翻譯。
 - **避免譯文夾雜外文**：譯文夾雜假名或外文時，在生成當下擋掉並重翻。
+- **辨識與翻譯分開進行**（預設關，只對即時監控有效）：辨識一直看畫面，翻譯另外排隊、同一時間只翻一句；翻到一半字幕又換了，舊的那句立刻放棄、改翻最新的，畫面上永遠是最新的一句。適合字幕換得很快的影片；代價是辨識與翻譯同時用 CPU，翻譯放在 CPU 上時兩者會互相拖慢一些。
 
 **移動或調整監視框時先不翻譯**：拖曳、調整大小的期間，框會掃過別的文字，程式不辨識也不翻譯；放開之後再等 1 秒才繼續（「設定 → 即時監控 → 移動或調整監視框後等待」可以改秒數，0 = 不等待）。
 
@@ -147,7 +148,7 @@ Get-Content .\ScreenTranslator-0.3.0-beta-Setup.exe.sha256     # 兩個要完全
 
 - 開發環境、測試與模型下載：[DEVELOPMENT.md](DEVELOPMENT.md)。
 - 打包成安裝程式：[PACKAGING.md](PACKAGING.md)。
-- 設計與開發紀錄：[PLAN.md](PLAN.md)；提示詞調整的過程與數字：[PROMPT_TUNING.md](PROMPT_TUNING.md)。
+- 設計與開發紀錄：[PLAN.md](PLAN.md)；提示詞調整的過程與數字：[PROMPT_TUNING.md](PROMPT_TUNING.md)；OCR 與監控速度的實驗數據：[OCR_SPEED.md](OCR_SPEED.md)。
 - 只在 CPU 上跑就夠用；有顯示卡（含內顯）時可以用 GPU 減輕 CPU 負擔。安裝版同時附 CPU 版與 GPU 版（Vulkan）的 llama.cpp，啟動時自動選（這台電腦沒有 Vulkan 就用 CPU 版）；設定 → 翻譯 →「運算裝置」可以隨時選用 CPU、自動、或指定哪一顆 GPU，不必重裝，那裡也會列出這台電腦有哪些顯示卡。從原始碼執行的話，GPU 版要自己裝，見 `requirements-vulkan.txt`。
 
 ## 授權

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from contextlib import contextmanager
 from threading import Lock
 from typing import Any
 
@@ -17,6 +20,12 @@ class TranslationError(Exception):
     def __init__(self, message: str, rate_limited: bool = False) -> None:
         super().__init__(message)
         self.rate_limited = rate_limited
+
+
+class TranslationInterrupted(Exception):
+    """翻譯做到一半被放棄：辨識與翻譯分開進行時，畫面上已經有更新的字幕，這一句不必再翻了。
+
+    不是錯誤：沒有譯文、不寫入快取、不算失敗次數。"""
 
 
 _REGISTRY: dict[str, type["Translator"]] = {}
@@ -48,6 +57,25 @@ class Translator(ABC):
         self._last_request_time = 0.0
         self.last_failed_count = 0
         self.last_failed_indices: set[int] = set()
+        self._interrupt_local = threading.local()
+
+    @contextmanager
+    def interruptible(self, should_stop: Callable[[], bool]):
+        """在這個區塊裡（只對呼叫的這條執行緒）翻譯可以被放棄：``should_stop()`` 回傳 True 時，
+        ``translate`` 盡快丟出 :class:`TranslationInterrupted`。每條執行緒各自帶自己的條件，
+        背景預熱（另一條執行緒）不受影響。"""
+        local = self._interrupt_local
+        previous = getattr(local, "should_stop", None)
+        local.should_stop = should_stop
+        try:
+            yield
+        finally:
+            local.should_stop = previous
+
+    def stop_requested(self) -> bool:
+        """目前這條執行緒的翻譯被要求放棄了嗎？"""
+        should_stop = getattr(self._interrupt_local, "should_stop", None)
+        return bool(should_stop is not None and should_stop())
 
     def is_ready(self) -> bool:
         """翻譯器現在能不能馬上翻譯。離線模型還在載入或預熱時是 False。"""
@@ -70,6 +98,8 @@ class Translator(ABC):
         self.last_failed_indices = set()
         if not texts:
             return []
+        if self.stop_requested():
+            raise TranslationInterrupted()
 
         pending_indices: list[int] = []
         pending_texts: list[str] = []
@@ -137,6 +167,8 @@ class Translator(ABC):
             try:
                 self._rate_limit()
                 return self._translate_batch(texts, source_language, target_language)
+            except TranslationInterrupted:
+                raise
             except TranslationError as exc:
                 last_error = exc
                 # Translation errors may wrap HTTP requests whose string form contains
@@ -190,6 +222,8 @@ class Translator(ABC):
                     out.append(self._translate_batch([text], source_language, target_language)[0])
                     ok = True
                     break
+                except TranslationInterrupted:
+                    raise
                 except Exception:
                     if last_error is None:
                         last_error = TranslationError("翻譯服務發生未預期錯誤")

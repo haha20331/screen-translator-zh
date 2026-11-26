@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+from dataclasses import dataclass, field
 from typing import Callable
 
 from PySide6.QtCore import QThread, Signal
 
 from app.config import AppConfig
 from app.logger import get_logger
-from app.models import CaptureInfo
+from app.models import CaptureInfo, TextRegion
 from services.ocr.base import OCREngine
-from services.translation.base import TranslationError, Translator
+from services.translation.base import TranslationError, TranslationInterrupted, Translator
 from utils.image_utils import (
     detect_colors,
     dominant_color,
@@ -28,16 +30,97 @@ from utils.layout_utils import (
     uses_translation_panel,
     vertical_regions,
 )
-from utils.stability import CONFIRMED
+from utils.stability import CONFIRMED, signature
 from utils.text_utils import clean_text, normalize_ocr_text, protect_texts, restore_texts
 
 log = get_logger("worker")
+
+
+@dataclass
+class TranslationJob:
+    """辨識整理好、等著翻譯的一筆字幕：翻譯需要的東西都在這裡，不再需要辨識那一側的任何狀態。"""
+
+    capture: CaptureInfo
+    regions: list[TextRegion]
+    texts: list[str]  # 每個文本塊的原文（和 regions 一一對應）
+    unique_texts: list[str]
+    translatable: list[str]  # 真的要送去翻譯的（已去重、略過已經是中文的）
+    source: str
+    target: str
+    merge_original: bool  # 譯文放在原文位置時，要把原文併進譯文
+    key: tuple = field(default_factory=tuple)  # 這組文字的指紋（排程用）
+
+
+def translate_job(
+    job: TranslationJob,
+    translator: Translator,
+    stop: Callable[[], bool],
+    status: Callable[[str], None],
+) -> dict | None:
+    """翻譯一筆字幕，回傳要交給畫面的結果；中途被要求停止就回傳 None。
+
+    辨識與翻譯串在一起（``PipelineTask``）或分開（``TranslationTask``）時都用同一份，兩種模式的譯文一模一樣。
+    """
+    regions = job.regions
+    texts = job.texts
+    if getattr(translator, "is_ready", lambda: True)():
+        status(f"正在翻譯 {len(regions)} 個文本塊...")
+    else:
+        # 離線模型還在載入（啟動或剛換模型）：下面的 translate 會等它載好，先說明在等什麼
+        status("翻譯模型載入中…")
+    # 图标、文件名以及已经是目标语言的文字保持原样。旧逻辑把中文
+    # 中文再翻一遍、把文件夹图标“O/0”翻成方块，是整页发脏的主因。
+    restored_map = {text: text for text in job.unique_texts}
+    failed = 0
+    if job.translatable:
+        protected, mapping = protect_texts(job.translatable)
+        translated = translator.translate(protected, job.source, job.target)
+        restored_unique = [clean_text(text) for text in restore_texts(translated, mapping)]
+        restored_map.update(zip(job.translatable, restored_unique))
+        failed = getattr(translator, "last_failed_count", 0)
+    restored = [restored_map[text] for text in texts]
+
+    # 譯文放在框下方時原文本來就留在畫面上，不需要再把原文併進譯文
+    if job.merge_original:
+        restored = [
+            f"{original}\n{translated_text}" if translated_text.strip() != original.strip() else original
+            for original, translated_text in zip(texts, restored)
+        ]
+
+    if stop():
+        return None
+
+    for region, translated_text in zip(regions, restored):
+        region.translated_text = translated_text
+
+    if failed:
+        status(f"翻譯完成：{failed} 個文本塊失敗，已保留原文")
+    if job.translatable and getattr(translator, "unsupported_direction", False):
+        status(
+            "Mock 演示翻譯只支援輸出中文，當前目標語言下僅保留原文；"
+            "請在 設定 → 翻譯 中填寫 OpenAI/DeepL/Google API Key 使用真實翻譯"
+        )
+
+    status("正在生成覆蓋層...")
+    return {
+        "capture": job.capture,
+        "regions": regions,
+        "recognized_count": len(regions),
+        "translation_candidate_count": len(job.translatable),
+        "translated_count": max(0, len(job.translatable) - failed),
+        "failed_count": failed,
+        # 即時監控（辨識與翻譯分開進行）據此回報「顯示的是哪一組文字」
+        "gate_texts": list(job.translatable),
+        "job_key": job.key,
+    }
 
 
 class PipelineTask(QThread):
     status = Signal(str)
     error = Signal(str)
     result = Signal(object)
+    # 辨識與翻譯分開進行（defer_translation）：辨識整理好之後交出這一筆等翻譯的字幕，這個任務就結束
+    job = Signal(object)
 
     def __init__(
         self,
@@ -48,6 +131,7 @@ class PipelineTask(QThread):
         parent=None,
         gate: Callable[[list[str]], str] | None = None,
         vertical: bool = False,
+        defer_translation: bool = False,
     ) -> None:
         super().__init__(parent)
         self.capture = capture
@@ -58,6 +142,7 @@ class PipelineTask(QThread):
         self.gate = gate
         # 這次擷取的文字是直排（由上往下、欄由右往左）：版面照直排處理，需要能辨識直排的 OCR 引擎
         self.vertical = bool(vertical)
+        self.defer_translation = bool(defer_translation)
         self._stop = False
 
     def cancel(self) -> None:
@@ -210,62 +295,24 @@ class PipelineTask(QThread):
                 if auto_color:
                     region.text_color = ensure_text_contrast(region.text_color, region.background_color)
 
-            if getattr(self.translator, "is_ready", lambda: True)():
-                self._emit_status(f"正在翻譯 {len(regions)} 個文本塊...")
-            else:
-                # 離線模型還在載入（啟動或剛換模型）：下面的 translate 會等它載好，先說明在等什麼
-                self._emit_status("翻譯模型載入中…")
-            # 图标、文件名以及已经是目标语言的文字保持原样。旧逻辑把中文
-            # 中文再翻一遍、把文件夹图标“O/0”翻成方块，是整页发脏的主因。
-            restored_map = {text: text for text in unique_texts}
-            failed = 0
-            if translatable:
-                protected, mapping = protect_texts(translatable)
-                translated = self.translator.translate(protected, source, target)
-                restored_unique = [
-                    clean_text(text)
-                    for text in restore_texts(translated, mapping)
-                ]
-                restored_map.update(zip(translatable, restored_unique))
-                failed = getattr(self.translator, "last_failed_count", 0)
-            restored = [restored_map[text] for text in texts]
-
-            # 譯文放在框下方時原文本來就留在畫面上，不需要再把原文併進譯文
-            if self.config.get("translation.keep_original", False) and not uses_translation_panel(
-                self.config.get("overlay.placement", "below"), self.capture.mode
-            ):
-                restored = [
-                    f"{original}\n{translated_text}"
-                    if translated_text.strip() != original.strip()
-                    else original
-                    for original, translated_text in zip(texts, restored)
-                ]
-
-            if self._stop:
-                return
-
-            for region, translated_text in zip(regions, restored):
-                region.translated_text = translated_text
-
-            if failed:
-                self._emit_status(f"翻譯完成：{failed} 個文本塊失敗，已保留原文")
-            if translatable and getattr(self.translator, "unsupported_direction", False):
-                self._emit_status(
-                    "Mock 演示翻譯只支援輸出中文，當前目標語言下僅保留原文；"
-                    "請在 設定 → 翻譯 中填寫 OpenAI/DeepL/Google API Key 使用真實翻譯"
-                )
-
-            self._emit_status("正在生成覆蓋層...")
-            self.result.emit(
-                {
-                    "capture": self.capture,
-                    "regions": regions,
-                    "recognized_count": len(regions),
-                    "translation_candidate_count": len(translatable),
-                    "translated_count": max(0, len(translatable) - failed),
-                    "failed_count": failed,
-                }
+            job = TranslationJob(
+                capture=self.capture,
+                regions=regions,
+                texts=texts,
+                unique_texts=unique_texts,
+                translatable=translatable,
+                source=source,
+                target=target,
+                merge_original=bool(self.config.get("translation.keep_original", False))
+                and not uses_translation_panel(self.config.get("overlay.placement", "below"), self.capture.mode),
+                key=signature(translatable),
             )
+            if self.defer_translation:
+                self.job.emit(job)
+                return
+            payload = translate_job(job, self.translator, lambda: self._stop, self._emit_status)
+            if payload is not None:
+                self.result.emit(payload)
         except TranslationError as exc:
             self.error.emit(str(exc))
         except Exception as exc:
@@ -273,3 +320,47 @@ class PipelineTask(QThread):
             self.error.emit(f"處理失敗：{exc}")
     def _emit_status(self, text: str) -> None:
         self.status.emit(text)
+
+
+class TranslationTask(QThread):
+    """只負責翻譯一筆字幕（辨識與翻譯分開進行時用）。
+
+    ``cancel()``：畫面上已經有更新的字幕，這一筆不必翻了——翻譯會在下一個詞（或下一句）停下來，
+    不送出結果。翻完才被取消的，結果也不送出（快取裡已經有了）。"""
+
+    status = Signal(str)
+    error = Signal(str)
+    result = Signal(object)
+
+    def __init__(self, job: TranslationJob, translator: Translator, parent=None) -> None:
+        super().__init__(parent)
+        self.job = job
+        self.translator = translator
+        self._stop = False
+
+    def cancel(self) -> None:
+        self._stop = True
+
+    @property
+    def stopped(self) -> bool:
+        return self._stop
+
+    def run(self) -> None:
+        if self._stop:
+            return  # 排隊的時候就已經過時了
+        try:
+            interruptible = getattr(self.translator, "interruptible", None)
+            scope = interruptible(lambda: self._stop) if callable(interruptible) else nullcontext()
+            with scope:
+                payload = translate_job(self.job, self.translator, lambda: self._stop, self.status.emit)
+            if payload is not None and not self._stop:
+                self.result.emit(payload)
+        except TranslationInterrupted:
+            return  # 被放棄的翻譯：沒有結果、不算錯誤
+        except TranslationError as exc:
+            if not self._stop:
+                self.error.emit(str(exc))
+        except Exception as exc:
+            log.exception("翻譯任務失敗")
+            if not self._stop:
+                self.error.emit(f"處理失敗：{exc}")

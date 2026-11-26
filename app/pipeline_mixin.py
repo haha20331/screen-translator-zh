@@ -19,10 +19,15 @@ log = get_logger("application")
 class PipelineMixin:
     """翻译管线协调：启动 worker、接收状态/错误/结果、收尾与回滚。"""
 
-    def _commit_stable_text(self) -> None:
-        """放行的那組文字已經顯示出來了：之後辨識到一樣的文字就不再翻譯。"""
+    def _commit_stable_text(self, texts=None) -> None:
+        """放行的那組文字已經顯示出來了：之後辨識到一樣的文字就不再翻譯。
+
+        ``texts``：辨識與翻譯分開進行時，翻好的那一筆自己說明顯示的是哪一組文字（辨識早就繼續往下看了）。"""
         if self._monitor_active and self._monitor_stabilizer is not None:
-            self._monitor_stabilizer.commit()
+            if texts is not None:
+                self._monitor_stabilizer.commit_texts(texts)
+            else:
+                self._monitor_stabilizer.commit()
 
     def _reset_translation_context(self) -> None:
         """新的擷取、監控開始／停止＝換了一段內容，先前記住的上下文不該再影響翻譯。"""
@@ -77,7 +82,9 @@ class PipelineMixin:
                 config=config_snapshot,
                 gate=self._monitor_stabilizer.observe if self._monitor_active and self._monitor_stabilizer else None,
                 vertical=self._text_vertical,
+                defer_translation=self._decoupled_enabled(),
             )
+            self.worker.job.connect(self._on_translation_job)
             self.worker.status.connect(self._on_worker_status)
             self.worker.error.connect(self._on_worker_error)
             self.worker.result.connect(self.on_pipeline_result)
@@ -220,6 +227,10 @@ class PipelineMixin:
             or (signal_sender is not None and signal_sender is not self.worker)
         ):
             return
+        self._present_result(payload)
+
+    def _present_result(self, payload: dict, commit_texts=None) -> None:
+        """把一筆結果顯示出來（監控與單次擷取共用）。``commit_texts`` 見 :meth:`_commit_stable_text`。"""
         capture: CaptureInfo = payload["capture"]
         verdict = payload.get("verdict", CONFIRMED)
         self._cancel_no_text_timer()  # 這一輪抓到文字了：不用因為「沒有字幕」關掉譯文
@@ -228,6 +239,9 @@ class PipelineMixin:
             self._pipeline_succeeded = True
             if verdict == PENDING:
                 self.set_status("監控中：等待字幕穩定")
+            else:
+                # 畫面上的字幕就是已經顯示的那句：還在翻、或排著隊的別句（中途閃過的字幕）都作廢
+                self._cancel_translation_jobs()
             return
         regions: list[TextRegion] = payload["regions"]
         recognized_count = int(payload.get("recognized_count", len(regions)))
@@ -248,7 +262,7 @@ class PipelineMixin:
             self._monitor_known = known_translations(regions)
             if signature == self._monitor_signature:
                 self._pipeline_succeeded = True
-                self._commit_stable_text()
+                self._commit_stable_text(commit_texts)
                 return
             self._monitor_signature = signature
         # Preserve the previous translation until a new result actually exists;
@@ -263,7 +277,7 @@ class PipelineMixin:
         if self._monitor_active and self._monitor_region_selector is not None:
             self._monitor_region_selector.raise_()
         self._pipeline_succeeded = True
-        self._commit_stable_text()
+        self._commit_stable_text(commit_texts)
         self._transcript_show(regions, single_shot=not self._monitor_active)
         if failed_count:
             self.set_status(

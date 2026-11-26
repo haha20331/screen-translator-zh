@@ -1132,6 +1132,16 @@ class SettingsDialog(QWidget):
             "關閉：完全不干涉模型，每句只進模型一次，翻出什麼就輸出什麼，最快，但偶爾會看到夾雜外文的譯文。\n"
             "只對「離線翻譯」有效。"
         )
+        self.chk_decouple_ocr = QCheckBox("辨識與翻譯分開進行：翻譯途中也繼續看畫面，只翻最新的字幕")
+        self.chk_decouple_ocr.setToolTip(
+            "只對「即時監控」有效。\n"
+            "關閉（預設）：辨識和翻譯排成一串，一句翻完才會看下一格畫面。\n"
+            "開啟：辨識一直看畫面，確認有新字幕就交給翻譯排隊。翻譯同一時間只翻一句，"
+            "翻到一半字幕又換了，舊的那句會立刻放棄、改翻最新的，畫面上永遠是最新的一句。\n"
+            "適合字幕換得很快的影片。代價：辨識和翻譯同時進行，兩者會搶 CPU（翻譯放在 CPU 上時，辨識會變慢、"
+            "翻譯也會稍慢；翻譯用顯示卡時影響很小）。字幕換得慢、或電腦比較吃力時，關著比較順。\n"
+            "儲存設定後，下一輪監控就生效。"
+        )
         self.chk_lyrics_mode = QCheckBox("歌詞模式：告訴模型這是歌詞，譯得較通順有詩意")
         _llm_only = "只對「離線翻譯」有效；線上服務不支援。"
         self.chk_use_context.setToolTip("把最近翻好的句子（原文與譯文）當成前文交給模型，代名詞與語氣會前後一致。\n" + _llm_only)
@@ -1151,6 +1161,7 @@ class SettingsDialog(QWidget):
         form.addRow(self.chk_lyrics_mode)
         form.addRow(self.chk_skip_sounds)
         form.addRow(self.chk_retry_non_chinese)
+        form.addRow(self.chk_decouple_ocr)
         form.addRow("譯文最短保留", self.spin_min_hold)
         self.lbl_cache_count = QLabel()
         self.lbl_cache_count.setObjectName("SettingsCardDescription")
@@ -1381,6 +1392,7 @@ class SettingsDialog(QWidget):
         self._load_gpu_device(cfg)
         self.chk_skip_sounds.setChecked(bool(cfg.get("translation.skip_sounds", True)))
         self.chk_retry_non_chinese.setChecked(bool(cfg.get("translation.retry_non_chinese", True)))
+        self.chk_decouple_ocr.setChecked(bool(cfg.get("translation.decouple_ocr", False)))
         self.spin_min_hold.setValue(float(cfg.get("overlay.min_hold_seconds", 0.0)))
         self.spin_cache_entries.setValue(int(cfg.get("translation.cache_max_entries", 100000)))
 
@@ -1519,6 +1531,7 @@ class SettingsDialog(QWidget):
             self._save_gpu_device(cfg)
             cfg.set("translation.skip_sounds", self.chk_skip_sounds.isChecked())
             cfg.set("translation.retry_non_chinese", self.chk_retry_non_chinese.isChecked())
+            cfg.set("translation.decouple_ocr", self.chk_decouple_ocr.isChecked())
             cfg.set("overlay.min_hold_seconds", self.spin_min_hold.value())
             cfg.set("translation.cache_max_entries", self.spin_cache_entries.value())
 

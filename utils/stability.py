@@ -95,6 +95,18 @@ class TextStabilizer:
                 self._displayed = self._confirmed
             self._candidate, self._count, self._confirmed = None, 0, None
 
+    def commit_texts(self, texts: Sequence[str]) -> None:
+        """指定的那組文字已經顯示出來了。
+
+        辨識與翻譯分開進行時，翻譯途中辨識還在繼續看畫面，``_confirmed`` 早就被後面的判斷覆蓋，
+        不能再用 :meth:`commit`；改由翻好的那一筆自己說明「顯示的是哪一組文字」。"""
+        shown = signature(texts)
+        with self._lock:
+            self._displayed = shown
+            if self._candidate == shown:  # 正在等確認的就是這一組：已經顯示了，不用再等
+                self._candidate, self._count = None, 0
+            self._confirmed = None
+
     def reset(self) -> None:
         with self._lock:
             self._displayed = self._candidate = self._confirmed = None

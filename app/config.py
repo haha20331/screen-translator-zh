@@ -63,6 +63,11 @@ DEFAULTS: dict[str, Any] = {
             # 影像短邊小於此像素時先放大再辨識（0 = 關閉），最多放大 max_upscale 倍
             "upscale_below": 240,
             "max_upscale": 2.0,
+            # 自適應放大：最近 adaptive_history 次辨識的平均信心度 >= adaptive_confidence，下一張就不放大（省約一半的辨識時間）；
+            # 低於就放大。第一張、沒辨識到文字時一律放大。關閉 = 需要放大的圖一律放大
+            "adaptive_upscale": True,
+            "adaptive_confidence": 0.97,
+            "adaptive_history": 3,
         },
     },
     "translation": {
@@ -83,6 +88,9 @@ DEFAULTS: dict[str, Any] = {
         # 譯文不是中文（殘留日文假名、不該略過的句子被回報略過）時，改用一般提示重翻一次（預設開）；
         # 關閉就只進模型一次，翻出什麼就輸出什麼，每句少一次模型運算
         "retry_non_chinese": True,
+        # 辨識與翻譯分開進行（只對即時監控有效，預設關）：辨識一直看畫面，翻譯另外排隊，只保留最新一句；
+        # 翻譯途中字幕又換了，舊的那句立刻放棄。關閉時照舊「辨識 → 翻譯」一次做完才看下一格
+        "decouple_ocr": False,
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_delay_seconds": 1.0,

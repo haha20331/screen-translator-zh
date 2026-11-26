@@ -37,6 +37,7 @@ class FakeLlamaEngine:
         self.prefixes: list[str] = []
         self.bans: list[frozenset[str]] = []
         self.allows: list[tuple[str, ...]] = []
+        self.should_stops: list[Callable[[], bool] | None] = []
         self.filter_prepared = 0
 
     def prepare_token_filter(self) -> None:
@@ -50,7 +51,9 @@ class FakeLlamaEngine:
         seed: int | None = None,
         bans: frozenset[str] = frozenset(),
         allow: tuple[str, ...] = (),
+        should_stop: Callable[[], bool] | None = None,
     ) -> str:
+        self.should_stops.append(should_stop)
         self.prompts.append(prompt)
         self.max_tokens.append(max_tokens)
         self.prefixes.append(prefix)

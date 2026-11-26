@@ -18,6 +18,7 @@ import ctypes
 import importlib.util
 import os
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 
 from app.logger import get_logger
@@ -421,6 +422,7 @@ class LlamaCppEngine:
         seed: int | None = None,
         bans: frozenset[str] = frozenset(),
         allow: tuple[str, ...] = (),
+        should_stop: Callable[[], bool] | None = None,
     ) -> str:
         """``prefix`` 是 ``prompt`` 開頭那段固定不變的部分（提供就先讓 KV 快取停在它上面）。
 
@@ -429,6 +431,8 @@ class LlamaCppEngine:
 
         ``bans``：生成時要擋掉哪幾類詞（``token_filter.FOREIGN`` 等），模型選不到這些詞，就不會翻出夾雜外文的譯文；
         ``allow``：這些文字切出來的詞不擋（例如 ``[SKIP]``）。
+
+        ``should_stop``：每生成一個詞就問一次，回傳 True 就立刻停止生成（回傳目前為止的半句，呼叫端應當作作廢）。
         """
         if prefix and prompt.startswith(prefix):
             self.prepare(prefix)
@@ -441,6 +445,10 @@ class LlamaCppEngine:
             from llama_cpp import LogitsProcessorList
 
             sampling["logits_processor"] = LogitsProcessorList([processor])
+        if should_stop is not None:
+            from llama_cpp import StoppingCriteriaList
+
+            sampling["stopping_criteria"] = StoppingCriteriaList([lambda _ids, _logits: bool(should_stop())])
         result = self._llama.create_completion(
             prompt,
             max_tokens=max_tokens,

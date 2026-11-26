@@ -31,7 +31,10 @@
       "limit_side_len": 960,
       "threads": 0,
       "upscale_below": 240,
-      "max_upscale": 2.0
+      "max_upscale": 2.0,
+      "adaptive_upscale": true,
+      "adaptive_confidence": 0.97,
+      "adaptive_history": 3
     }
   },
   "translation": {

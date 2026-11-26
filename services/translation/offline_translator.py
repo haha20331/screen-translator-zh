@@ -35,7 +35,7 @@ from typing import NamedTuple
 
 from app.logger import get_logger
 from services.translation import llama_backend
-from services.translation.base import TranslationError, register_translator
+from services.translation.base import TranslationError, TranslationInterrupted, register_translator
 from services.translation.model_names import (
     answer_prefix,
     display_name,
@@ -588,18 +588,26 @@ class OfflineTranslator(ChineseTargetTranslator):
         guard = self.retry_enabled()
         if guard:
             extra["allow"] = _SKIP_MARKERS if skip else ()  # 「只有擬聲詞」的回報標記 [SKIP] 含英文字母，不能擋
-        return [
-            clean_output(
-                self._llama.complete(
-                    prefix + history_prompt(context, style) + user_prompt(text, language, opening, style),
-                    max_tokens,
-                    prefix,
-                    **extra,
-                    **({"bans": bans_for(text)} if guard else {}),
-                )
+        # 辨識與翻譯分開進行時，畫面上有更新的字幕就放棄這一批：每句之前問一次，生成途中每個詞也問一次。
+        # 只有呼叫端用 interruptible() 包起來的翻譯才會被中斷；背景預熱與一般的翻譯不受影響。
+        interruptible = getattr(self._interrupt_local, "should_stop", None) is not None
+        if interruptible:
+            extra["should_stop"] = self.stop_requested
+        outputs: list[str] = []
+        for text, context in zip(texts, contexts):
+            if interruptible and self.stop_requested():
+                raise TranslationInterrupted()
+            raw = self._llama.complete(
+                prefix + history_prompt(context, style) + user_prompt(text, language, opening, style),
+                max_tokens,
+                prefix,
+                **extra,
+                **({"bans": bans_for(text)} if guard else {}),
             )
-            for text, context in zip(texts, contexts)
-        ]
+            if interruptible and self.stop_requested():
+                raise TranslationInterrupted()  # 生成被中途停下來：半句不能當譯文
+            outputs.append(clean_output(raw))
+        return outputs
 
 
 register_translator(OfflineTranslator)

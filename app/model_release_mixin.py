@@ -57,11 +57,13 @@ class ModelReleaseMixin:
 
     def _model_is_idle(self) -> bool:
         worker = getattr(self, "worker", None)
+        translation = getattr(self, "_translation_task", None)  # 辨識與翻譯分開進行時，另外一條翻譯的執行緒
         return not (
             self._monitor_active
             or self._busy
             or self._capture_session is not None
             or self._translator_warming()
+            or (translation is not None and translation.isRunning())
             or (worker is not None and worker.isRunning())
         )
 

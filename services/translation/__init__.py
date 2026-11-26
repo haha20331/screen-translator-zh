@@ -5,6 +5,6 @@
 """
 
 from services.translation import mock_translator  # noqa: E402,F401  (注册副作用；離線翻譯由 app.application 載入)
-from services.translation.base import TranslationError, Translator
+from services.translation.base import TranslationError, TranslationInterrupted, Translator
 
-__all__ = ["TranslationError", "Translator"]
+__all__ = ["TranslationError", "TranslationInterrupted", "Translator"]

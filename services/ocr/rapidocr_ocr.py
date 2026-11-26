@@ -10,6 +10,7 @@ import importlib.util
 import math
 import os
 import threading
+from collections import deque
 from typing import Any
 
 import numpy as np
@@ -28,6 +29,44 @@ _DEFAULT_MAX_THREADS = 4
 # 的錯誤率明顯下降（val_data 的字幕截圖 23% -> 8%），其餘樣本不受影響。0 表示關閉。
 _DEFAULT_UPSCALE_BELOW = 240
 _DEFAULT_MAX_UPSCALE = 2.0
+# 自適應放大：放大讓 OCR 慢約 1.5～2 倍，但只有字很小或畫質差時才有幫助。最近幾次辨識的平均信心度
+# 夠高（字清楚），下一張就不放大；偏低就放大。0.97 是用合成樣本（9～28 px、四種背景、清楚與低畫質）
+# 加真實截圖掃出來的：清楚的字約八成不必放大，錯誤率不變；低畫質的畫面信心度掉到 0.8 以下，一律照舊放大。
+_DEFAULT_ADAPTIVE_UPSCALE = True
+_DEFAULT_ADAPTIVE_CONFIDENCE = 0.97
+_DEFAULT_ADAPTIVE_HISTORY = 3
+
+
+class AdaptiveUpscale:
+    """依最近幾次辨識的平均信心度，決定下一張要不要放大。
+
+    只記「需要考慮放大的圖」（短邊低於 ``upscale_below``）的辨識結果。一張圖辨識不到任何文字記 0：
+    不確定是字太小沒偵測到，還是畫面本來就沒有字，保守地照舊放大，所以最差也只是和沒有這個功能時一樣。
+    還沒有紀錄（剛開始）也放大。"""
+
+    def __init__(self, threshold: float = _DEFAULT_ADAPTIVE_CONFIDENCE, history: int = _DEFAULT_ADAPTIVE_HISTORY) -> None:
+        self.threshold = float(threshold)
+        self.history = max(1, int(history))
+        self._scores: deque[float] = deque(maxlen=self.history)
+        self._lock = threading.Lock()
+
+    @property
+    def average(self) -> float | None:
+        with self._lock:
+            return sum(self._scores) / len(self._scores) if self._scores else None
+
+    def should_upscale(self) -> bool:
+        average = self.average
+        return average is None or average < self.threshold
+
+    def record(self, lines: list[OCRLine]) -> None:
+        score = sum(line.confidence for line in lines) / len(lines) if lines else 0.0
+        with self._lock:
+            self._scores.append(score)
+
+    def reset(self) -> None:
+        with self._lock:
+            self._scores.clear()
 
 
 class RapidOCREngine(OCREngine):
@@ -41,6 +80,8 @@ class RapidOCREngine(OCREngine):
         super().__init__(ocr_config, app_config, logger)
         self._engine: Any = None
         self._lock = threading.Lock()
+        self._adaptive: AdaptiveUpscale | None = None
+        self.last_scale = 1.0  # 最近一次辨識實際用的放大倍率（診斷與測試用）
 
     # ------------------------------------------------------------- availability
     @classmethod
@@ -100,21 +141,48 @@ class RapidOCREngine(OCREngine):
             return []
         image = np.ascontiguousarray(image_bgr[:, :, :3])
         settings = self._settings()
-        scale = upscale_factor(
+        wanted = upscale_factor(
             image.shape[0],
             image.shape[1],
             below=int(settings.get("upscale_below", _DEFAULT_UPSCALE_BELOW)),
             max_scale=float(settings.get("max_upscale", _DEFAULT_MAX_UPSCALE)),
         )
+        adaptive = self._adaptive_policy(settings) if wanted > 1.0 else None
+        scale = 1.0 if adaptive is not None and not adaptive.should_upscale() else wanted
+        lines = self._run(image, scale)
+        if not lines and scale != wanted:
+            # 沒放大就什麼都沒抓到：字可能太小。這一張馬上放大再辨識一次，不要等下一輪才發現
+            scale = wanted
+            lines = self._run(image, scale)
+        if adaptive is not None:
+            adaptive.record(lines)
+        self.last_scale = scale
+        return lines
+
+    def _run(self, image: np.ndarray, scale: float) -> list[OCRLine]:
         if scale > 1.0:
             image = _upscale(image, scale)
         with self._lock:
             output = self._get_engine()(image)
         return _output_to_lines(output, scale)
 
+    def _adaptive_policy(self, settings: dict) -> AdaptiveUpscale | None:
+        """依設定取得（或建立）自適應放大的判斷；設定關閉時回傳 None（每張需要放大的圖都放大）。"""
+        if not bool(settings.get("adaptive_upscale", _DEFAULT_ADAPTIVE_UPSCALE)):
+            return None
+        threshold = float(settings.get("adaptive_confidence", _DEFAULT_ADAPTIVE_CONFIDENCE))
+        history = max(1, int(settings.get("adaptive_history", _DEFAULT_ADAPTIVE_HISTORY)))
+        policy = self._adaptive
+        if policy is None or policy.history != history:
+            policy = self._adaptive = AdaptiveUpscale(threshold, history)
+        policy.threshold = threshold
+        return policy
+
     def close(self) -> None:
         with self._lock:
             self._engine = None
+        if self._adaptive is not None:
+            self._adaptive.reset()
 
 
 def upscale_factor(height: int, width: int, below: int, max_scale: float) -> float:

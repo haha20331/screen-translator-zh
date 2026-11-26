@@ -17,7 +17,7 @@ utils/                纯函数工具（DPI、图像、文本、语言、布局�
 ```
 
 设计上已经用 **mixin 组合**把 `Application` 按职责拆开（`capture_mixin` / `monitor_mixin` /
-`pipeline_mixin` / `hotkeys_mixin` / `settings_mixin` / `status_mixin` / `history_mixin` / `transcript_mixin`），
+`pipeline_mixin` / `decoupled_mixin`（辨識與翻譯分開進行）/ `hotkeys_mixin` / `settings_mixin` / `status_mixin` / `history_mixin` / `transcript_mixin`），
 避免把所有逻辑堆进一个类。
 
 ## 已知结构债（待重构）

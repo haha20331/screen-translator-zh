@@ -73,6 +73,7 @@ class MonitorMixin:
         self._monitor_active = True
         self._no_text_timer.stop()
         self._monitor_errors = 0
+        self._translation_errors = 0
         self._monitor_no_text = False
         self._monitor_known = {}
         self._monitor_signature = ""
@@ -107,6 +108,7 @@ class MonitorMixin:
         self._monitor_stabilizer = None
         self._dispose_monitor_region()
         self._cancel_worker()
+        self._cancel_translation_jobs()  # 辨識與翻譯分開進行時，排著的丟掉、正在翻的放棄
         # 監控期間顯示的譯文隨監控結束一起清掉，不留在畫面上
         if self.overlay_manager is not None:
             self.overlay_manager.clear_all()
@@ -168,7 +170,12 @@ class MonitorMixin:
         self._configure_stabilizer()
         frame_hash = frame_fingerprint(capture.image)
         pending = self._monitor_stabilizer is not None and self._monitor_stabilizer.has_pending
-        settled = bool(self._monitor_signature) or self._monitor_idle_hash == frame_hash
+        # 辨識與翻譯分開進行：字幕還在翻譯途中（譯文沒出來、signature 還是空的）時，同一格畫面也不必再辨識
+        settled = (
+            bool(self._monitor_signature)
+            or self._monitor_idle_hash == frame_hash
+            or self._translation_busy()
+        )
         if self._monitor_frame_hash and self._monitor_frame_hash == frame_hash and settled and not pending:
             self._monitor_schedule_next()
             return
@@ -198,6 +205,7 @@ class MonitorMixin:
             return
         if self._monitor_stabilizer is not None:
             self._monitor_stabilizer.reset()
+        self._cancel_translation_jobs()
         self._monitor_signature = ""
         self._monitor_frame_hash = ""
         self._monitor_idle_hash = ""
@@ -264,6 +272,7 @@ class MonitorMixin:
         self._monitor_frame_hash = ""
         if self._monitor_stabilizer is not None:
             self._monitor_stabilizer.reset()
+        self._cancel_translation_jobs()
         self._reset_translation_context()
 
     def clear_translation_cache(self) -> int:
@@ -298,6 +307,7 @@ class MonitorMixin:
         if not self._monitor_active or self._shutting_down:
             return
         self._transcript_end("gone")
+        self._cancel_translation_jobs()  # 字幕已經消失一陣子了：還沒翻完的那句不必再顯示
         if self.overlay_manager is not None:
             self.overlay_manager.clear_all()
             self._sync_overlay_state(False)

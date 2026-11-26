@@ -30,6 +30,7 @@ from app.capture_mixin import CaptureMixin
 from app.capture_session import _CaptureSession
 from app.clipboard_mixin import ClipboardMixin
 from app.config import AppConfig
+from app.decoupled_mixin import DecoupledTranslationMixin
 from app.history_mixin import HistoryMixin
 from app.hotkeys import HotkeyError, HotkeyManager
 from app.logger import app_data_dir, get_logger
@@ -85,6 +86,7 @@ class Application(
     CaptureMixin,
     SettingsMixin,
     PipelineMixin,
+    DecoupledTranslationMixin,
     TranscriptMixin,
     ModelLoadingMixin,
     ModelReleaseMixin,
@@ -143,6 +145,7 @@ class Application(
         self._shutdown_finalized = False
         self._init_model_loading()
         self._init_model_release()
+        self._init_decoupled_translation()
         self._text_vertical = False  # 主視窗的「文字方向」：只在這次執行有效，預設橫向
         self._vertical_ocr_engine = None  # 目前的 OCR 引擎不能辨識直排時，直向文字改用的 RapidOCR（第一次用到才建立）
 
@@ -264,12 +267,15 @@ class Application(
             )
             self.worker.cancel()
             self.set_status("正在安全結束當前任務…")
+        self._wait_for_translation_before_shutdown()
         self._maybe_finalize_shutdown()
 
     def _maybe_finalize_shutdown(self) -> None:
         if not self._shutting_down or self._shutdown_finalized:
             return
         if self.worker is not None and self.worker.isRunning():
+            return
+        if self._translation_task_running():
             return
         self._finalize_shutdown()
 
@@ -281,6 +287,10 @@ class Application(
         self.worker = None
         if worker is not None:
             worker.deleteLater()
+        task = self._translation_task
+        self._translation_task = None
+        if task is not None:
+            task.deleteLater()
         self.qt_app.quit()
 
     def _remember_external_foreground(self) -> None:

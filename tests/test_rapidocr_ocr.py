@@ -223,3 +223,153 @@ def test_pipeline_upscales_only_for_engines_that_benefit(tmp_path, benefits, exp
     assert engine.shapes
     first = engine.shapes[0]
     assert (first[:2] != (60, 120)) is expect_upscaled
+
+
+# ----------------------------------------------------------------------------- 自適應放大
+class _FakeRapid:
+    """假的 RapidOCR：依序回傳指定的信心度（None = 沒辨識到文字），並記錄每次收到的影像大小。"""
+
+    def __init__(self, scores) -> None:
+        self.scores = list(scores)
+        self.sizes: list[tuple[int, int]] = []
+
+    def __call__(self, image):
+        self.sizes.append(image.shape[:2])
+        score = self.scores.pop(0) if self.scores else 0.99
+        if score is None:
+            return _output(None, None, None)
+        box = [[0, 0], [60, 0], [60, 20], [0, 20]]
+        return _output(("字幕",), (box,), (score,))
+
+
+def _engine(scores, **settings):
+    from services.ocr.rapidocr_ocr import RapidOCREngine
+
+    engine = RapidOCREngine({"rapidocr": settings})
+    engine._engine = fake = _FakeRapid(scores)
+    return engine, fake
+
+
+_SMALL = np.zeros((100, 300, 3), dtype=np.uint8)  # 短邊 100 < 240：會被考慮放大（2 倍）
+
+
+def test_the_first_images_are_upscaled_then_a_clear_subtitle_stops_being_upscaled():
+    engine, fake = _engine([0.99] * 6)
+
+    scales = []
+    for _ in range(5):
+        engine.recognize(_SMALL)
+        scales.append(engine.last_scale)
+
+    # 沒有紀錄的第一張一定放大；之後平均信心度夠高就不放大了（紀錄累積到 0.99 就是 >= 0.97）
+    assert scales == [2.0, 1.0, 1.0, 1.0, 1.0]
+    assert fake.sizes[0] == (200, 600) and fake.sizes[1] == (100, 300)
+
+
+def test_a_low_confidence_run_brings_the_upscaling_back():
+    engine, _fake = _engine([0.99, 0.99, 0.99, 0.60, 0.99, 0.99, 0.99, 0.99])
+
+    scales = []
+    for _ in range(8):
+        engine.recognize(_SMALL)
+        scales.append(engine.last_scale)
+
+    # 第 4 張（沒放大）信心度只有 0.6：最近三次平均 (0.99 + 0.99 + 0.6) / 3 = 0.86 < 0.97，下一張放大；
+    # 放大那張 0.99 之後，三次平均 (0.99 + 0.6 + 0.99) / 3 = 0.86 還是低，再放大一次，直到低分被擠出去
+    assert scales[:5] == [2.0, 1.0, 1.0, 1.0, 2.0]
+    assert scales[5] == 2.0
+    assert scales[-1] == 1.0
+
+
+def test_the_average_of_the_last_three_decides_not_the_last_one():
+    from services.ocr.rapidocr_ocr import AdaptiveUpscale
+
+    policy = AdaptiveUpscale(0.97, 3)
+    assert policy.should_upscale() is True  # 沒有紀錄
+
+    for score in (1.0, 1.0, 0.95):
+        policy.record([OCRLine("a", (0, 0, 1, 1), score)])
+    assert policy.average == pytest.approx(0.9833, abs=1e-3)
+    assert policy.should_upscale() is False  # 最後一張 0.95 不夠，但三次平均夠
+
+    policy.record([OCRLine("a", (0, 0, 1, 1), 0.90)])  # 紀錄變成 1.0, 0.95, 0.90：最舊的被擠出去
+    assert policy.average == pytest.approx(0.95)
+    assert policy.should_upscale() is True
+
+    policy.reset()
+    assert policy.average is None and policy.should_upscale() is True
+
+
+def test_a_run_without_text_counts_as_zero_and_is_retried_upscaled_at_once():
+    engine, fake = _engine([0.99, 0.99, None, 0.8])
+
+    engine.recognize(_SMALL)
+    engine.recognize(_SMALL)
+    assert engine.last_scale == 1.0  # 已經不放大了
+    lines = engine.recognize(_SMALL)  # 這一張沒放大什麼都沒抓到：同一張馬上放大重辨識，不要等下一輪
+
+    assert lines and lines[0].confidence == pytest.approx(0.8)
+    assert engine.last_scale == 2.0
+    assert [size[0] for size in fake.sizes] == [200, 100, 100, 200]  # 第 3 張辨識了兩次（先沒放大、再放大）
+    assert engine._adaptive.average == pytest.approx((0.99 + 0.99 + 0.8) / 3)  # 紀錄的是重辨識的結果
+
+
+def test_an_image_with_no_text_even_when_upscaled_is_recorded_as_zero():
+    engine, _fake = _engine([None, None, None, 0.99])
+
+    for _ in range(3):
+        engine.recognize(_SMALL)
+
+    assert engine._adaptive.average == 0.0
+    engine.recognize(_SMALL)
+    assert engine.last_scale == 2.0  # 空白畫面不會讓它誤以為字很清楚
+
+
+def test_images_that_are_never_upscaled_do_not_touch_the_history():
+    engine, _fake = _engine([0.99])
+    big = np.zeros((400, 800, 3), dtype=np.uint8)  # 短邊 400 >= 240
+
+    engine.recognize(big)
+
+    assert engine.last_scale == 1.0
+    assert engine._adaptive is None
+
+
+def test_the_threshold_history_and_switch_come_from_the_settings():
+    off, _ = _engine([0.99] * 4, adaptive_upscale=False)
+    for _ in range(3):
+        off.recognize(_SMALL)
+        assert off.last_scale == 2.0  # 關閉：需要放大的圖一律放大
+
+    strict, _ = _engine([0.98] * 4, adaptive_confidence=0.99)
+    strict.recognize(_SMALL)
+    strict.recognize(_SMALL)
+    assert strict.last_scale == 2.0  # 0.98 < 0.99
+
+    lenient, _ = _engine([0.80] * 4, adaptive_confidence=0.7, adaptive_history=1)
+    lenient.recognize(_SMALL)
+    lenient.recognize(_SMALL)
+    assert lenient.last_scale == 1.0 and lenient._adaptive.history == 1
+
+
+def test_closing_the_engine_forgets_the_history():
+    engine, _fake = _engine([0.99] * 4)
+    engine.recognize(_SMALL)
+    engine.recognize(_SMALL)
+    assert engine.last_scale == 1.0
+
+    engine.close()
+    engine._engine = _FakeRapid([0.99])
+    engine.recognize(_SMALL)
+
+    assert engine.last_scale == 2.0
+
+
+def test_the_defaults_are_on_with_the_measured_threshold():
+    from app.config import DEFAULTS
+    from services.ocr import rapidocr_ocr
+
+    section = DEFAULTS["ocr"]["rapidocr"]
+    assert section["adaptive_upscale"] is True
+    assert section["adaptive_confidence"] == rapidocr_ocr._DEFAULT_ADAPTIVE_CONFIDENCE == 0.97
+    assert section["adaptive_history"] == rapidocr_ocr._DEFAULT_ADAPTIVE_HISTORY == 3
