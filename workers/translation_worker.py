@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Callable
@@ -11,7 +12,7 @@ from PySide6.QtCore import QThread, Signal
 from app.config import AppConfig
 from app.logger import get_logger
 from app.models import CaptureInfo, TextRegion
-from services.ocr.base import OCREngine
+from services.ocr.base import OCREngine, OCRLine
 from services.translation.base import TranslationError, TranslationInterrupted, Translator
 from utils.image_utils import (
     detect_colors,
@@ -34,6 +35,23 @@ from utils.stability import CONFIRMED, signature
 from utils.text_utils import clean_text, normalize_ocr_text, protect_texts, restore_texts
 
 log = get_logger("worker")
+
+_LOGGED_LINE_CONFIDENCES = 8  # 一次辨識的 log 最多列出幾行各自的信心度
+
+
+def describe_ocr_run(lines: list[OCRLine], elapsed_ms: float, scale: float, min_confidence: float) -> str:
+    """一次 OCR 的信心度摘要（寫進 log）：行數、平均與最低信心度、各行信心度、低於門檻的行數、放大倍率與耗時。"""
+    if not lines:
+        return f"OCR 沒有辨識到文字，放大 ×{scale:g}，耗時 {elapsed_ms:.0f} ms"
+    scores = [float(line.confidence) for line in lines]
+    shown = ", ".join(f"{score:.3f}" for score in scores[:_LOGGED_LINE_CONFIDENCES])
+    if len(scores) > _LOGGED_LINE_CONFIDENCES:
+        shown += ", …"
+    below = sum(1 for score in scores if score < min_confidence)
+    return (
+        f"OCR 辨識 {len(scores)} 行，信心度平均 {sum(scores) / len(scores):.3f}、最低 {min(scores):.3f}（{shown}），"
+        f"低於門檻 {min_confidence:g} 的 {below} 行，放大 ×{scale:g}，耗時 {elapsed_ms:.0f} ms"
+    )
 
 
 @dataclass
@@ -165,6 +183,7 @@ class PipelineTask(QThread):
                 )
             else:
                 image, scale = self.capture.image, 1.0
+            ocr_started = time.perf_counter()
             lines = self.ocr_engine.recognize(
                 image, lang=str(self.config.get("ocr.lang", "auto"))
             )
@@ -177,6 +196,15 @@ class PipelineTask(QThread):
                 lines = self.ocr_engine.recognize(
                     image, lang=str(self.config.get("ocr.lang", "auto"))
                 )
+            # 本次 OCR 預測的信心度寫進 log；放大倍率優先用引擎自己決定的（RapidOCR 自適應放大），沒有才用管線的
+            log.info(
+                describe_ocr_run(
+                    lines,
+                    (time.perf_counter() - ocr_started) * 1000,
+                    getattr(self.ocr_engine, "last_scale", None) or scale,
+                    float(self.config.get("ocr.min_confidence", 0.6)),
+                )
+            )
             if self._stop:
                 return
             for line in lines:

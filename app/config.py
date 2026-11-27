@@ -144,11 +144,7 @@ DEFAULTS: dict[str, Any] = {
         "enabled": True,
         # 框選／全螢幕／視窗翻譯完成後，自動接著進入即時監控（預設開啟；監控中隨時可關，也能直接開始新的擷取）
         "auto_start": True,
-        # 相鄰兩輪監控的間隔（毫秒），設定畫面可輸入到 0.01 秒（最小 100）。畫面靜止時這基本就是「刷新延遲」
-        "interval_ms": 100,
-        # 預設值版本：檔案裡沒有這個標記的舊設定，才會把舊預設的間隔（1200／400）換成新預設（見 _normalize_monitor）
-        "interval_default_version": 2,
-        # 连续出错超过这个次数就自动停掉监控，避免一直空转
+        # 辨識／翻譯連續出錯超过这个次数就自动停掉监控，避免一直空转（截圖失敗不算，會一直重試）
         "max_consecutive_errors": 3,
         # 把上一轮译文写回缓存：内容没变过的文本块直接命中缓存，几乎瞬时
         "skip_unchanged": True,
@@ -297,10 +293,6 @@ def _normalize_overlay(data: dict[str, Any]) -> None:
         overlay["placement"] = DEFAULTS["overlay"]["placement"]
 
 
-_LEGACY_MONITOR_INTERVAL_MS = 1200  # 上游的預設
-_PREVIOUS_MONITOR_INTERVAL_MS = 400  # 前一版的預設
-
-
 def _normalize_monitor_stability(data: dict[str, Any], loaded: dict[str, Any]) -> None:
     """確認次數與最久等待要是合理範圍內的數字；舊版的「快速／穩定」選項換算成次數。"""
     monitor = data.setdefault("monitor", {})
@@ -323,28 +315,11 @@ def _normalize_monitor_stability(data: dict[str, Any], loaded: dict[str, Any]) -
 
 
 def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
-    """辨識間隔：舊的預設值換成新預設（100 ms），使用者自己選的值保留；其餘限制在合理範圍（100～10000 ms）。
-
-    舊預設有兩個：上游的 1200 ms 與前一版的 400 ms。檔案裡還沒有 ``interval_default_version`` 標記時，
-    這兩個值視為「沒改過」換掉；換過（標記存進檔案）之後，使用者選的任何值（包括剛好 0.4 或 1.2 秒）都照用。
-    例外：前一版的設定畫面存過的 1200（有 ``interval_migrated`` 標記）一定是使用者自己選的，保留。
-    畫面沒變時會直接跳過 OCR 與翻譯，所以縮短間隔不會增加無謂的運算。
-    """
+    """舊設定檔的辨識間隔（interval_ms 與它的遷移標記）已移除：辨識完一輪就馬上看下一格畫面，
+    不再有可調的間隔。這裡把檔案裡留著的舊鍵清掉，下次存檔時就不會再寫回去。"""
     monitor = data.setdefault("monitor", {})
-    loaded_monitor = loaded.get("monitor") if isinstance(loaded.get("monitor"), dict) else {}
-    default = DEFAULTS["monitor"]["interval_ms"]
-    if not loaded_monitor.get("interval_default_version"):
-        stored = loaded_monitor.get("interval_ms")
-        chosen_in_ui = bool(loaded_monitor.get("interval_migrated"))
-        if stored == _PREVIOUS_MONITOR_INTERVAL_MS or (stored == _LEGACY_MONITOR_INTERVAL_MS and not chosen_in_ui):
-            monitor["interval_ms"] = default
-    monitor["interval_default_version"] = 2
-    monitor.pop("interval_migrated", None)
-    try:
-        interval = int(monitor.get("interval_ms", default))
-    except (TypeError, ValueError):
-        interval = default
-    monitor["interval_ms"] = max(100, min(10_000, interval))
+    for stale in ("interval_ms", "interval_default_version", "interval_migrated"):
+        monitor.pop(stale, None)
     try:
         hide_after = float(monitor.get("hide_after_no_text_seconds", DEFAULTS["monitor"]["hide_after_no_text_seconds"]))
     except (TypeError, ValueError):

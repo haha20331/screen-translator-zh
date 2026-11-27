@@ -8,13 +8,10 @@ import time
 from app import application as _application
 from app.logger import get_logger
 from utils.stability import (
-    MAX_INTERVAL_MS,
     MAX_NO_TEXT_SECONDS,
     MAX_ROUNDS,
-    MIN_INTERVAL_MS,
     MIN_ROUNDS,
     RECOMMENDED_FAST_ROUNDS,
-    RECOMMENDED_INTERVAL_MS,
     RECOMMENDED_MAX_WAIT,
     RECOMMENDED_NO_TEXT_SECONDS,
     TextStabilizer,
@@ -73,6 +70,7 @@ class MonitorMixin:
         self._monitor_active = True
         self._no_text_timer.stop()
         self._monitor_errors = 0
+        self._monitor_capture_failing = False
         self._translation_errors = 0
         self._monitor_no_text = False
         self._monitor_known = {}
@@ -156,13 +154,17 @@ class MonitorMixin:
             else:
                 return
         except Exception as exc:
-            log.warning("監控截圖失敗：%s", exc)
-            self._monitor_errors += 1
-            if self._monitor_errors >= int(self.config.get("monitor.max_consecutive_errors", 3)):
-                self.stop_monitor(reason="監控截圖連續失敗，已停止")
-            else:
-                self._monitor_schedule_next()
+            # 截圖失敗不會讓監控停下來，也不計入連續出錯：畫面短暫截不到（換解析度、UAC 彈窗、鎖定畫面）過一會兒就恢復。
+            # 失敗時馬上重試、沒有等待，所以 log 與狀態列只在「剛開始失敗」時記一次，不然一秒會寫幾千行。
+            if not self._monitor_capture_failing:
+                self._monitor_capture_failing = True
+                log.warning("監控截圖失敗，持續重試：%s", exc)
+                self.set_status("截圖失敗，持續重試中（要停止請關閉監控）")
+            self._monitor_schedule_next()
             return
+        if self._monitor_capture_failing:
+            self._monitor_capture_failing = False
+            log.info("監控截圖已恢復")
         capture.mode = request["mode"]
         self._last_capture = capture
         # 像素差异门控：画面逐像素完全没变就跳过整轮 OCR + 翻译管线，覆盖层保持，省资源。
@@ -247,19 +249,15 @@ class MonitorMixin:
         remaining = self._monitor_quiet_until - time.monotonic()
         return int(remaining * 1000) + 20 if remaining > 0 else 0
 
-    def _monitor_interval_ms(self) -> int:
-        """設定的辨識間隔（毫秒），壞掉的值用推薦值，並限制在允許範圍內。"""
-        try:
-            interval = int(self.config.get("monitor.interval_ms", RECOMMENDED_INTERVAL_MS))
-        except (TypeError, ValueError):
-            interval = RECOMMENDED_INTERVAL_MS
-        return max(MIN_INTERVAL_MS, min(MAX_INTERVAL_MS, interval))
-
     def _monitor_schedule_next(self) -> None:
+        """排下一輪：不等，下一輪馬上開始（沒有辨識間隔設定，所有情況都是 10 ms）。
+
+        實測單開 OCR、每輪之間的 100 ms 暫停拿掉，字幕出現到被認出來少 40～60 ms（OCR_SPEED.md 1.1）。
+        代價：畫面沒變時也是不停地截圖、算指紋（字幕條約 0.3 個核心），詳見 PLAN.md「辨識間隔移除」。"""
         if not self._monitor_active:
             return
         self._monitor_timer.stop()
-        self._monitor_timer.start(self._monitor_interval_ms())
+        self._monitor_timer.start(10)
 
     def _forget_displayed_translations(self) -> None:
         """忘掉畫面上已顯示的譯文與上下文，下一輪重新辨識、重新翻譯。
@@ -317,12 +315,6 @@ class MonitorMixin:
         self._monitor_signature = ""
         self._monitor_known = {}
         self.set_status("監控中：畫面沒有字幕，已關閉譯文")
-
-    def _reschedule_monitor_after_settings(self) -> None:
-        """設定改了間隔：正在等下一輪的計時器立刻照新間隔重算（不然要等完舊間隔才生效）。
-        正在辨識／翻譯的那一輪不動，它結束時自然會用新間隔排下一輪。"""
-        if self._monitor_active and self._monitor_timer.isActive():
-            self._monitor_schedule_next()
 
     def _monitor_drag_mode(self) -> str:
         return str(self.config.get("monitor.drag_mode", "grips"))

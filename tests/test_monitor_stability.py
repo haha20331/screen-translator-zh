@@ -7,6 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -494,162 +495,133 @@ def test_main_window_footer_no_longer_shows_stability_or_context(qapp, tmp_path)
     window.deleteLater()
 
 
-# ----------------------------------------------------------------------------- 辨識間隔（使用者可調）
-def test_default_scan_interval_is_the_recommended_value():
-    assert DEFAULTS["monitor"]["interval_ms"] == stability.RECOMMENDED_INTERVAL_MS == 100
-    assert (stability.MIN_INTERVAL_MS, stability.MAX_INTERVAL_MS) == (100, 10_000)
+# ----------------------------------------------------------------------------- 辨識間隔：已移除，辨識完馬上看下一格
+def test_there_is_no_scan_interval_setting_any_more():
+    assert "interval_ms" not in DEFAULTS["monitor"]
+    assert "interval_default_version" not in DEFAULTS["monitor"]
+    assert not hasattr(stability, "RECOMMENDED_INTERVAL_MS")
+    assert not hasattr(stability, "IDLE_POLL_MS")  # 任何情況都不等，也沒有保留一個固定的等待
 
 
 @pytest.mark.parametrize(
-    ("saved", "interval"),
+    "saved",
     [
-        ({}, 100),
-        ({"interval_ms": 150}, 150),  # 小數兩位的 0.15 秒
-        ({"interval_ms": 800, "interval_default_version": 2}, 800),
-        ({"interval_ms": 2500}, 2500),
-        ({"interval_ms": 50}, 100),  # 太短：夾到最小 0.1 秒
-        ({"interval_ms": 0}, 100),
-        ({"interval_ms": -300}, 100),
-        ({"interval_ms": 99999}, 10_000),
-        ({"interval_ms": "fast"}, 100),
-        ({"interval_ms": None}, 100),
+        {"interval_ms": 1200},
+        {"interval_ms": 400, "interval_migrated": True},
+        {"interval_ms": 2500, "interval_default_version": 2},
+        {"interval_ms": "fast"},
     ],
 )
-def test_scan_interval_is_clamped_to_the_allowed_range(tmp_path, saved, interval):
-    assert _load(tmp_path, saved).get("monitor.interval_ms") == interval
-
-
-@pytest.mark.parametrize(
-    ("saved", "interval"),
-    [
-        ({"interval_ms": 1200}, 100),  # 上游的舊預設：換成新預設
-        ({"interval_ms": 400}, 100),  # 前一版的預設：換成新預設
-        ({"interval_ms": 400, "interval_migrated": True}, 100),  # 前一版設定畫面存的預設值也一樣
-        ({"interval_ms": 1200, "interval_migrated": True}, 1200),  # 前一版設定畫面存的 1.2 秒是使用者自己選的
-        ({"interval_ms": 1200, "interval_default_version": 2}, 1200),  # 換過之後，任何值都照使用者的
-        ({"interval_ms": 400, "interval_default_version": 2}, 400),
-    ],
-)
-def test_old_defaults_are_replaced_once_but_what_the_user_chose_is_kept(tmp_path, saved, interval):
+def test_old_interval_keys_are_dropped_when_the_file_is_loaded(tmp_path, saved):
     config = _load(tmp_path, saved)
 
-    assert config.get("monitor.interval_ms") == interval
-    assert config.get("monitor.interval_default_version") == 2  # 標記存進檔案，之後就不會再換
-    assert config.get("monitor.interval_migrated") is None
+    for key in ("interval_ms", "interval_default_version", "interval_migrated"):
+        assert config.get(f"monitor.{key}") is None
+    config.save()  # 存檔：舊的鍵不會再被寫回去
+    on_disk = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert not any(key.startswith("interval") for key in on_disk["monitor"])
+    assert "confirm_rounds" in on_disk["monitor"]
 
 
-def test_after_the_replacement_is_saved_a_typed_value_survives_restarts(tmp_path):
-    config = _load(tmp_path, {"interval_ms": 400})
-    assert config.get("monitor.interval_ms") == 100
-    config.set("monitor.interval_ms", 400)  # 使用者自己選了 0.4 秒
-    config.save()
-
-    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") == 400
-
-
-def test_the_scheduler_uses_the_configured_interval(controller):
-    controller._monitor_timer.stop()
-    controller.config.set("monitor.interval_ms", 800)
+def test_the_next_look_is_scheduled_without_waiting_whatever_an_old_file_says(controller):
+    controller.config.set("monitor.interval_ms", 5000)  # 舊設定檔留下來的值不能再影響
     controller._monitor_schedule_next()
-    assert controller._monitor_timer.interval() == 800 and controller._monitor_timer.isActive()
 
-    controller.config.set("monitor.interval_ms", 150)  # 小數兩位的 0.15 秒
-    controller._monitor_schedule_next()
-    assert controller._monitor_timer.interval() == 150
-
-    controller.config.set("monitor.interval_ms", 50)  # 太短：夾到最小值，避免整台電腦被辨識佔滿
-    controller._monitor_schedule_next()
-    assert controller._monitor_timer.interval() == 100
-
-    controller.config.set("monitor.interval_ms", "abc")
-    controller._monitor_schedule_next()
-    assert controller._monitor_timer.interval() == 100
+    assert controller._monitor_timer.isActive() and controller._monitor_timer.interval() == 10
     controller._monitor_timer.stop()
 
 
-def test_changing_the_interval_in_settings_applies_to_the_round_already_waiting(controller):
-    controller.config.set("monitor.interval_ms", 9000)
-    controller._monitor_schedule_next()  # 正在等 9 秒後的下一輪
-    controller.config.set("monitor.interval_ms", 500)
-
-    controller._reschedule_monitor_after_settings()
-    assert controller._monitor_timer.isActive() and controller._monitor_timer.interval() == 500
+def test_nothing_is_scheduled_when_monitoring_is_off(controller):
+    controller._monitor_active = False
     controller._monitor_timer.stop()
 
+    controller._monitor_schedule_next()
 
-def test_changing_the_interval_does_not_start_a_round_that_is_still_running(controller):
-    controller._monitor_timer.stop()  # 這一輪正在辨識／翻譯：計時器沒在跑，結束時才會排下一輪
-    controller.config.set("monitor.interval_ms", 500)
-
-    controller._reschedule_monitor_after_settings()
     assert not controller._monitor_timer.isActive()
 
-    controller._monitor_active = False  # 監控已關閉時更不會被重新啟動
-    controller._monitor_timer.start(1000)
-    controller._reschedule_monitor_after_settings()
-    assert controller._monitor_timer.interval() == 1000
+
+def _finish_round(controller, *, succeeded, no_text=False):
+    controller.worker = SimpleNamespace(deleteLater=lambda: None)
+    controller._pipeline_succeeded = succeeded
+    controller._monitor_no_text = no_text
+    controller._monitor_errors = 0
+    controller._monitor_timer.stop()
+    controller._on_worker_finished()
+
+
+@pytest.mark.parametrize(("succeeded", "no_text"), [(True, False), (False, True), (False, False)])
+def test_every_finished_round_is_followed_by_the_next_one_at_once(controller, succeeded, no_text):
+    """辨識完（有字幕、沒字幕、出錯）都不等，馬上截下一格畫面；沒有辨識間隔設定。"""
+    _finish_round(controller, succeeded=succeeded, no_text=no_text)
+
+    assert controller._monitor_timer.isActive() and controller._monitor_timer.interval() == 10
     controller._monitor_timer.stop()
 
 
-def test_settings_dialog_lets_the_user_set_the_scan_interval(qapp, tmp_path):
+def test_recognition_errors_still_stop_the_monitor_after_three_in_a_row(controller):
+    controller.config.set("monitor.max_consecutive_errors", 3)
+    stopped = []
+    controller.stop_monitor = lambda reason="": stopped.append(reason)
+    for _ in range(3):
+        controller.worker = SimpleNamespace(deleteLater=lambda: None)
+        controller._pipeline_succeeded = False
+        controller._monitor_no_text = False
+        controller._on_worker_finished()
+
+    assert controller._monitor_errors == 3 and stopped == ["連續翻譯失敗，已停止即時監控"]
+
+
+class _FlakyScreens:
+    def __init__(self) -> None:
+        self.failing = True
+        self.calls = 0
+
+    def capture_bbox(self, bbox):
+        self.calls += 1
+        if self.failing:
+            raise OSError("screen grab failed")
+        return CaptureInfo(image=np.zeros((40, 120, 3), dtype=np.uint8), bbox=tuple(bbox), mode="region")
+
+
+def test_a_failing_screenshot_never_stops_the_monitor_and_is_reported_once(controller, monkeypatch):
+    screens = _FlakyScreens()
+    controller.screenshot_service = screens
+    controller._monitor_request = {"mode": "region", "bbox": (0, 0, 120, 40), "hwnd": None}
+    controller._monitor_errors = 0
+    controller._monitor_capture_failing = False
+    started, statuses = [], []
+    monkeypatch.setattr(controller, "_start_pipeline", lambda capture: started.append(capture))
+    monkeypatch.setattr(controller, "set_status", statuses.append)
+
+    for _ in range(50):  # 沒有等待時間：幾毫秒內就會失敗很多次
+        controller._monitor_cycle()
+
+    assert screens.calls == 50 and started == []
+    assert controller._monitor_active  # 不會因為連續截圖失敗就關掉
+    assert controller._monitor_errors == 0  # 也不計入連續出錯
+    assert controller._monitor_timer.isActive() and controller._monitor_timer.interval() == 10  # 繼續重試
+    assert [text for text in statuses if "截圖失敗" in text] == ["截圖失敗，持續重試中（要停止請關閉監控）"]  # 只提示一次
+
+    screens.failing = False  # 恢復之後照常辨識，下一次失敗又會再提示一次
+    controller._monitor_cycle()
+    assert len(started) == 1 and controller._monitor_capture_failing is False
+    screens.failing = True
+    controller._monitor_frame_hash = ""
+    controller._monitor_cycle()
+    assert len([text for text in statuses if "截圖失敗" in text]) == 2
+    controller._monitor_timer.stop()
+
+
+def test_settings_dialog_has_no_scan_interval(qapp, tmp_path):
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
 
-    assert dialog.pages.widget(0).widget().isAncestorOf(dialog.spin_scan_interval)  # 「通用」頁，不用往下捲
-    assert (dialog.spin_scan_interval.minimum(), dialog.spin_scan_interval.maximum()) == (0.1, 10.0)
-    assert dialog.spin_scan_interval.decimals() == 2  # 小數下兩位
-    assert dialog.spin_scan_interval.value() == 0.1  # 預設 0.1 秒
-    assert dialog.lbl_scan_rate.text() == "約每秒檢查 10.0 次畫面"
+    assert not hasattr(dialog, "spin_scan_interval") and not hasattr(dialog, "lbl_scan_rate")
     texts = [label.text() for label in dialog.pages.widget(0).widget().findChildren(QLabel)]
-    assert "辨識間隔：0.1 秒" in next(text for text in texts if "系統推薦" in text)
-
-    dialog.spin_scan_interval.setValue(0.5)
-    assert dialog.lbl_scan_rate.text() == "約每秒檢查 2.0 次畫面"
-    dialog.spin_scan_interval.setValue(1.2)  # 剛好是舊預設的值也要存得住
+    assert not any("辨識間隔" in text for text in texts)
     dialog._commit_accept(dialog._validated_hotkeys())
     dialog._save_close_timer.stop()
 
-    saved = AppConfig(tmp_path / "config.json")
-    assert saved.get("monitor.interval_ms") == 1200
-    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") == 1200  # 重新載入不被舊預設遷移蓋掉
-    reopened = SettingsDialog(saved)
-    assert reopened.spin_scan_interval.value() == 1.2
-    dialog.deleteLater()
-    reopened.deleteLater()
-
-
-def _type_into_the_interval_box(dialog, text):
-    dialog.spin_scan_interval.lineEdit().setText(text)  # 像使用者輸入
-    dialog.spin_scan_interval.interpretText()
-
-
-@pytest.mark.parametrize(
-    ("typed", "milliseconds"),
-    [("0.15", 150), ("0.25", 250), ("0.29", 290), ("0.1", 100), ("0.10", 100), ("0.35 秒", 350), ("1.2", 1200), ("10", 10_000)],
-)
-def test_typed_values_are_accepted_to_two_decimals(qapp, tmp_path, typed, milliseconds):
-    dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
-
-    _type_into_the_interval_box(dialog, typed)
-    dialog._commit_accept(dialog._validated_hotkeys())
-    dialog._save_close_timer.stop()
-
-    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") == milliseconds
-    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") == milliseconds  # 再載入一次，仍是同一個值
-    dialog.deleteLater()
-
-
-@pytest.mark.parametrize("typed", ["0.07", "0.05", "0", "-1", "12", "0.123", "abc", ""])
-def test_values_the_box_cannot_take_leave_the_previous_value(qapp, tmp_path, typed):
-    """低於 0.1、超過 10、第三位小數、不是數字：輸入框直接拒絕，維持原本的值（不會存進奇怪的數字）。"""
-    config = AppConfig(tmp_path / "config.json")
-    config.set("monitor.interval_ms", 300)
-    dialog = SettingsDialog(config)
-
-    _type_into_the_interval_box(dialog, typed)
-    dialog._commit_accept(dialog._validated_hotkeys())
-    dialog._save_close_timer.stop()
-
-    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") == 300
+    assert AppConfig(tmp_path / "config.json").get("monitor.interval_ms") is None  # 存檔不會再寫出這個設定
     dialog.deleteLater()
 
 

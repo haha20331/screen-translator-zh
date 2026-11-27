@@ -365,7 +365,10 @@ def test_a_result_that_arrives_after_the_text_was_cancelled_is_not_shown(control
     translator = controller.translator
     translator.release.set()
     controller._on_translation_job(_job("こんにちは"))
-    assert _pump(lambda: translator.finished == ["こんにちは"], timeout=5)
+    deadline = time.monotonic() + 5
+    while translator.finished != ["こんにちは"] and time.monotonic() < deadline:
+        QThread.msleep(2)  # 不跑事件迴圈：翻好了，但結果的信號還排在佇列裡（跑了就可能在取消之前被送達，測試會時好時壞）
+    assert translator.finished == ["こんにちは"]
     controller._cancel_translation_jobs()  # 結果的信號還在排隊時畫面就作廢了
 
     _pump(lambda: False, timeout=0.2)
@@ -503,3 +506,4 @@ def test_the_toggle_is_in_the_translation_tab_and_round_trips_through_the_config
             reopened.deleteLater()
     finally:
         dialog.deleteLater()
+

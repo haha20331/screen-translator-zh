@@ -629,25 +629,6 @@ class SettingsDialog(QWidget):
         startup_form.addRow(self.chk_minimize_tray)
         layout.addWidget(self._card("啟動與後臺", "決定應用如何進入工作狀態與停留在系統托盤。", startup_form))
 
-        self.spin_scan_interval = NoWheelDoubleSpinBox()
-        self.spin_scan_interval.setRange(stability.MIN_INTERVAL_MS / 1000, stability.MAX_INTERVAL_MS / 1000)
-        self.spin_scan_interval.setSingleStep(0.05)
-        self.spin_scan_interval.setDecimals(2)  # 可輸入到小數兩位（0.01 秒）
-        self.spin_scan_interval.setSuffix(" 秒")
-        self.spin_scan_interval.setToolTip(
-            "每一輪檢查結束後，等這麼久再檢查下一次畫面（最短 0.1 秒，可輸入到小數兩位）。"
-            "間隔越短，字幕一換就越快反應，但電腦負擔越重"
-            "（影片畫面一直在動時，每次檢查都要重新辨識文字，0.1 秒幾乎是不停地辨識）；"
-            "間隔越長越省資源，但換字幕要多等一下。畫面完全沒變時不會辨識，也不會翻譯。"
-        )
-        self.lbl_scan_rate = QLabel()
-        self.lbl_scan_rate.setObjectName("SettingsCardDescription")
-        self.spin_scan_interval.valueChanged.connect(self._refresh_scan_rate)
-        scan_row = QHBoxLayout()
-        scan_row.setSpacing(10)
-        scan_row.addWidget(self.spin_scan_interval)
-        scan_row.addWidget(self.lbl_scan_rate)
-        scan_row.addStretch(1)
         self.spin_hide_no_text = NoWheelDoubleSpinBox()
         self.spin_hide_no_text.setRange(0.0, stability.MAX_NO_TEXT_SECONDS)
         self.spin_hide_no_text.setSingleStep(0.5)
@@ -719,7 +700,6 @@ class SettingsDialog(QWidget):
         monitor_form = self._new_form()
         monitor_form.addRow(self.chk_auto_monitor)
         monitor_form.addRow("監視框的移動方式", self.combo_drag_mode)
-        monitor_form.addRow("辨識間隔", scan_row)
         monitor_form.addRow("無字幕時關閉譯文", self.spin_hide_no_text)
         monitor_form.addRow("移動或調整監視框後等待", self.spin_frame_settle)
         monitor_form.addRow("停止監控後釋放模型", self.spin_release_model)
@@ -728,8 +708,6 @@ class SettingsDialog(QWidget):
         monitor_form.addRow(preset_row)
         explanation = QLabel(
             f"系統推薦：\n"
-            f"．辨識間隔：{stability.RECOMMENDED_INTERVAL_MS / 1000:g} 秒（約每秒檢查 10 次）。"
-            "想省電腦資源就拉長，想讓換字幕更快反應就縮短（最短 0.1 秒，可輸入到小數兩位）。\n"
             f"．無字幕時關閉譯文：{stability.RECOMMENDED_NO_TEXT_SECONDS:g} 秒。OCR 連續抓不到字幕這麼久，就自動關掉譯文。\n"
             f"．快速：確認 {stability.RECOMMENDED_FAST_ROUNDS} 次，最久等待 {stability.RECOMMENDED_MAX_WAIT:g} 秒。"
             "辨識到就立刻顯示，反應最快，但字幕淡入淡出時可能先閃出殘缺的句子。\n"
@@ -739,7 +717,7 @@ class SettingsDialog(QWidget):
         explanation.setObjectName("SettingsCardDescription")
         explanation.setWordWrap(True)
         monitor_form.addRow(explanation)
-        layout.addWidget(self._card("即時監控", "翻譯完成後是否自動持續監控、多久檢查一次畫面（辨識間隔），以及新字幕要連續辨識到相同結果幾次才翻譯並顯示（確認次數）。", monitor_form))
+        layout.addWidget(self._card("即時監控", "翻譯完成後是否自動持續監控，以及新字幕要連續辨識到相同結果幾次才翻譯並顯示（確認次數）。", monitor_form))
 
         self.spin_wrap_gap = NoWheelDoubleSpinBox()
         self.spin_wrap_gap.setRange(0.0, 2.0)
@@ -1365,8 +1343,6 @@ class SettingsDialog(QWidget):
         self._set_combo(self.combo_drag_mode, cfg.get("monitor.drag_mode", "grips"))
         self.spin_release_model.setValue(int(float(cfg.get("monitor.release_model_after_seconds", 10))))
         self.spin_frame_settle.setValue(float(cfg.get("monitor.frame_settle_seconds", 1.0)))
-        self.spin_scan_interval.setValue(int(cfg.get("monitor.interval_ms", stability.RECOMMENDED_INTERVAL_MS)) / 1000)
-        self._refresh_scan_rate()
         self.spin_hide_no_text.setValue(
             float(cfg.get("monitor.hide_after_no_text_seconds", stability.RECOMMENDED_NO_TEXT_SECONDS))
         )
@@ -1508,7 +1484,6 @@ class SettingsDialog(QWidget):
             cfg.set("ocr.lang", self.combo_lang.currentData() or "auto")
             cfg.set("monitor.auto_start", self.chk_auto_monitor.isChecked())
             cfg.set("monitor.drag_mode", self.combo_drag_mode.currentData() or "grips")
-            cfg.set("monitor.interval_ms", int(round(self.spin_scan_interval.value() * 1000)))
             cfg.set("monitor.hide_after_no_text_seconds", self.spin_hide_no_text.value())
             cfg.set("monitor.release_model_after_seconds", self.spin_release_model.value())
             cfg.set("monitor.frame_settle_seconds", self.spin_frame_settle.value())
@@ -2255,10 +2230,6 @@ class SettingsDialog(QWidget):
         removed = int(self._cache_actions[1]())
         self._refresh_cache_count()
         self.lbl_cache_count.setText(f"已清除 {removed} 句")
-
-    def _refresh_scan_rate(self, *_args) -> None:
-        interval = max(self.spin_scan_interval.value(), stability.MIN_INTERVAL_MS / 1000)
-        self.lbl_scan_rate.setText(f"約每秒檢查 {1 / interval:.1f} 次畫面")
 
     def _apply_stability_preset(self, rounds: int) -> None:
         """套用系統推薦：確認次數依快速／穩定，最久等待用推薦值。"""

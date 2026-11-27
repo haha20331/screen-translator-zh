@@ -109,18 +109,14 @@ def test_corrupt_config_backed_up(tmp_path):
     assert path.with_suffix(".json.bak").exists()
 
 
-def test_legacy_monitor_interval_is_migrated_to_the_faster_default(tmp_path):
+def test_the_removed_monitor_interval_setting_is_dropped_from_old_files(tmp_path):
     path = tmp_path / "config.json"
-    path.write_text('{"monitor": {"interval_ms": 1200}}', encoding="utf-8")
+    path.write_text('{"monitor": {"interval_ms": 2500, "interval_default_version": 2}}', encoding="utf-8")
 
-    assert AppConfig(path).get("monitor.interval_ms") == 100
+    config = AppConfig(path)
 
-
-def test_customised_monitor_interval_is_kept(tmp_path):
-    path = tmp_path / "config.json"
-    path.write_text('{"monitor": {"interval_ms": 2500}}', encoding="utf-8")
-
-    assert AppConfig(path).get("monitor.interval_ms") == 2500
+    assert config.get("monitor.interval_ms") is None
+    assert config.get("monitor.interval_default_version") is None
 
 
 # ----------------------------------------------------------------------------- 已移除的 CTranslate2 / NLLB 設定

@@ -174,6 +174,7 @@ class Application(
         self._monitor_idle_hash = ""  # 辨識不到任何文字的那一格畫面；一模一樣的畫面不必再辨識
         self._monitor_stabilizer: TextStabilizer | None = None
         self._monitor_errors = 0
+        self._monitor_capture_failing = False  # 截圖正在連續失敗中（只在剛開始失敗時記 log）
         self._monitor_no_text = False
         self._monitor_quiet_until = 0.0  # 移動／調整監視框放開之後，到這個時間（time.monotonic）之前先不辨識、不翻譯
         self._monitor_wait_noted = False  # 「等框停下來」的狀態列提示已經顯示過了（每次調整只提示一次）
