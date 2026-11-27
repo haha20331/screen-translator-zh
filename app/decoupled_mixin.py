@@ -32,7 +32,7 @@ class DecoupledTranslationMixin:
     # ------------------------------------------------------------------ 狀態
     def _decoupled_enabled(self) -> bool:
         """這一輪辨識要不要把翻譯交給另一條路：只有即時監控、而且設定開著。"""
-        return bool(self._monitor_active and self.config.get("translation.decouple_ocr", False))
+        return bool(self._monitor_active and self.config.get("translation.decouple_ocr", True))
 
     def _translation_busy(self) -> bool:
         """有字幕正在翻或排著隊（畫面沒變的話，這時候不必再辨識同一格畫面）。"""

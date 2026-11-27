@@ -286,8 +286,8 @@ def _shown_texts(controller) -> list[str]:
     return [regions[0].translated_text for regions in controller.overlay_manager.shown]
 
 
-def test_the_setting_is_off_by_default_and_only_applies_to_monitoring(controller):
-    assert DEFAULTS["translation"]["decouple_ocr"] is False
+def test_the_setting_is_on_by_default_and_only_applies_to_monitoring(controller):
+    assert DEFAULTS["translation"]["decouple_ocr"] is True
     assert controller._decoupled_enabled() is True
 
     controller.config.set("translation.decouple_ocr", False)
@@ -490,7 +490,7 @@ def test_the_toggle_is_in_the_translation_tab_and_round_trips_through_the_config
     try:
         checkbox = dialog.chk_decouple_ocr
         assert isinstance(checkbox, QCheckBox)
-        assert checkbox.isChecked() is False
+        assert checkbox.isChecked() is True  # 預設開
         assert "辨識與翻譯分開進行" in checkbox.text()
         assert dialog.pages.widget(3).widget().isAncestorOf(checkbox)  # 「翻譯」頁
 

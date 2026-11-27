@@ -16,13 +16,10 @@ SAME = "same"  # 與目前顯示的相同：不必翻譯、不必重畫
 PENDING = "pending"  # 新的文字，但還沒穩定：先不翻譯
 CONFIRMED = "confirmed"  # 穩定了（或等太久）：翻譯並顯示
 
-# 系統推薦值：連續幾次辨識到相同結果才翻譯並顯示（確認次數），以及新文字一直在變時最久等幾秒。
-# 設定畫面、說明文字與預設值都從這裡取，避免說明和實際行為不一致。
+# 確認次數（連續幾次辨識到相同結果才翻譯並顯示）固定為 1：辨識到就立刻翻譯顯示，沒有設定可調。
+# 次數固定為 1 時「最久等待」不會起作用，只是保留給 TextStabilizer 的參數。
 RECOMMENDED_FAST_ROUNDS = 1
-RECOMMENDED_STABLE_ROUNDS = 2
 RECOMMENDED_MAX_WAIT = 2.5
-MIN_ROUNDS, MAX_ROUNDS = 1, 10
-MIN_MAX_WAIT, MAX_MAX_WAIT = 0.5, 30.0
 # 監控中 OCR 連續這麼久都抓不到字幕，就自動把譯文關掉（0 = 不自動關閉）
 RECOMMENDED_NO_TEXT_SECONDS = 1.0
 MAX_NO_TEXT_SECONDS = 30.0

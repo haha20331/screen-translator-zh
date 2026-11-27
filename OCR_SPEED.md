@@ -116,7 +116,7 @@
 
 ## 4. 辨識與翻譯分開進行：端對端實測
 
-設定 → 翻譯 →「辨識與翻譯分開進行」（`translation.decouple_ocr`，**預設關**，只對即時監控有效）。做法見 PLAN.md；重點：辨識一直看畫面，確認有新字幕就交給翻譯排隊；翻譯同一時間只一筆，只保留最新一筆；翻到一半字幕又換了，舊的那句在下一個詞就中止（llama.cpp `stopping_criteria`），翻完才發現過時的結果不顯示。新增單元測試 49 項：排程、穩定器與可中斷的離線翻譯 18（`tests/test_translation_scheduler.py`）、worker／控制器／設定頁開關 22（`tests/test_decoupled_translation.py`）、自適應放大 9（`tests/test_rapidocr_ocr.py`）。
+設定 → 翻譯 →「辨識與翻譯分開進行」（`translation.decouple_ocr`，**預設開**（2026-11-27 起；原本預設關），只對即時監控有效）。做法見 PLAN.md；重點：辨識一直看畫面，確認有新字幕就交給翻譯排隊；翻譯同一時間只一筆，只保留最新一筆；翻到一半字幕又換了，舊的那句在下一個詞就中止（llama.cpp `stopping_criteria`），翻完才發現過時的結果不顯示。新增單元測試 49 項：排程、穩定器與可中斷的離線翻譯 18（`tests/test_translation_scheduler.py`）、worker／控制器／設定頁開關 22（`tests/test_decoupled_translation.py`）、自適應放大 9（`tests/test_rapidocr_ocr.py`）。
 
 ### 4.1 實測方法
 

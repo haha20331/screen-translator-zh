@@ -88,9 +88,9 @@ DEFAULTS: dict[str, Any] = {
         # 譯文不是中文（殘留日文假名、不該略過的句子被回報略過）時，改用一般提示重翻一次（預設開）；
         # 關閉就只進模型一次，翻出什麼就輸出什麼，每句少一次模型運算
         "retry_non_chinese": True,
-        # 辨識與翻譯分開進行（只對即時監控有效，預設關）：辨識一直看畫面，翻譯另外排隊，只保留最新一句；
+        # 辨識與翻譯分開進行（只對即時監控有效，預設開）：辨識一直看畫面，翻譯另外排隊，只保留最新一句；
         # 翻譯途中字幕又換了，舊的那句立刻放棄。關閉時照舊「辨識 → 翻譯」一次做完才看下一格
-        "decouple_ocr": False,
+        "decouple_ocr": True,
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_delay_seconds": 1.0,
@@ -148,13 +148,6 @@ DEFAULTS: dict[str, Any] = {
         "max_consecutive_errors": 3,
         # 把上一轮译文写回缓存：内容没变过的文本块直接命中缓存，几乎瞬时
         "skip_unchanged": True,
-        # 確認次數：辨識到的新字幕要「連續幾次辨識結果相同」才翻譯並顯示。
-        # 1 = 快速（系統推薦，辨識到就顯示，但字幕淡入淡出時可能先閃出殘缺的句子）；
-        # 2 = 穩定（系統推薦，過渡畫面的殘缺句子不會被翻譯，但換字幕約慢 0.5～1 秒）。
-        # 與已顯示的相同時，不論次數都不再翻譯。
-        "confirm_rounds": 1,
-        # 新文字一直在變（辨識抖動）時，最久等幾秒就放行最新的一組（推薦 2.5 秒）
-        "max_wait_seconds": 2.5,
         # 監控中 OCR 連續這麼多秒都抓不到字幕，就自動關閉譯文（推薦 1 秒，0 = 不自動關閉）
         "hide_after_no_text_seconds": 1.0,
         # 停止即時監控超過這麼多秒，就把翻譯模型從記憶體放掉（3B 約 2.8 GB）；下次擷取或監控時自動載回。0 = 不釋放
@@ -293,32 +286,19 @@ def _normalize_overlay(data: dict[str, Any]) -> None:
         overlay["placement"] = DEFAULTS["overlay"]["placement"]
 
 
-def _normalize_monitor_stability(data: dict[str, Any], loaded: dict[str, Any]) -> None:
-    """確認次數與最久等待要是合理範圍內的數字；舊版的「快速／穩定」選項換算成次數。"""
-    monitor = data.setdefault("monitor", {})
-    loaded_monitor = loaded.get("monitor") if isinstance(loaded.get("monitor"), dict) else {}
-    legacy = monitor.pop("stability", None)
-    monitor.pop("stable_rounds", None)
-    if "confirm_rounds" not in loaded_monitor and legacy == "stable":
-        monitor["confirm_rounds"] = 2
-    defaults = DEFAULTS["monitor"]
-    try:
-        rounds = int(monitor.get("confirm_rounds", defaults["confirm_rounds"]))
-    except (TypeError, ValueError):
-        rounds = defaults["confirm_rounds"]
-    try:
-        wait = float(monitor.get("max_wait_seconds", defaults["max_wait_seconds"]))
-    except (TypeError, ValueError):
-        wait = defaults["max_wait_seconds"]
-    monitor["confirm_rounds"] = max(1, min(10, rounds))
-    monitor["max_wait_seconds"] = max(0.5, min(30.0, wait))
-
-
 def _normalize_monitor(data: dict[str, Any], loaded: dict[str, Any]) -> None:
-    """舊設定檔的辨識間隔（interval_ms 與它的遷移標記）已移除：辨識完一輪就馬上看下一格畫面，
-    不再有可調的間隔。這裡把檔案裡留著的舊鍵清掉，下次存檔時就不會再寫回去。"""
+    """已移除的設定：辨識間隔（辨識完一輪就馬上看下一格畫面）與確認次數（固定為 1，辨識到就翻譯顯示）。
+    舊設定檔裡留著的這些鍵在這裡清掉，下次存檔時就不會再寫回去，所以以前自訂過的人也一律用預設。"""
     monitor = data.setdefault("monitor", {})
-    for stale in ("interval_ms", "interval_default_version", "interval_migrated"):
+    for stale in (
+        "interval_ms",
+        "interval_default_version",
+        "interval_migrated",
+        "confirm_rounds",
+        "max_wait_seconds",
+        "stability",
+        "stable_rounds",
+    ):
         monitor.pop(stale, None)
     try:
         hide_after = float(monitor.get("hide_after_no_text_seconds", DEFAULTS["monitor"]["hide_after_no_text_seconds"]))
@@ -409,7 +389,6 @@ class AppConfig:
                 _normalize_translation(self.data, loaded)
                 _normalize_ocr(self.data, loaded)
                 _normalize_monitor(self.data, loaded)
-                _normalize_monitor_stability(self.data, loaded)
                 _normalize_overlay(self.data)
                 _normalize_output(self.data)
                 # This legacy field is retained for compatibility; capture

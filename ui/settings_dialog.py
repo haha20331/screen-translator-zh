@@ -659,31 +659,6 @@ class SettingsDialog(QWidget):
             "停止即時監控超過這麼久，就把翻譯模型從記憶體放掉（預設 3B 約佔 2.8 GB），別的程式可以用。\n"
             "下次框選或開始監控時會自動載回來，載入要幾秒到十幾秒（載好之前不會送翻譯）。0 = 不釋放，模型一直留在記憶體裡，隨時馬上能翻。"
         )
-        self.spin_confirm_rounds = NoWheelSpinBox()
-        self.spin_confirm_rounds.setRange(stability.MIN_ROUNDS, stability.MAX_ROUNDS)
-        self.spin_confirm_rounds.setSuffix(" 次")
-        self.spin_confirm_rounds.setToolTip(
-            "新字幕要連續辨識到幾次相同的結果，才翻譯並顯示。次數越少反應越快，但字幕淡入淡出、"
-            "換字幕的過渡畫面可能先閃出殘缺的句子；次數越多越不會閃怪句子，但換字幕越慢"
-            "（每多一次約慢 0.5～1 秒）。辨識結果與目前顯示的相同時，不論次數都不會重複翻譯。"
-        )
-        self.spin_max_wait = NoWheelDoubleSpinBox()
-        self.spin_max_wait.setRange(stability.MIN_MAX_WAIT, stability.MAX_MAX_WAIT)
-        self.spin_max_wait.setSingleStep(0.5)
-        self.spin_max_wait.setDecimals(1)
-        self.spin_max_wait.setSuffix(" 秒")
-        self.spin_max_wait.setToolTip("新字幕一直在變（辨識結果抖動）時，最久等這麼久就直接顯示最新的一句，避免畫面卡住不更新。")
-        self.btn_preset_fast = QPushButton("套用快速推薦")
-        self.btn_preset_stable = QPushButton("套用穩定推薦")
-        for button in (self.btn_preset_fast, self.btn_preset_stable):
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_preset_fast.clicked.connect(lambda: self._apply_stability_preset(stability.RECOMMENDED_FAST_ROUNDS))
-        self.btn_preset_stable.clicked.connect(lambda: self._apply_stability_preset(stability.RECOMMENDED_STABLE_ROUNDS))
-        preset_row = QHBoxLayout()
-        preset_row.setSpacing(8)
-        preset_row.addWidget(self.btn_preset_fast)
-        preset_row.addWidget(self.btn_preset_stable)
-        preset_row.addStretch(1)
         self.chk_auto_monitor = QCheckBox("框選（或全螢幕、視窗）翻譯完成後，自動進入即時監控（推薦）")
         self.chk_auto_monitor.setToolTip(
             "開啟時，翻譯完成後會接著持續監控，畫面上的字幕一變就自動重譯；關閉即時監控或開始新的擷取即可停止。\n"
@@ -703,21 +678,14 @@ class SettingsDialog(QWidget):
         monitor_form.addRow("無字幕時關閉譯文", self.spin_hide_no_text)
         monitor_form.addRow("移動或調整監視框後等待", self.spin_frame_settle)
         monitor_form.addRow("停止監控後釋放模型", self.spin_release_model)
-        monitor_form.addRow("確認次數", self.spin_confirm_rounds)
-        monitor_form.addRow("最久等待", self.spin_max_wait)
-        monitor_form.addRow(preset_row)
         explanation = QLabel(
             f"系統推薦：\n"
-            f"．無字幕時關閉譯文：{stability.RECOMMENDED_NO_TEXT_SECONDS:g} 秒。OCR 連續抓不到字幕這麼久，就自動關掉譯文。\n"
-            f"．快速：確認 {stability.RECOMMENDED_FAST_ROUNDS} 次，最久等待 {stability.RECOMMENDED_MAX_WAIT:g} 秒。"
-            "辨識到就立刻顯示，反應最快，但字幕淡入淡出時可能先閃出殘缺的句子。\n"
-            f"．穩定：確認 {stability.RECOMMENDED_STABLE_ROUNDS} 次，最久等待 {stability.RECOMMENDED_MAX_WAIT:g} 秒。"
-            "同一句連續辨識到兩次才顯示，不會閃出辨識到一半的怪句子，換字幕約慢 0.5～1 秒。"
+            f"．無字幕時關閉譯文：{stability.RECOMMENDED_NO_TEXT_SECONDS:g} 秒。OCR 連續抓不到字幕這麼久，就自動關掉譯文。"
         )
         explanation.setObjectName("SettingsCardDescription")
         explanation.setWordWrap(True)
         monitor_form.addRow(explanation)
-        layout.addWidget(self._card("即時監控", "翻譯完成後是否自動持續監控，以及新字幕要連續辨識到相同結果幾次才翻譯並顯示（確認次數）。", monitor_form))
+        layout.addWidget(self._card("即時監控", "翻譯完成後是否自動持續監控，以及無字幕、移動監視框、釋放模型的處理。", monitor_form))
 
         self.spin_wrap_gap = NoWheelDoubleSpinBox()
         self.spin_wrap_gap.setRange(0.0, 2.0)
@@ -1113,11 +1081,11 @@ class SettingsDialog(QWidget):
         self.chk_decouple_ocr = QCheckBox("辨識與翻譯分開進行：翻譯途中也繼續看畫面，只翻最新的字幕")
         self.chk_decouple_ocr.setToolTip(
             "只對「即時監控」有效。\n"
-            "關閉（預設）：辨識和翻譯排成一串，一句翻完才會看下一格畫面。\n"
-            "開啟：辨識一直看畫面，確認有新字幕就交給翻譯排隊。翻譯同一時間只翻一句，"
+            "開啟（預設）：辨識一直看畫面，確認有新字幕就交給翻譯排隊。翻譯同一時間只翻一句，"
             "翻到一半字幕又換了，舊的那句會立刻放棄、改翻最新的，畫面上永遠是最新的一句。\n"
             "適合字幕換得很快的影片。代價：辨識和翻譯同時進行，兩者會搶 CPU（翻譯放在 CPU 上時，辨識會變慢、"
-            "翻譯也會稍慢；翻譯用顯示卡時影響很小）。字幕換得慢、或電腦比較吃力時，關著比較順。\n"
+            "翻譯也會稍慢；翻譯用顯示卡時影響很小）。字幕換得慢、或電腦比較吃力時，關掉比較順。\n"
+            "關閉：辨識和翻譯排成一串，一句翻完才會看下一格畫面。\n"
             "儲存設定後，下一輪監控就生效。"
         )
         self.chk_lyrics_mode = QCheckBox("歌詞模式：告訴模型這是歌詞，譯得較通順有詩意")
@@ -1346,8 +1314,6 @@ class SettingsDialog(QWidget):
         self.spin_hide_no_text.setValue(
             float(cfg.get("monitor.hide_after_no_text_seconds", stability.RECOMMENDED_NO_TEXT_SECONDS))
         )
-        self.spin_confirm_rounds.setValue(int(cfg.get("monitor.confirm_rounds", stability.RECOMMENDED_FAST_ROUNDS)))
-        self.spin_max_wait.setValue(float(cfg.get("monitor.max_wait_seconds", stability.RECOMMENDED_MAX_WAIT)))
         self.spin_confidence.setValue(float(cfg.get("ocr.min_confidence", 0.6)))
         self.spin_y_tol.setValue(float(cfg.get("ocr.merge_y_tolerance_ratio", 0.3)))
         self.spin_x_gap.setValue(float(cfg.get("ocr.merge_x_gap_ratio", 0.8)))
@@ -1368,7 +1334,7 @@ class SettingsDialog(QWidget):
         self._load_gpu_device(cfg)
         self.chk_skip_sounds.setChecked(bool(cfg.get("translation.skip_sounds", True)))
         self.chk_retry_non_chinese.setChecked(bool(cfg.get("translation.retry_non_chinese", True)))
-        self.chk_decouple_ocr.setChecked(bool(cfg.get("translation.decouple_ocr", False)))
+        self.chk_decouple_ocr.setChecked(bool(cfg.get("translation.decouple_ocr", True)))
         self.spin_min_hold.setValue(float(cfg.get("overlay.min_hold_seconds", 0.0)))
         self.spin_cache_entries.setValue(int(cfg.get("translation.cache_max_entries", 100000)))
 
@@ -1487,8 +1453,6 @@ class SettingsDialog(QWidget):
             cfg.set("monitor.hide_after_no_text_seconds", self.spin_hide_no_text.value())
             cfg.set("monitor.release_model_after_seconds", self.spin_release_model.value())
             cfg.set("monitor.frame_settle_seconds", self.spin_frame_settle.value())
-            cfg.set("monitor.confirm_rounds", self.spin_confirm_rounds.value())
-            cfg.set("monitor.max_wait_seconds", self.spin_max_wait.value())
             cfg.set("ocr.min_confidence", self.spin_confidence.value())
             cfg.set("ocr.merge_y_tolerance_ratio", self.spin_y_tol.value())
             cfg.set("ocr.merge_x_gap_ratio", self.spin_x_gap.value())
@@ -2230,11 +2194,6 @@ class SettingsDialog(QWidget):
         removed = int(self._cache_actions[1]())
         self._refresh_cache_count()
         self.lbl_cache_count.setText(f"已清除 {removed} 句")
-
-    def _apply_stability_preset(self, rounds: int) -> None:
-        """套用系統推薦：確認次數依快速／穩定，最久等待用推薦值。"""
-        self.spin_confirm_rounds.setValue(rounds)
-        self.spin_max_wait.setValue(stability.RECOMMENDED_MAX_WAIT)
 
     def _sync_placement(self, *_args) -> None:
         """譯文放在框下方時，原文本來就留在畫面上：「蓋在原文上時」的選項用不到，先停用。"""

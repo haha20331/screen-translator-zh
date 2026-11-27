@@ -296,34 +296,6 @@ def test_stop_does_nothing_when_the_monitor_was_not_running(controller):
     assert controller.overlay_manager.cleared == 0
 
 
-def test_confirm_rounds_setting_is_used_and_can_change_while_monitoring(controller):
-    controller.config.set("monitor.confirm_rounds", 1)
-    controller._configure_stabilizer()
-    assert controller._monitor_stabilizer.rounds == 1
-
-    controller.config.set("monitor.confirm_rounds", 2)
-    controller._configure_stabilizer()
-    assert controller._monitor_stabilizer.rounds == 2
-
-    controller.config.set("monitor.confirm_rounds", 5)  # 使用者自訂：監控中途改，下一輪就生效
-    controller.config.set("monitor.max_wait_seconds", 4.0)
-    controller._configure_stabilizer()
-    assert controller._monitor_stabilizer.rounds == 5
-    assert controller._monitor_stabilizer.max_wait == 4.0
-
-
-def test_out_of_range_or_broken_values_are_clamped_not_fatal(controller):
-    controller.config.set("monitor.confirm_rounds", 99)
-    controller._configure_stabilizer()
-    assert controller._monitor_stabilizer.rounds == 10
-
-    controller.config.set("monitor.confirm_rounds", "abc")
-    controller.config.set("monitor.max_wait_seconds", None)
-    controller._configure_stabilizer()
-    assert controller._monitor_stabilizer.rounds == 1
-    assert controller._monitor_stabilizer.max_wait == 2.5
-
-
 # ----------------------------------------------------------------------------- 監控每一輪的畫面門控
 class _Screens:
     def __init__(self) -> None:
@@ -386,44 +358,16 @@ def test_an_identical_frame_with_no_text_is_not_recognised_again(cycling):
 
 
 # ----------------------------------------------------------------------------- 設定
-def test_defaults_are_the_recommended_fast_values():
-    assert DEFAULTS["monitor"]["confirm_rounds"] == stability.RECOMMENDED_FAST_ROUNDS == 1
-    assert DEFAULTS["monitor"]["max_wait_seconds"] == stability.RECOMMENDED_MAX_WAIT == 2.5
-    assert stability.RECOMMENDED_STABLE_ROUNDS == 2
-    assert "stability" not in DEFAULTS["monitor"] and "stable_rounds" not in DEFAULTS["monitor"]
+def test_confirm_rounds_are_fixed_at_one_and_have_no_setting():
+    assert stability.RECOMMENDED_FAST_ROUNDS == 1
+    for key in ("confirm_rounds", "max_wait_seconds", "stability", "stable_rounds"):
+        assert key not in DEFAULTS["monitor"]
 
 
 def _load(tmp_path, monitor):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"monitor": monitor}), encoding="utf-8")
     return AppConfig(path)
-
-
-@pytest.mark.parametrize(
-    ("saved", "rounds"),
-    [
-        ({}, 1),
-        ({"stability": "fast"}, 1),  # 舊版的選項換算成次數
-        ({"stability": "stable"}, 2),
-        ({"stability": "stable", "stable_rounds": 2}, 2),
-        ({"stability": "stable", "confirm_rounds": 4}, 4),  # 使用者新輸入的次數優先
-        ({"stability": "turbo"}, 1),
-        ({"confirm_rounds": 3}, 3),
-        ({"confirm_rounds": 0}, 1),
-        ({"confirm_rounds": 50}, 10),
-        ({"confirm_rounds": "many"}, 1),
-    ],
-)
-def test_confirm_rounds_are_migrated_and_clamped(tmp_path, saved, rounds):
-    config = _load(tmp_path, saved)
-
-    assert config.get("monitor.confirm_rounds") == rounds
-    assert config.get("monitor.stability") is None and config.get("monitor.stable_rounds") is None
-
-
-@pytest.mark.parametrize(("saved", "wait"), [({}, 2.5), ({"max_wait_seconds": 5}, 5.0), ({"max_wait_seconds": 0}, 0.5), ({"max_wait_seconds": 999}, 30.0), ({"max_wait_seconds": "x"}, 2.5)])
-def test_max_wait_is_clamped(tmp_path, saved, wait):
-    assert _load(tmp_path, saved).get("monitor.max_wait_seconds") == wait
 
 
 @pytest.fixture
@@ -433,66 +377,19 @@ def qapp():
     return app
 
 
-def test_settings_dialog_lets_the_user_type_the_threshold_and_lists_the_recommendations(qapp, tmp_path):
+def test_settings_dialog_has_no_confirm_rounds_controls(qapp, tmp_path):
     dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
 
-    assert dialog.pages.widget(0).widget().isAncestorOf(dialog.spin_confirm_rounds)  # 第一頁「通用」，不用往下捲
-    assert (dialog.spin_confirm_rounds.minimum(), dialog.spin_confirm_rounds.maximum()) == (1, 10)
-    assert dialog.spin_confirm_rounds.value() == 1 and dialog.spin_max_wait.value() == 2.5
+    for name in ("spin_confirm_rounds", "spin_max_wait", "btn_preset_fast", "btn_preset_stable"):
+        assert not hasattr(dialog, name)
     texts = [label.text() for label in dialog.pages.widget(0).widget().findChildren(QLabel)]
-    recommendation = next(text for text in texts if "系統推薦" in text)
-    assert "快速：確認 1 次" in recommendation and "穩定：確認 2 次" in recommendation
-    assert "2.5 秒" in recommendation
-    assert not hasattr(dialog, "combo_stability")
-    dialog.deleteLater()
-
-
-def test_preset_buttons_fill_in_the_recommended_values(qapp, tmp_path):
-    dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
-    dialog.spin_confirm_rounds.setValue(7)
-    dialog.spin_max_wait.setValue(9.0)
-
-    dialog.btn_preset_stable.click()
-    assert (dialog.spin_confirm_rounds.value(), dialog.spin_max_wait.value()) == (2, 2.5)
-    dialog.spin_max_wait.setValue(9.0)
-    dialog.btn_preset_fast.click()
-    assert (dialog.spin_confirm_rounds.value(), dialog.spin_max_wait.value()) == (1, 2.5)
-    dialog.deleteLater()
-
-
-def test_settings_dialog_saves_the_typed_values(qapp, tmp_path):
-    dialog = SettingsDialog(AppConfig(tmp_path / "config.json"))
-
-    dialog.spin_confirm_rounds.setValue(3)
-    dialog.spin_max_wait.setValue(4.5)
+    assert not any("確認次數" in text or "快速：確認" in text for text in texts)
     dialog._commit_accept(dialog._validated_hotkeys())
     dialog._save_close_timer.stop()
 
     saved = AppConfig(tmp_path / "config.json")
-    assert saved.get("monitor.confirm_rounds") == 3
-    assert saved.get("monitor.max_wait_seconds") == 4.5
-    reopened = SettingsDialog(saved)
-    assert reopened.spin_confirm_rounds.value() == 3 and reopened.spin_max_wait.value() == 4.5
+    assert saved.get("monitor.confirm_rounds") is None and saved.get("monitor.max_wait_seconds") is None
     dialog.deleteLater()
-    reopened.deleteLater()
-
-
-class _Controller:
-    def __init__(self, config: AppConfig) -> None:
-        self.config = config
-
-    def __getattr__(self, _name):
-        return lambda *args, **kwargs: None
-
-
-def test_main_window_footer_no_longer_shows_stability_or_context(qapp, tmp_path):
-    window = MainWindow(_Controller(AppConfig(tmp_path / "config.json")))
-
-    assert not hasattr(window, "check_stable") and not hasattr(window, "check_context")
-    assert hasattr(window, "check_lyrics")  # 歌詞勾選留在主視窗
-    texts = {box.text() for box in window.findChildren(QCheckBox)}
-    assert "穩定顯示" not in texts and "上下文" not in texts and "歌詞" in texts
-    window.deleteLater()
 
 
 # ----------------------------------------------------------------------------- 辨識間隔：已移除，辨識完馬上看下一格
@@ -510,17 +407,19 @@ def test_there_is_no_scan_interval_setting_any_more():
         {"interval_ms": 400, "interval_migrated": True},
         {"interval_ms": 2500, "interval_default_version": 2},
         {"interval_ms": "fast"},
+        {"confirm_rounds": 4, "max_wait_seconds": 9},  # 自訂過確認次數的人也一律用預設 1
+        {"stability": "stable", "stable_rounds": 2},
     ],
 )
 def test_old_interval_keys_are_dropped_when_the_file_is_loaded(tmp_path, saved):
     config = _load(tmp_path, saved)
 
-    for key in ("interval_ms", "interval_default_version", "interval_migrated"):
+    for key in ("interval_ms", "interval_default_version", "interval_migrated", "confirm_rounds", "max_wait_seconds", "stability", "stable_rounds"):
         assert config.get(f"monitor.{key}") is None
     config.save()  # 存檔：舊的鍵不會再被寫回去
     on_disk = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
     assert not any(key.startswith("interval") for key in on_disk["monitor"])
-    assert "confirm_rounds" in on_disk["monitor"]
+    assert "hide_after_no_text_seconds" in on_disk["monitor"]
 
 
 def test_the_next_look_is_scheduled_without_waiting_whatever_an_old_file_says(controller):

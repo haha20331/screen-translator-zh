@@ -9,8 +9,6 @@ from app import application as _application
 from app.logger import get_logger
 from utils.stability import (
     MAX_NO_TEXT_SECONDS,
-    MAX_ROUNDS,
-    MIN_ROUNDS,
     RECOMMENDED_FAST_ROUNDS,
     RECOMMENDED_MAX_WAIT,
     RECOMMENDED_NO_TEXT_SECONDS,
@@ -79,8 +77,7 @@ class MonitorMixin:
         self._monitor_idle_hash = ""
         self._monitor_quiet_until = 0.0
         self._monitor_wait_noted = False
-        self._monitor_stabilizer = TextStabilizer()
-        self._configure_stabilizer()
+        self._monitor_stabilizer = TextStabilizer(RECOMMENDED_FAST_ROUNDS, RECOMMENDED_MAX_WAIT)
         self._transcript_note_monitor(started=True)
         self.set_status("即時監控已開啟，頁面一動就會自動重譯" + (f"；{loading}" if loading else ""))
         if self.window is not None:
@@ -169,7 +166,6 @@ class MonitorMixin:
         self._last_capture = capture
         # 像素差异门控：画面逐像素完全没变就跳过整轮 OCR + 翻译管线，覆盖层保持，省资源。
         # 例外：有一組新文字正在等第二次確認時，同一格畫面也要再辨識一次，才能放行。
-        self._configure_stabilizer()
         frame_hash = frame_fingerprint(capture.image)
         pending = self._monitor_stabilizer is not None and self._monitor_stabilizer.has_pending
         # 辨識與翻譯分開進行：字幕還在翻譯途中（譯文沒出來、signature 還是空的）時，同一格畫面也不必再辨識
@@ -216,17 +212,6 @@ class MonitorMixin:
         )
         self._monitor_timer.stop()
         self._monitor_timer.start(0)
-
-    def _configure_stabilizer(self) -> None:
-        """依設定決定要連續辨識到相同結果幾次才顯示（1 = 快速、2 = 穩定，使用者可自訂）。"""
-        if self._monitor_stabilizer is None:
-            return
-        try:
-            rounds = int(self.config.get("monitor.confirm_rounds", RECOMMENDED_FAST_ROUNDS))
-            max_wait = float(self.config.get("monitor.max_wait_seconds", RECOMMENDED_MAX_WAIT))
-        except (TypeError, ValueError):
-            rounds, max_wait = RECOMMENDED_FAST_ROUNDS, RECOMMENDED_MAX_WAIT
-        self._monitor_stabilizer.configure(max(MIN_ROUNDS, min(MAX_ROUNDS, rounds)), max_wait)
 
     def _monitor_settle_seconds(self) -> float:
         """設定：移動或調整監視框之後，要等幾秒才繼續翻譯（0 = 不等，拖曳中照常翻譯）。"""
